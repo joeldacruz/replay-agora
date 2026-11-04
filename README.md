@@ -1,46 +1,49 @@
-# Replay Agora
+# Replay Agora — plataforma de três interfaces
 
-Plataforma de replays esportivos para arenas com múltiplas quadras, acionamento por botoeira física e distribuição de vídeos para atletas.
+**Arquitetura de produto definida:** existem **dois aplicativos separados** e **um portal web exclusivo do desenvolvedor/administrador da plataforma**. Eles podem consumir a mesma API central, mas têm navegação, funções, identidade de acesso e permissões independentes.
 
-## Situação do projeto
+| Produto | Público | Responsabilidade |
+|---|---|---|
+| **App do Usuário (Atleta)** | Jogadores e usuários finais | Encontrar, assistir, compartilhar e baixar replays; escolher áudio original ou música autorizada para o vídeo, quando permitido |
+| **App de Gestão da Arena** | Proprietário/gestor e operadores da arena | Administrar **sua própria arena**: quadras, vídeos, patrocinadores, campanhas, logomarcas, catálogo/padrões de música, equipe e relatórios |
+| **Portal do Desenvolvedor** | Operador da plataforma Replay Agora (`global_admin`) | **Gerenciar toda a plataforma**: cadastrar/habilitar arenas, contas, módulos, planos, limites, configurações, suporte, integrações, auditoria, monitoramento e métricas globais |
 
-Este repositório foi iniciado com a **especificação do aplicativo**. **O código já existente no servidor Linux da arena ainda não foi enviado a este repositório**. Não considerar a documentação como software implantado ou testes de produção concluídos.
+**Regra inegociável:** o app da arena **nunca** oferece administração global. O app do usuário **não** possui telas de administração. O portal do desenvolvedor **não** é o app da arena; tem acesso global administrativo sob autenticação forte, trilha de auditoria e controles de privacidade.
 
-### Hardware comprovado na arena (03/11/2026)
+## O que já existe e o que falta
 
-- Ubuntu dedicado `replayagora-srv01`, separado do servidor central.
-- Um Arduino Nano V3 (ATmega328P/CH340), USB serial a 9600 baud.
-- Botoeira da Quadra 01: D2 → `REPLAY_01`.
-- Botoeira da Quadra 02: A2 → `REPLAY_02`.
-- Firmware dual gravado e verificado; leitor Python reconheceu os dois eventos no `journalctl`.
-- **Câmeras não estavam disponíveis no teste**. Captura RTSP, geração de MP4 e integração do aplicativo **não estão homologadas**.
+Documentação publicada; os aplicativos, o portal do desenvolvedor e a API ainda **não foram implementados neste repositório**. O código atual de Python/FFmpeg no servidor local da arena **não está neste GitHub**.
 
-### Infraestrutura local existente (não incluída no GitHub)
+### Arena local, testes confirmados (03/11/2026)
 
-- `/srv/replayagora/botoeira/leitor.py`: recebe serial e registra eventos; atualmente não chama o processador de vídeo.
-- `/srv/replayagora/quadra01/app/buffer.py`
-- `/srv/replayagora/quadra01/app/replay.py`
-- Serviço `replayagora-buffer01.service` ativo no último diagnóstico; `replayagora-replay01.service` inativo. FFmpeg não foi observado como processo ativo.
-- Portal central Replay Agora é outro ambiente. Não misturar deploys nem executar comandos no servidor central sem autorização.
+- Ubuntu dedicado `replayagora-srv01`, separado do servidor central/portal.
+- Arduino Nano V3 CH340, aplicativo serial 9600 baud.
+- Botoeira física D2 → `REPLAY_01`; botoeira no-touch A2 → `REPLAY_02`.
+- Firmware dual gravado/verificado e ambos os eventos confirmados em `journalctl`.
+- Câmeras indisponíveis; captura RTSP, geração de MP4 e download **não homologados**.
+- `/srv/replayagora/botoeira/leitor.py` registra os eventos, mas ainda não há integração demonstrada com geração de vídeo.
+- Existem arquivos `/srv/replayagora/quadra01/app/buffer.py` e `replay.py` no servidor, que precisarão ser inventariados e importados com segurança.
 
-## Documentos para desenvolvimento
+## Documentação para Claude
 
-- [Especificação funcional e técnica](docs/ESPECIFICACAO-APP.md)
-- [Instruções para Claude Code](CLAUDE.md)
+- [CLAUDE.md](CLAUDE.md): instruções de execução do agente.
+- [Especificação funcional e técnica](docs/ESPECIFICACAO-APP.md): arquitetura, funcionalidades e testes.
+- [Issue de implementação](https://github.com/joeldacruz/replay-agora/issues/1).
 
-## Objetivos do aplicativo
+## Ordem sugerida
 
-1. Atletas acessam seus próprios replays, assistem e baixam MP4 no celular.
-2. Administrador da arena gerencia quadras, patrocinadores, mídia e permissões da sua arena.
-3. Edição opcional do replay com áudio original, música licenciada, mistura de ambos ou sem som.
-4. Cada quadra possui buffer e replays independentes; isolamento rigoroso entre arenas e contas.
+1. Definir API/autenticação e autorização multiarenas.
+2. Entregar **App do Usuário**, **App de Gestão da Arena** e **Portal do Desenvolvedor** como interfaces separadas, usando vídeo local simulado para validar fluxos.
+3. Patrocinadores e exportação de áudio com músicas licenciadas e processamento FFmpeg.
+4. Integrar engine de replay local, sincronização e dois buffers independentes quando o código real estiver disponível.
+5. Homologar captura real depois que as câmeras estiverem disponíveis.
 
-**Diretriz:** entregar primeiro uma versão web responsiva/PWA, com API segura e fluxo de vídeo testável sem câmeras usando arquivos de exemplo, antes de considerar apps nativos.
+**Primeira entrega:** aplicações web responsivas/PWA distintas; preparação para empacotamento mobile posterior, sem afirmar que aplicativos nativos já estão prontos.
 
-## Como passar ao Claude
+## Passagem para Claude
 
-Conecte sua conta GitHub ao Claude/Claude Code (conforme o recurso disponível na sua conta), selecione `joeldacruz/replay-agora` e peça:
+Com o GitHub conectado ao Claude/Claude Code, selecione `joeldacruz/replay-agora` e peça:
 
-> Leia `CLAUDE.md` e `docs/ESPECIFICACAO-APP.md`. Implemente o MVP em uma branch nova, com testes, migrações e README de execução, sem alterar a infraestrutura de produção. Primeiro apresente o inventário e o plano, depois trabalhe em commits pequenos e abra um pull request.
+> Leia CLAUDE.md e docs/ESPECIFICACAO-APP.md. Entregue três interfaces **separadas**: App do Usuário, App de Gestão da Arena e Portal do Desenvolvedor. Não misture permissões. Faça o MVP com testes em branch de feature e abra um pull request; não realize deploy de produção.
 
-Nunca versionar `.env`, credenciais RTSP, tokens, vídeos reais de usuários nem backups do Arduino.
+Nunca publicar `.env`, credenciais RTSP, chaves, vídeos privados nem backups do Arduino.
