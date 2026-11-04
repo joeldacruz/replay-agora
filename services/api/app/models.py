@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base, new_id, utcnow
 
-ROLES = ("arena_admin", "operator", "user")
+ROLES = ("arena_admin", "arena_operator", "user")
 AUDIO_MODES = ("original", "music", "mix", "mute")
 POSITIONS = ("top-left", "top-right", "bottom-left", "bottom-right")
 
@@ -24,6 +24,20 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     global_role: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'global_admin' | None
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)  # TOTP base32
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_last_step: Mapped[int] = mapped_column(Integer, default=0)  # anti-replay
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+    id: Mapped[str] = _id()
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    max_courts: Mapped[int] = mapped_column(Integer, default=2)
+    max_storage_mb: Mapped[int] = mapped_column(Integer, default=10240)
+    max_exports_per_user_day: Mapped[int] = mapped_column(Integer, default=20)
+    modules: Mapped[str] = mapped_column(String(200), default="sponsors,music")  # csv
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -32,7 +46,8 @@ class Arena(Base):
     id: Mapped[str] = _id()
     slug: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
-    status: Mapped[str] = mapped_column(String(20), default="active")
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active|suspended
+    plan_id: Mapped[str | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
     timezone: Mapped[str] = mapped_column(String(60), default="America/Sao_Paulo")
     brand_color: Mapped[str] = mapped_column(String(7), default="#0b6bcb")
     allow_self_join: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -41,7 +56,8 @@ class Arena(Base):
     audio_default_music_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     audio_original_volume: Mapped[float] = mapped_column(Float, default=1.0)
     audio_music_volume: Mapped[float] = mapped_column(Float, default=0.6)
-    audio_user_override: Mapped[bool] = mapped_column(Boolean, default=True)
+    # modos que a arena oferece ao atleta (csv de AUDIO_MODES); o atleta escolhe dentro deles
+    audio_allowed_modes: Mapped[str] = mapped_column(String(60), default="original,music,mix,mute")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -74,14 +90,17 @@ class Court(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class AgentToken(Base):
-    __tablename__ = "agent_tokens"
+class ArenaAgent(Base):
+    """Motor local da arena: credencial por arena (hash) + saúde reportada, sem segredos."""
+    __tablename__ = "arena_agents"
     id: Mapped[str] = _id()
     arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
     label: Mapped[str] = mapped_column(String(80))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    pending_sync: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -135,7 +154,20 @@ class VideoAccess(Base):
     id: Mapped[str] = _id()
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     video_id: Mapped[str] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    share_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ShareLink(Base):
+    """Link de compartilhamento expirável e revogável; resgatado por usuário autenticado."""
+    __tablename__ = "share_links"
+    id: Mapped[str] = _id()
+    video_id: Mapped[str] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

@@ -3,7 +3,8 @@ import os
 import secrets
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = Path(__file__).resolve().parents[1]  # services/api
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _env_int(name: str, default: int) -> int:
@@ -38,7 +39,7 @@ class Settings:
         self.login_window_s = _env_int("LOGIN_WINDOW_S", 300)
         self.ffmpeg_bin = os.environ.get("FFMPEG_BIN", "ffmpeg")
         self.ffprobe_bin = os.environ.get("FFPROBE_BIN", "ffprobe")
-        self.frontend_dir = Path(os.environ.get("FRONTEND_DIR", str(BASE_DIR.parent / "frontend")))
+        self.frontend_dir = Path(os.environ.get("FRONTEND_DIR", str(REPO_ROOT)))
 
 
 settings = Settings()
