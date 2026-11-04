@@ -1,50 +1,54 @@
-# Orientações para Claude Code — Replay Agora
+# CLAUDE.md — Replay Agora
 
-Você é o agente de desenvolvimento do produto **Replay Agora**. Repositório: `joeldacruz/replay-agora`.
+## Instrução central e prioritária
 
-## Missão
+**NÃO MISTURAR AS TRÊS INTERFACES.** O produto possui:
 
-Construir um aplicativo web responsivo/PWA para atletas assistirem e baixarem replays e para administradores gerenciarem sua arena, quadras, patrocinadores, inserções visuais e opções de áudio (original, música autorizada, mixagem ou mudo). Requisitos completos em [docs/ESPECIFICACAO-APP.md](docs/ESPECIFICACAO-APP.md).
+1. **App do Usuário** — atletas/jogadores: catálogo dos próprios replays autorizados, player, compartilhamento, download MP4, escolha de som na exportação dentro das opções aprovadas.
+2. **App de Gestão da Arena** — proprietário/gestor/operador: gerenciar **somente as suas arenas autorizadas**, quadras, equipe, patrocínios, logos/campanhas, música licenciada, regras de publicação e indicadores.
+3. **Portal do Desenvolvedor / Administração Global** — equipe dona do Replay Agora: gestão de **todas** as arenas, usuários, papéis, configuração global, planos/limites, integrações, saúde dos agentes, auditoria, suporte, métricas e governança. Não é a mesma UI do gestor da arena.
 
-## Estado verificado, sem suposições
+Essas são **três experiências de acesso separadas**, preferencialmente `apps/usuario`, `apps/arena`, `apps/portal-dev`, compartilhando API, autenticação, design system e tipagens quando adequado. Podem ser PWAs separados inicialmente; evitar impor implantação nativa antes da validação. Nunca apenas esconder menus do frontend: a autorização é do backend.
 
-- **Repositório criado originalmente vazio.** Documentos atuais **não** são código implantado.
-- No servidor Linux local `replayagora-srv01`, o Arduino Nano V3 reconheceu dois botões físicos: D2 → `REPLAY_01`, A2 → `REPLAY_02`. Baud da aplicação = 9600; bootloader = 115200. Firmware dual já foi gravado e verificado.
-- Leitor Python `/srv/replayagora/botoeira/leitor.py` registra as duas mensagens, mas **não há confirmação de salvamento de MP4 por botão**.
-- Buffer/replay Python da Quadra 01 existem no servidor local, **não estão importados neste GitHub**. Câmeras indisponíveis para teste até nova informação.
-- Não afirmar que backend, frontend, processamento de mídia ou sincronização estejam prontos.
+### Política de fronteiras
+- `user`: nenhum endpoint administrativo.
+- `arena_admin` / `arena_operator`: ações limitadas a seu(s) `arena_id`; jamais administrar outra arena, cadastrar planos globais ou executar configurações centrais.
+- `global_admin`: portal dev, ações globais rastreáveis, login forte/MFA e trilha de auditoria. Acesso a vídeos privados deve ser restrito por necessidade legítima, com consentimento/política e auditoria; administrar metadados não exige visualizar conteúdo privado.
+- Um usuário pode ter associação a mais de uma arena, mas cada ação deve utilizar contexto explícito e validado.
+- Música e trilhas: arena aprova/fornece arquivos licenciados e define políticas; **usuário escolhe entre opções autorizadas na exportação**. Renderizar com FFmpeg: `original`, `music`, `mix`, `mute`; quando não houver áudio original, tratar explicitamente.
+- Patrocínio: arena define campanhas da própria arena e o motor aplica overlays. Portal dev define apenas políticas/recursos globais ou oferece suporte autorizado, não realiza operação cotidiana da arena.
 
-## Modo de trabalho obrigatório
+## Situação real do repositório
 
-1. Primeiro inspecione o repositório, documentação e situação das dependências; apresente arquitetura, plano em etapas e lista do que falta.
-2. Caso o projeto local do servidor não esteja disponível, **não invente seu conteúdo**. Desenvolva módulo novo isolado com mocks e adapte quando os arquivos reais forem disponibilizados.
-3. Trabalhe em **branch de feature**, com commits pequenos e pull request; não faça push direto na `main` sem solicitação.
-4. Entregue código executável, migrações, testes automatizados e instruções de execução locais. Evite protótipos estáticos disfarçados de produto pronto.
-5. Isolamento multiarenas e autorização server-side são requisitos centrais; realize testes contra IDOR entre arenas.
-6. Os quatro modos de áudio precisam ser realmente processados com FFmpeg; trilha só pode ser exportada quando os direitos de uso estão documentados.
-7. Upload de logos/músicas com validação de arquivos; vídeos armazenados fora de diretórios públicos; URLs privadas temporárias; log de auditoria.
-8. Prever testes sem câmera com arquivo de vídeo de amostra livre para uso; não alegar homologação RTSP até teste real.
-9. Não usar chaves nem credenciais no repositório; arquivos `.env.example` somente com placeholders.
-10. Nunca implantar em servidores, mudar DNS/Cloudflare, interromper serviços, regravar Arduino, modificar portarias/contas ou remover dados reais sem autorização explícita.
-11. Se recomendar comandos ao operador, apresentar **blocos completos copiáveis**, com verificações e rollback.
-12. Informe o que foi implementado, testes executados, o que ficou pendente e links de PR/commits.
+Este GitHub foi criado inicialmente só com documentação; **os três aplicativos ainda não estão implementados**. No servidor Linux local independente `replayagora-srv01`:
+- Um Arduino Nano V3 CH340 a 9600 baud lê D2 `REPLAY_01` e A2 `REPLAY_02`; ambos os eventos foram testados.
+- Leitor em `/srv/replayagora/botoeira/leitor.py` registra, mas ainda não comprovou gerar MP4.
+- Código da Quadra 01 `/srv/replayagora/quadra01/app/buffer.py` e `replay.py` existe apenas no servidor; não foi importado.
+- Câmeras indisponíveis para homologação neste momento.
 
-## Primeiro pedido de implementação (MVP)
+Não invente integrações nem declare funcionalidades prontas por existir esta documentação.
 
-1. Monorepo com backend/API, frontend PWA, worker de vídeo e documentação, ou estrutura compatível com código real caso ele venha a ser importado.
-2. Autenticação e papéis `global_admin`, `arena_admin`, `operator`, `user`; `arena_id` obrigatório em recursos.
-3. Interface de atleta: lista de vídeos, filtros, player, download seguro, status de exportação.
-4. Interface admin: painel da arena, quadras, patrocinadores/campanhas com prévia, biblioteca de músicas e configuração padrão de áudio.
-5. Worker FFmpeg de exportação com `original/music/mix/mute`, job queue e logs.
-6. Seeds de duas arenas fictícias e duas quadras, sem dados de pessoas reais; integração automática testada sem câmeras.
-7. Documentação para futura integração do Arduino D2/A2 e câmeras RTSP; não substituir o leitor já em produção.
+## Plano obrigatório de desenvolvimento
 
-## Critérios de pronto
+1. Leia [docs/ESPECIFICACAO-APP.md](docs/ESPECIFICACAO-APP.md) e a [issue #1](https://github.com/joeldacruz/replay-agora/issues/1); inventarie o que realmente existe.
+2. Proponha arquitetura com **três aplicações distintas**, backend/API com RBAC multiarenas, banco e worker FFmpeg; explicite rotas, papéis e limites.
+3. Desenvolva primeiro com dados fictícios e MP4 simulado, sem câmeras.
+4. MVP do App do Usuário: autenticação, catálogo autorizado, filtro de quadra/data, player, opções de áudio autorizadas, jobs e download protegido.
+5. MVP do App da Arena: quadras, publicação de replays, patrocinadores/logos/campanhas com prévia, biblioteca licenciada, regras de áudio, operadores, dashboard.
+6. MVP do Portal Dev: CRUD global de arenas/contas, associação de administradores, configuração e limites por arena, status do sistema, auditoria e controle de acesso forte.
+7. Worker de exportação assincrona com 4 modalidades de áudio; validação e licenças, processamento de sobreposições e URLs seguras.
+8. Testes: IDOR entre arenas, usuário acessando endpoints admin, gestor tentando ações globais, global admin, upload malicioso, exportações, player/download e isolamento das aplicações.
+9. Separe codebase/rotas para futura integração com buffer/RTSP/Arduino local; não reescreva o ambiente real sem inspeção/approval.
 
-- `README` com setup e comandos reproduzíveis.
-- `docker compose` ou execução local equivalente sem dependências de produção.
-- Migrações e testes executáveis de RBAC, download, patrocínios, exports e isolamento entre arenas.
-- Demonstração E2E, ao menos com MP4 de teste criado sob licença livre.
-- PR com evidências de validação e lista explícita de pendências reais.
+## Qualidade, segurança, entregas
 
-Trabalhe em português, sem solicitar repetição de contexto presente nos arquivos.
+- Branch nova, commits incrementais e PR; não push direto na `main` sem autorização.
+- Código executável, migrações, seeds sem dados privados, testes e README de execução.
+- Direitos autorais de músicas válidos para sincronização/exportação/compartilhamento; sem usar faixa comercial sem licença.
+- MFA para portal global, rate limiting, sessões seguras, armazenamento privado e autorização backend.
+- Sem deploy/alteração em servidores, DNS, Cloudflare, Arduino, arquivos ou bases de produção sem autorização.
+- Não versionar credenciais, tokens, RTSP ou vídeos de usuários.
+- Quando comandos forem necessários, fornecer bloco completo com verificação e rollback.
+- Reportar entregas comprovadas, testes e pendências; não alegar homologação com câmeras.
+
+**Idioma:** português brasileiro.
