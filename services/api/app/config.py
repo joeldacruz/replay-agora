@@ -17,9 +17,14 @@ class Settings:
         self.database_url = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR}/var/replay.db")
         self.storage_dir = Path(os.environ.get("STORAGE_DIR", str(BASE_DIR / "var" / "storage"))).resolve()
         secret = os.environ.get("SECRET_KEY")
-        if not secret:
-            if self.env == "production":
-                raise RuntimeError("SECRET_KEY é obrigatório em produção")
+        if self.env == "production":
+            # Um segredo previsível permite falsificar JWTs de qualquer perfil.
+            # Não permitir o valor demonstrativo do .env.example nem chaves curtas.
+            placeholders = ("troque", "changeme", "change-me", "replace-me", "your-secret", "exemplo")
+            if (not secret or len(secret.strip()) < 32
+                    or secret.strip().lower().startswith(placeholders)):
+                raise RuntimeError("SECRET_KEY de produção deve ser aleatório, ter pelo menos 32 caracteres e não ser um placeholder")
+        elif not secret:
             secret = secrets.token_urlsafe(48)  # efêmero: tokens deixam de valer ao reiniciar
         self.secret_key = secret
         self.access_token_ttl_s = _env_int("ACCESS_TOKEN_TTL_S", 12 * 3600)
