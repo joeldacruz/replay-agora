@@ -16,6 +16,12 @@ MUSIC_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v"}
 
 
+def _header(path: Path, n: int) -> bytes:
+    """Leia apenas os bytes necessários, sem carregar um vídeo inteiro na RAM."""
+    with path.open("rb") as f:
+        return f.read(n)
+
+
 def _tmpdir() -> Path:
     d = settings.storage_dir / "_tmp"
     d.mkdir(parents=True, exist_ok=True)
@@ -47,7 +53,7 @@ def ext_of(filename: str | None) -> str:
 
 def process_logo(tmp: Path) -> tuple[bytes, int, int]:
     """Aceita somente PNG real; recodifica (remove metadados/payloads embutidos). SVG não é aceito (ver docs)."""
-    head = tmp.read_bytes()[:8]
+    head = _header(tmp, 8)
     if head != PNG_MAGIC:
         raise HTTPException(422, "logotipo deve ser um PNG válido (SVG ainda não suportado)")
     try:
@@ -83,7 +89,7 @@ def _music_magic_ok(head: bytes, ext: str) -> bool:
 def validate_music(tmp: Path, ext: str) -> float:
     if ext not in MUSIC_EXT:
         raise HTTPException(422, "formato de música não permitido (mp3, wav, m4a, ogg, flac)")
-    if not _music_magic_ok(tmp.read_bytes()[:16], ext):
+    if not _music_magic_ok(_header(tmp, 16), ext):
         raise HTTPException(422, "conteúdo do arquivo não corresponde ao formato de áudio")
     try:
         dur = mediainfo.audio_duration(tmp)
@@ -97,7 +103,7 @@ def validate_music(tmp: Path, ext: str) -> float:
 def validate_video(tmp: Path, ext: str) -> mediainfo.VideoInfo:
     if ext not in VIDEO_EXT:
         raise HTTPException(422, "formato de vídeo não permitido (mp4/mov)")
-    head = tmp.read_bytes()[:16]
+    head = _header(tmp, 16)
     if head[4:8] != b"ftyp":
         raise HTTPException(422, "conteúdo não é um MP4/MOV válido")
     try:
