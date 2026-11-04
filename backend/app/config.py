@@ -1,0 +1,44 @@
+"""Configuração por variáveis de ambiente. Nenhum segredo real fica no repositório."""
+import os
+import secrets
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def _env_int(name: str, default: int) -> int:
+    return int(os.environ.get(name, default))
+
+
+class Settings:
+    def __init__(self) -> None:
+        self.env = os.environ.get("APP_ENV", "development")
+        self.database_url = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR}/var/replay.db")
+        self.storage_dir = Path(os.environ.get("STORAGE_DIR", str(BASE_DIR / "var" / "storage"))).resolve()
+        secret = os.environ.get("SECRET_KEY")
+        if not secret:
+            if self.env == "production":
+                raise RuntimeError("SECRET_KEY é obrigatório em produção")
+            secret = secrets.token_urlsafe(48)  # efêmero: tokens deixam de valer ao reiniciar
+        self.secret_key = secret
+        self.access_token_ttl_s = _env_int("ACCESS_TOKEN_TTL_S", 12 * 3600)
+        self.signed_url_ttl_s = _env_int("SIGNED_URL_TTL_S", 300)
+        self.cors_origins = [o for o in os.environ.get("CORS_ORIGINS", "").split(",") if o]
+        self.max_video_bytes = _env_int("MAX_VIDEO_BYTES", 500 * 1024 * 1024)
+        self.max_logo_bytes = _env_int("MAX_LOGO_BYTES", 1024 * 1024)
+        self.max_music_bytes = _env_int("MAX_MUSIC_BYTES", 25 * 1024 * 1024)
+        self.max_music_seconds = _env_int("MAX_MUSIC_SECONDS", 20 * 60)
+        self.max_video_seconds = _env_int("MAX_VIDEO_SECONDS", 15 * 60)
+        self.event_dedup_seconds = _env_int("EVENT_DEDUP_SECONDS", 3)
+        self.export_timeout_s = _env_int("EXPORT_TIMEOUT_S", 600)
+        self.export_max_attempts = _env_int("EXPORT_MAX_ATTEMPTS", 3)
+        self.export_stale_after_s = _env_int("EXPORT_STALE_AFTER_S", 120)
+        self.max_active_exports_per_user = _env_int("MAX_ACTIVE_EXPORTS_PER_USER", 3)
+        self.login_max_attempts = _env_int("LOGIN_MAX_ATTEMPTS", 8)
+        self.login_window_s = _env_int("LOGIN_WINDOW_S", 300)
+        self.ffmpeg_bin = os.environ.get("FFMPEG_BIN", "ffmpeg")
+        self.ffprobe_bin = os.environ.get("FFPROBE_BIN", "ffprobe")
+        self.frontend_dir = Path(os.environ.get("FRONTEND_DIR", str(BASE_DIR.parent / "frontend")))
+
+
+settings = Settings()
