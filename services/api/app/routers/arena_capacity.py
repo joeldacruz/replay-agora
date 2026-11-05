@@ -122,3 +122,28 @@ def protect(video_id: str, body: ProtectIn, c: ArenaCtx = Depends(admin), db: Se
 def retention_plan(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
     """Dry-run. Não existe endpoint que remova arquivos reais nesta etapa."""
     return capacity.retention_plan(db, c.arena)
+
+
+class ResourcesIn(BaseModel):
+    maxFfmpeg: int = Field(1, ge=1, le=16)
+    hwaccel: str = Field("none", pattern=r"^(none|auto|vaapi|qsv)$")
+    renderNice: int = Field(10, ge=0, le=19)
+
+
+def _res_out(a: Arena) -> dict:
+    return {"maxFfmpeg": a.agent_max_ffmpeg, "hwaccel": a.agent_hwaccel, "renderNice": a.agent_render_nice,
+            "note": "O agente aplica dentro dos limites do hardware local e recua para CPU se a aceleração não estiver disponível."}
+
+
+@router.get("/agent-resources")
+def get_resources(c: ArenaCtx = Depends(staff)):
+    return _res_out(c.arena)
+
+
+@router.put("/agent-resources")
+def set_resources(body: ResourcesIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+    """Ajuste por arena de FFmpeg simultâneos, aceleração por hardware e prioridade. Só a PRÓPRIA arena (gestor)."""
+    c.arena.agent_max_ffmpeg, c.arena.agent_hwaccel, c.arena.agent_render_nice = body.maxFfmpeg, body.hwaccel, body.renderNice
+    audit.record(db, c.user.id, c.arena.id, "agent.resources", "arena", c.arena.id, body.model_dump())
+    db.commit()
+    return _res_out(c.arena)

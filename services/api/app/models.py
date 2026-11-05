@@ -62,6 +62,10 @@ class Arena(Base):
     storage_limit_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     storage_warn_pct: Mapped[int] = mapped_column(Integer, default=80)
     storage_critical_pct: Mapped[int] = mapped_column(Integer, default=95)
+    # Recursos do computador da arena (ajustados pelo gestor; o agente aplica dentro dos limites do hardware local)
+    agent_max_ffmpeg: Mapped[int] = mapped_column(Integer, default=1)
+    agent_hwaccel: Mapped[str] = mapped_column(String(8), default="none")  # none|auto|vaapi|qsv
+    agent_render_nice: Mapped[int] = mapped_column(Integer, default=10)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

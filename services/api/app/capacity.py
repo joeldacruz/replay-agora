@@ -167,6 +167,7 @@ def agent_config(db: Session, arena: Arena) -> dict:
         "courts": [{"courtKey": c.local_court_key, "status": c.status, "retentionDays": c.retention_days,
                     "storageLimitBytes": court_limit_bytes(c, alim)} for c in courts],
         "heartbeatIntervalS": settings.agent_heartbeat_s,
+        "resources": {"maxFfmpeg": arena.agent_max_ffmpeg, "hwaccel": arena.agent_hwaccel, "renderNice": arena.agent_render_nice},
     }
     cfg["configVersion"] = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:16]
     return cfg

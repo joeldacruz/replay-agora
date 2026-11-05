@@ -61,14 +61,14 @@ def _stereo() -> str:
     return "aresample=44100,aformat=channel_layouts=stereo"
 
 
-def build_command(p: ExportPlan, ffmpeg: str = "ffmpeg") -> list[str]:
+def build_command(p: ExportPlan, ffmpeg: str = "ffmpeg", hw=None) -> list[str]:
     m = p.meta
     if p.mode in ("original", "mix") and not m.has_audio:
         raise PlanError("vídeo sem áudio original não suporta os modos original/mix")
     if p.mode in ("music", "mix") and not p.music_path:
         raise PlanError("modo music/mix exige faixa musical")
 
-    cmd = [ffmpeg, "-y", "-v", "error", "-nostdin", "-i", p.src]
+    cmd = [ffmpeg, "-y", "-v", "error", "-nostdin", *(hw.input_args() if hw else []), "-i", p.src]
     idx = 1
     logo_idx = []
     for o in p.overlays:
@@ -92,8 +92,13 @@ def build_command(p: ExportPlan, ffmpeg: str = "ffmpeg") -> list[str]:
             cur = f"[v{n}]"
         vmap = cur
         vcodec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]
+        if hw:   # os overlays continuam na CPU; só a codificação final vai para a GPU
+            filters.append(f"{cur}{hw.upload()}[vhw]")
+            vmap, vcodec = "[vhw]", hw.encoder()
     elif m.video_codec != "h264":
         vcodec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]
+        if hw:
+            vcodec = ["-vf", hw.upload(), *hw.encoder()]
 
     fade = f"afade=t=out:st={max(m.duration - 1, 0):.3f}:d=1"
     amap, acodec = None, ["-an"]

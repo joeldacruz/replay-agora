@@ -8,6 +8,7 @@ from .clipper import BufferClipRenderer
 from .config import AgentCfg
 from .engine import Engine
 from .render import SimRenderer
+from .resources import ResourceGovernor
 from .store import LocalStore
 from .triggers import SerialTrigger, TriggerRouter
 
@@ -37,6 +38,7 @@ class Stack:
     router: TriggerRouter | None = None
     triggers: list = field(default_factory=list)
     renderer: object = None
+    governor: ResourceGovernor | None = None
 
     def start(self) -> None:
         for r in self.recorders.values():
@@ -53,11 +55,14 @@ class Stack:
             r.stop()
 
 
-def build_stack(cfg: AgentCfg, store: LocalStore | None = None, slot=None, encoder_args=None, clock=None) -> Stack:
+def build_stack(cfg: AgentCfg, store: LocalStore | None = None, governor: ResourceGovernor | None = None, clock=None) -> Stack:
     data = Path(cfg.data_dir)
     data.mkdir(parents=True, exist_ok=True)
     store = store or LocalStore(str(data / "local.db"))
     st = Stack(cfg, store)
+    res = cfg.resources
+    st.governor = governor or ResourceGovernor(res.max_ffmpeg, res.hwaccel, res.vaapi_device, res.render_nice, st.recorders,
+                                               res.pause_render_when_capture_lags, cfg.ffmpeg_bin)
     per_court: dict = {}
     clips, cams = {}, {}
     from contextlib import nullcontext
@@ -76,8 +81,7 @@ def build_stack(cfg: AgentCfg, store: LocalStore | None = None, slot=None, encod
                                             time_source=c.camera.external_time, ffprobe=cfg.ffprobe_bin)
     managed = [k for k in st.indexes]
     buf = BufferClipRenderer(st.indexes, st.recorders, {k: clips[k] for k in managed}, {k: cams[k] for k in managed},
-                             ffmpeg=cfg.ffmpeg_bin, ffprobe=cfg.ffprobe_bin, slot=slot or (lambda: nullcontext()),
-                             nice=cfg.resources.render_nice, **({"encoder_args": encoder_args} if encoder_args else {}))
+                             ffmpeg=cfg.ffmpeg_bin, ffprobe=cfg.ffprobe_bin, governor=st.governor, nice=cfg.resources.render_nice)
     for k in managed:
         per_court[k] = buf
     st.renderer = CourtDispatchRenderer(per_court)

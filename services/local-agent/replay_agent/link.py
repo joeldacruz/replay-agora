@@ -19,7 +19,7 @@ VERSION = "0.1.0-sim"
 class CentralLink:
     def __init__(self, client: CentralClient, store: LocalStore, engine: Engine, hostname: str = "sim-host",
                  sampler: SystemSampler | None = None, batch: int = 100, resync_hours: int = 24,
-                 creds: CredentialStore | None = None):
+                 creds: CredentialStore | None = None, governor=None):
         self.client, self.store, self.engine = client, store, engine
         self.hostname, self.sampler, self.batch, self.resync_hours = hostname, sampler, batch, resync_hours
         self.registered = False
@@ -28,6 +28,7 @@ class CentralLink:
         self.fail_streak = 0
         self.config_version = ""
         self.creds = creds
+        self.governor = governor
         self.rotations = 0
 
     # ----- passos -----
@@ -39,6 +40,9 @@ class CentralLink:
 
     def _apply(self, cfg: dict) -> None:
         self.engine.apply_config(cfg)
+        res = cfg.get("resources")
+        if res and self.governor is not None:   # ajuste por arena vindo da central; o governor limita ao hardware local
+            self.governor.apply(res.get("maxFfmpeg"), res.get("hwaccel"), res.get("renderNice"))
         self.config_version = cfg["configVersion"]
 
     def _heartbeat(self) -> dict:

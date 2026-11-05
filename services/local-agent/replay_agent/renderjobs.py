@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from .client import CentralClient, CentralRejected, CentralUnavailable
+from .resources import ResourceGovernor, looks_like_hw_failure
 from .ffplan import ExportPlan, Overlay, PlanError, SourceMeta, build_command
 from .store import LocalStore
 
@@ -62,12 +63,14 @@ def verify_output(path: Path, mode: str, expected: float, ffprobe: str = "ffprob
 
 class RenderWorker:
     def __init__(self, client: CentralClient, store: LocalStore, renders_dir: Path, ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe",
-                 timeout_s: int = 600, nice: int = 10, allowed_source_roots: list[Path] | None = None):
+                 timeout_s: int = 600, nice: int = 10, allowed_source_roots: list[Path] | None = None,
+                 governor: ResourceGovernor | None = None):
         self.client, self.store, self.dir = client, store, Path(renders_dir)
         self.ffmpeg, self.ffprobe, self.timeout_s, self.nice = ffmpeg, ffprobe, timeout_s, nice
         self.roots = [Path(r).resolve() for r in (allowed_source_roots or [])]
         self.dir.mkdir(parents=True, exist_ok=True)
         self.done = self.failed = 0
+        self.governor = governor
 
     def _source(self, local_id: str) -> Path:
         row = self.store.get(local_id) if _LOCAL.match(local_id) else None
@@ -134,12 +137,28 @@ class RenderWorker:
         out = tmp / "out.mp4"
         plan = ExportPlan(str(src), str(out), meta, spec["audioMode"], str(music) if music else None,
                           spec["originalVolume"], spec["musicVolume"], overlays)
+        meta_dur = meta.duration
+        from contextlib import nullcontext
+        with (self.governor.slot() if self.governor else nullcontext()):        # limite de FFmpeg e pausa se a captura atrasar
+            hw = self.governor.hw_profile() if self.governor else None
+            rc, err = self._run(plan, spec, meta_dur, hw)
+            if rc != 0 and hw is not None and looks_like_hw_failure(err):       # recuo automático: GPU falhou => CPU
+                self.governor.report_hw_failure(err.strip().splitlines()[-1] if err.strip() else "falha de hardware")
+                Path(plan.out).unlink(missing_ok=True)
+                rc, err = self._run(plan, spec, meta_dur, None)
+        if rc != 0:
+            raise RenderError("tempo limite excedido" if rc < 0 else f"falha no FFmpeg: {err.strip()[-120:]}", retriable=rc < 0)
+        verify_output(out, spec["audioMode"], meta.duration, self.ffprobe)
+        return out
+
+    def _run(self, plan: ExportPlan, spec: dict, duration: float, hw) -> tuple[int, str]:
         try:
-            cmd = build_command(plan, self.ffmpeg)
+            cmd = build_command(plan, self.ffmpeg, hw)
         except PlanError as e:
             raise RenderError(str(e)) from e
+        nice = self.governor.render_nice if self.governor else self.nice
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                preexec_fn=(lambda: os.nice(self.nice)) if self.nice else None)
+                                preexec_fn=(lambda: os.nice(nice)) if nice else None)
         timer = threading.Timer(self.timeout_s, proc.kill)
         timer.start()
         last = 0.0
@@ -148,7 +167,7 @@ class RenderWorker:
                 m = re.match(r"out_time_(?:us|ms)=(\d+)", line)
                 if m and time.monotonic() - last > 2.0:
                     last = time.monotonic()
-                    pr = max(1, min(99, int(int(m.group(1)) / 1e6 / meta.duration * 100)))
+                    pr = max(1, min(99, int(int(m.group(1)) / 1e6 / duration * 100)))
                     try:
                         self.client.call("POST", f"/render/{spec['jobId']}/progress", {"progress": pr})  # renova a concessão
                     except (CentralUnavailable, CentralRejected):
@@ -158,11 +177,7 @@ class RenderWorker:
             timer.cancel()
             if proc.poll() is None:
                 proc.kill()
-        err = (proc.stderr.read() if proc.stderr else "")[-300:]
-        if rc != 0:
-            raise RenderError("tempo limite excedido" if rc < 0 else f"falha no FFmpeg: {err.strip()[-120:]}", retriable=rc < 0)
-        verify_output(out, spec["audioMode"], meta.duration, self.ffprobe)
-        return out
+        return rc, (proc.stderr.read() if proc.stderr else "")[-400:]
 
     def run_forever(self, stop: threading.Event, idle_s: float = 3.0) -> None:  # pragma: no cover - laço de produção
         fails = 0
