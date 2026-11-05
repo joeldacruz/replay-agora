@@ -1,0 +1,4 @@
+# Nome estável para a botoeira (Arduino Nano CH340). O CH340 NÃO tem número de série: identifique pela PORTA USB física.
+# Descubra o caminho com:  udevadm info -a -n /dev/ttyUSB0 | grep -E 'KERNELS|ATTRS\{idVendor\}|ATTRS\{idProduct\}'
+# Troque KERNELS=="1-1.2" pelo valor da SUA porta e mantenha o cabo sempre nessa porta.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", KERNELS=="1-1.2", SYMLINK+="replayagora/botoeira", GROUP="dialout", MODE="0660", ENV{ID_MM_DEVICE_IGNORE}="1"

@@ -1,0 +1,29 @@
+# Ambiente local sem dependências de produção. Uso: cp .env.example .env && docker compose up --build
+services:
+  api:
+    build: .
+    env_file: .env
+    ports: ["127.0.0.1:8000:8000"]
+    volumes: ["replay-data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8000/api/health"]
+      interval: 10s
+      retries: 5
+  worker:
+    build: .
+    env_file: .env
+    working_dir: /srv/replay/services/media-worker
+    command: ["python", "-m", "worker"]
+    volumes: ["replay-data:/data"]
+    depends_on:
+      api: { condition: service_healthy }
+  seed:
+    build: .
+    env_file: .env
+    profiles: ["seed"]
+    command: ["python", "-m", "app.seed"]
+    volumes: ["replay-data:/data"]
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  replay-data:

@@ -1,0 +1,23 @@
+{
+  "arena_tag": "arena01",
+  "data_dir": "/var/lib/replayagora",
+  "serial": [
+    {"name": "botoeira1", "mode": "serial", "port": "/dev/replayagora/botoeira", "baud": 9600}
+  ],
+  "courts": [
+    {
+      "key": "REPLAY_01", "label": "Quadra 01",
+      "camera": {"url": "rtsp://USUARIO:SENHA@IP-DA-CAMERA-01:554/CAMINHO", "transport": "tcp", "segment_s": 2, "buffer_s": 120},
+      "trigger": {"buttons": ["REPLAY_01"], "debounce_s": 0.3, "cooldown_s": 3},
+      "clip": {"pre_s": 15, "post_s": 5, "min_pre_s": 5, "min_post_s": 2, "mode": "copy"}
+    },
+    {
+      "key": "REPLAY_02", "label": "Quadra 02",
+      "camera": {"url": "rtsp://USUARIO:SENHA@IP-DA-CAMERA-02:554/CAMINHO", "transport": "tcp", "segment_s": 2, "buffer_s": 120},
+      "trigger": {"buttons": ["REPLAY_02"], "debounce_s": 0.3, "cooldown_s": 3},
+      "clip": {"pre_s": 15, "post_s": 5, "min_pre_s": 5, "min_post_s": 2, "mode": "copy"}
+    }
+  ],
+  "resources": {"max_ffmpeg": 1, "hwaccel": "none", "render_nice": 10, "pause_render_when_capture_lags": true},
+  "central": {"base_url": "https://CENTRAL.EXEMPLO", "node_id": "replayagora-srv01", "credentials_file": "/etc/replayagora/credentials.json"}
+}
