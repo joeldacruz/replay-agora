@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
@@ -248,11 +248,12 @@ def get_export_options(video_id: str, a: Auth = Depends(user_auth), db: Session 
 
 
 class ExportReq(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     audioMode: str | None = None
     musicId: str | None = Field(None, max_length=32)
     originalVolume: float | None = Field(None, ge=0, le=1.5)
     musicVolume: float | None = Field(None, ge=0, le=1.5)
-    applySponsors: bool = True
 
 
 @router.post("/videos/{video_id}/exports")
@@ -278,7 +279,8 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
             raise HTTPException(422, "faixa musical indisponível ou sem licença válida")
     ov = body.originalVolume if body.originalVolume is not None else arena.audio_original_volume
     mv = body.musicVolume if body.musicVolume is not None else arena.audio_music_volume
-    spec = policy.select_overlays(db, v) if body.applySponsors else []
+    # Patrocinadores sao politica da arena; o atleta nao pode remove-los no JSON.
+    spec = policy.select_overlays(db, v)
     ph = policy.params_hash(v.id, mode, music_id, ov, mv, spec)
 
     same = db.query(ExportJob).filter(ExportJob.user_id == a.user.id, ExportJob.params_hash == ph,
@@ -299,7 +301,7 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
             raise HTTPException(429, "limite diário de exportações da arena atingido")
 
     job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, audio_mode=mode, music_id=music_id,
-                    original_volume=ov, music_volume=mv, apply_sponsors=body.applySponsors,
+                    original_volume=ov, music_volume=mv, apply_sponsors=bool(spec),
                     overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec), params_hash=ph)
     db.add(job)
     db.flush()
