@@ -56,6 +56,18 @@ def test_filters_pagination(client, world, H):
 
 def test_play_range_and_secure_download(client, world, H):
     h = H("a_user")
+    # Um replay patrocinado nao pode expor sua origem ao atleta.
+    assert client.post(f"/api/videos/{world.A.pub}/download-link", headers=h).status_code == 409
+    assert client.get(f"/api/videos/{world.A.pub}/download", headers=h).status_code == 409
+    assert client.get(f"/api/videos/{world.A.pub}/play", headers=h).status_code == 409
+    # Sem campanha o player conserva o fluxo original com Range.
+    from app.db import SessionLocal
+    from app.models import SponsorCampaign
+    db = SessionLocal()
+    assert client.get(f"/media/{__import__('app.security', fromlist=['create_media_token']).create_media_token('video', world.A.pub, world.uid['a_user'], 'inline')}").status_code == 409
+    db.query(SponsorCampaign).filter_by(arena_id=world.A.id).delete()
+    db.commit()
+    db.close()
     url = client.get(f"/api/videos/{world.A.pub}/play", headers=h).json()["url"]
     assert url.startswith("/media/")
     full = client.get(url)
@@ -63,17 +75,7 @@ def test_play_range_and_secure_download(client, world, H):
     assert full.headers["cache-control"] == "private, no-store"
     part = client.get(url, headers={"Range": "bytes=0-99"})
     assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-range"].startswith("bytes 0-99/")
-    # Um replay com campanha nao pode ser baixado pelo endpoint de origem sem logo.
-    assert client.post(f"/api/videos/{world.A.pub}/download-link", headers=h).status_code == 409
-    assert client.get(f"/api/videos/{world.A.pub}/download", headers=h).status_code == 409
-    from app.routers.media import sign
-    from app.db import SessionLocal
-    from app.models import SponsorCampaign
-    db = SessionLocal()
-    assert client.get(sign("video", world.A.pub, world.uid["a_user"], "attachment")).status_code == 409
-    db.query(SponsorCampaign).filter_by(arena_id=world.A.id).delete()
-    db.commit()
-    db.close()
+
     dl = client.post(f"/api/videos/{world.A.pub}/download-link", headers=h).json()["url"]
     r = client.get(dl)
     assert r.status_code == 200 and f'filename="replay-{world.A.pub_code}.mp4"' in r.headers["content-disposition"]
@@ -86,7 +88,8 @@ def test_play_range_and_secure_download(client, world, H):
 
 
 def test_signed_url_expires_and_tampering_fails(client, world, H):
-    url = client.get(f"/api/videos/{world.A.pub}/play", headers=H("a_user")).json()["url"]
+    from app.routers.media import sign
+    url = sign("video", world.A.pub, world.uid["a_user"])
     token = url.split("/media/")[1]
     assert client.get(f"/media/{token[:-3]}abc").status_code == 403
     old = pyjwt.encode({"typ": "media", "k": "video", "rid": world.A.pub, "uid": world.uid["a_user"], "d": "inline", "exp": int(time.time()) - 5},
@@ -98,8 +101,9 @@ def test_signed_url_expires_and_tampering_fails(client, world, H):
 
 
 def test_deleted_video_link_dies(client, world, H):
-    url = client.get(f"/api/videos/{world.A.pub}/play", headers=H("a_user")).json()["url"]
-    assert client.get(url).status_code == 200
+    from app.routers.media import sign
+    url = sign("video", world.A.pub, world.uid["a_user"])
+    assert client.get(url).status_code == 409  # origem bloqueada por patrocínio
     r = client.delete(f"/api/arena/{world.A.id}/videos/{world.A.pub}?confirm=true", headers=H("a_admin_arena"))
     assert r.status_code == 204
     assert client.get(url).status_code == 404
