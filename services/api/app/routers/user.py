@@ -159,12 +159,16 @@ def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_
 @router.post("/videos/{video_id}/download-link")
 def download_link(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
+    if policy.select_overlays(db, v):
+        raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
     return {"url": sign("video", v.id, a.user.id, "attachment"), "expiresIn": settings.signed_url_ttl_s}
 
 
 @router.get("/videos/{video_id}/download")
 def download(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
+    if policy.select_overlays(db, v):
+        raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
     p = storage.path_for(v.storage_key)
     if not p.exists():
         raise HTTPException(404, "arquivo indisponível")
