@@ -32,5 +32,16 @@
 - Backend + worker: **88/88 testes locais aprovados** após mitigações; GitHub Actions `pytest` e Playwright E2E concluíram com sucesso no commit `55c165b`.
 - Docker: novo job `docker_smoke` constrói e inicia containers isolados para API + worker e verifica `/`, `/arena/`, `/portal/`, `/api/health`, `/api/docs`. Resultado: **success**.
 - Campanhas de patrocinadores: exportação do atleta sempre seleciona overlays aplicáveis pela arena; parâmetros de cliente tentando desativá-los são rejeitados. O botão de download direto do MP4 de origem é oculto/bloqueado para vídeos com campanhas ativas, inclusive por URL assinada em modo attachment.
-- **Pendência comercial importante:** player ainda pode transmitir o MP4 original. O bloqueio do download oficial não impede que mídia reproduzível seja salva por meios técnicos. Para garantir patrocínio no conteúdo exibido, será necessária uma prévia/stream patrocinado, com política definida pelo produto. Acompanhar issue #3.
+- **Proteção de patrocínio na reprodução implementada:** o player do atleta solicita prévia processada pelo FFmpeg (fila persistente, cache de versão da campanha); URLs do MP4 bruto são bloqueadas para atletas quando há campanhas ativas. A equipe autorizada da arena ainda pode ver a origem para operação interna. As prévias são separadas das exportações personalizadas e não consomem a cota diária de downloads. Exportações antigas são bloqueadas após troca de campanha; logo obrigatório ausente reprova o processamento.
+- **Limite inerente:** qualquer vídeo que um navegador consiga reproduzir também pode ser salvo/capturado pelo usuário, porém a versão assistida agora contém os patrocinadores. Não prometer DRM, prevenção absoluta de gravação de tela ou integridade contra edição externa.
 - Fora do escopo da homologação: servidor Linux local da arena, Arduino/RTSP reais, domínio público, upload de vídeos de jogadores, PostgreSQL e retenção automática.
+
+
+## Prévia patrocinada validada no PR #2 (05/11/2026 UTC)
+
+- Mudança de schema: Alembic `0002_preview_jobs.py` adiciona `purpose` ao `export_jobs`, com `server_default='export'` para preservar os registros anteriores; exige `alembic upgrade head` **antes** da atualização de API/worker em qualquer futuro deploy.
+- Aplicativo do atleta: cria prévia em `POST /api/videos/{id}/preview`; consulta `GET /api/previews/{id}` até o worker concluir; o player só recebe URL assinada do MP4 processado. Sem campanhas, continua reproduzindo o original autorizado.
+- Políticas de áudio da arena são respeitadas na prévia: áudio original se permitido e existente; caso contrário, vídeo mudo. A seleção de música autorizada continua no fluxo de exportação personalizada.
+- Segurança: links diretos de origem são negados para atletas quando há campanha; admins/operadores autorizados podem fazer inspeção operacional do original. URLs antigas de exportação/preview com versões de campanha inválidas são recusadas. Músicas e logos ausentes falham sem exportação silenciosamente incompleta.
+- **Validação:** `94 passed, 2 warnings` no runner do GitHub, E2E `20/20` e `docker_smoke` todos aprovados em https://github.com/joeldacruz/replay-agora/actions/runs/41947506835 (commit `9395c83`).
+- Ainda não homologado: câmera e acionamento real do Arduino, desempenho com duas quadras simultâneas, retenção dos arquivos de prévia/cache, PostgreSQL, operação 24×7 e revisão de termos/licenciamento.
