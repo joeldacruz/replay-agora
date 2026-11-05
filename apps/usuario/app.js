@@ -104,7 +104,7 @@ async function watch(p) {
 function exportForm(box, vid, v, opts) {
   if (!opts.modes.length) return mount(box, h('p', { class: 'muted' }, 'A arena não liberou exportação com áudio para este replay.'));
   const labels = { original: ['Som original', 'mantém o áudio captado na quadra'], music: ['Música', 'troca o som por uma faixa da arena'], mix: ['Mistura', 'som original + música'], mute: ['Mudo', 'sem áudio'] };
-  const state = { mode: opts.defaultMode, musicId: opts.defaultMusicId, ov: opts.originalVolume, mv: opts.musicVolume, sp: true };
+  const state = { mode: opts.defaultMode, musicId: opts.defaultMusicId, ov: opts.originalVolume, mv: opts.musicVolume };
   const musicSel = h('select', { 'aria-label': 'Música', onchange: (e) => (state.musicId = e.target.value) }, opts.tracks.map((t) => h('option', { value: t.id, selected: t.id === state.musicId }, `${t.title} — ${t.artist}`)));
   const vols = h('div');
   const radios = ['original', 'music', 'mix', 'mute'].map((m) => {
@@ -121,11 +121,11 @@ function exportForm(box, vid, v, opts) {
   const status = h('div');
   const go = h('button', { class: 'primary', onclick: async () => {
     go.disabled = true;
-    try { const j = await api.post(`/api/videos/${vid}/exports`, { audioMode: state.mode, musicId: (state.mode === 'music' || state.mode === 'mix') ? state.musicId : null, originalVolume: state.ov, musicVolume: state.mv, applySponsors: state.sp }); track(status, j); }
+    try { const j = await api.post(`/api/videos/${vid}/exports`, { audioMode: state.mode, musicId: (state.mode === 'music' || state.mode === 'mix') ? state.musicId : null, originalVolume: state.ov, musicVolume: state.mv }); track(status, j); }
     catch (e) { toast(e.message, true); } finally { go.disabled = false; }
   } }, 'Gerar vídeo');
   mount(box, h('div', { class: 'card' }, radios, field('Faixa', musicSel), vols,
-    h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => (state.sp = e.target.checked) }), 'Incluir logos dos patrocinadores da arena'), go), status);
+    h('p', { class: 'muted' }, 'Patrocinadores da arena são incluídos automaticamente nos vídeos exportados, conforme as campanhas vigentes.'), go), status);
   refresh();
 }
 
