@@ -88,18 +88,55 @@ async function home() {
 async function watch(p) {
   if (!(await ensureMe())) return;
   const v = await api.get('/api/videos/' + p.id);
-  const play = await api.get(`/api/videos/${p.id}/play`).catch(() => null);
   const opts = await api.get(`/api/videos/${p.id}/export-options`);
-  const exportBox = h('div');
+  const exportBox = h('div'), playerBox = h('div');
   mount(root, h('p', {}, h('a', { href: '#/' }, '← Voltar')), h('h1', {}, v.title),
-    play ? h('video', { src: play.url, controls: true, playsinline: true, poster: v.thumbnailUrl || null }) : h('p', { class: 'muted' }, 'Replay ainda em processamento.'),
-    h('p', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}` + (v.sponsors?.length ? ' · Patrocínio: ' + v.sponsors.join(', ') : '')),
+    playerBox,
+    h('p', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}` +
+      (v.sponsors?.length ? ' · Patrocínio: ' + v.sponsors.join(', ') : '')),
     h('div', { class: 'row-actions' },
-      v.sponsors?.length ? h('p', { class: 'muted' }, 'Para baixar, gere uma versão com os patrocinadores da arena abaixo.') :
-      h('button', { class: 'primary', onclick: async () => { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } }, '⬇ Baixar MP4 original'),
+      v.sponsors?.length
+        ? h('p', { class: 'muted' }, 'O vídeo exibido e as versões para download incluem os patrocinadores da arena.')
+        : h('button', { class: 'primary', onclick: async () => { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } }, '⬇ Baixar MP4 original'),
       h('button', { onclick: () => share(p.id, v) }, '↗ Compartilhar')),
     h('h2', {}, 'Baixar com som personalizado'), exportBox);
   exportForm(exportBox, p.id, v, opts);
+
+  let timer;
+  const initialHash = location.hash;
+  const stop = () => { if (location.hash !== initialHash) { clearTimeout(timer); return true; } return false; };
+  window.addEventListener('hashchange', () => clearTimeout(timer), { once: true });
+
+  function display(preview) {
+    if (stop()) return;
+    if (preview.status === 'ready' && preview.url) {
+      playerBox.replaceChildren(h('video', { src: preview.url, controls: true, playsinline: true, poster: v.thumbnailUrl || null }));
+      return;
+    }
+    if (preview.status === 'failed') {
+      playerBox.replaceChildren(h('p', { class: 'err' }, preview.error || 'Falha ao gerar a prévia patrocinada.'));
+      return;
+    }
+    playerBox.replaceChildren(h('p', { class: 'muted' }, 'Preparando prévia com patrocinadores… ' + (preview.progress || 0) + '%'));
+    if (preview.id) {
+      timer = setTimeout(async () => {
+        if (stop()) return;
+        try { display(await api.get(`/api/previews/${preview.id}`)); }
+        catch (e) { playerBox.replaceChildren(h('p', { class: 'err' }, e.message)); }
+      }, 1500);
+    }
+  }
+
+  try {
+    if (v.sponsors?.length) {
+      display(await api.post(`/api/videos/${p.id}/preview`));
+    } else {
+      const original = await api.get(`/api/videos/${p.id}/play`);
+      display({ status: 'ready', url: original.url });
+    }
+  } catch (e) {
+    playerBox.replaceChildren(h('p', { class: 'err' }, e.message || 'Não foi possível abrir o replay.'));
+  }
 }
 
 function exportForm(box, vid, v, opts) {
