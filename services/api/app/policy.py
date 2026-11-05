@@ -85,3 +85,12 @@ def spec_version(spec: list[dict]) -> str:
 def params_hash(video_id: str, mode: str, music_id: str | None, ov: float, mv: float, spec: list[dict]) -> str:
     raw = json.dumps([video_id, mode, music_id, round(ov, 2), round(mv, 2), spec], sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def export_matches_campaigns(db: Session, video: Video, job) -> bool:
+    """Evita distribuir versões antigas ou sem os patrocínios vigentes."""
+    current = select_overlays(db, video)
+    return (job.arena_id == video.arena_id
+            and job.video_id == video.id
+            and bool(job.apply_sponsors) == bool(current)
+            and (job.sponsor_template_version or "") == spec_version(current))
