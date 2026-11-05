@@ -366,6 +366,7 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
     if plan:
         today = db.query(func.count(ExportJob.id)).filter(
             ExportJob.user_id == a.user.id, ExportJob.arena_id == arena.id,
+            ExportJob.purpose == "export",
             ExportJob.created_at >= utcnow() - timedelta(days=1)).scalar()
         if today >= plan.max_exports_per_user_day:
             raise HTTPException(429, "limite diário de exportações da arena atingido")
