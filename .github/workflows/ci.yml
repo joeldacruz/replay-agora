@@ -24,4 +24,4 @@ jobs:
       - name: Build Docker, Compose e smoke HTTP isolados
         env:
           RUN_DOCKER_HOMOLOGACAO: SIM
-        run: scripts/docker-smoke.sh
+        run: bash scripts/docker-smoke.sh
