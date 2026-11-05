@@ -122,9 +122,12 @@ class SerialTrigger:
                 if len(text) > 40 or not LINE_OK.match(text):
                     self.garbled += 1
                     continue
+                # Várias linhas no mesmo read(): `ts` é a chegada do ÚLTIMO byte; as anteriores chegaram antes, cada byte leva
+                # 10 bits / baud. Isso dá a cada linha o seu próprio instante (e evita colisão da chave quadra+ms).
+                line_ts = ts - len(buf) * 10.0 / self.baud
                 self.lines += 1
-                self.last_line_at = ts
-                emit(text, f"serial:{self.name}", ts)
+                self.last_line_at = line_ts
+                emit(text, f"serial:{self.name}", line_ts)
 
     def stop(self) -> None:
         self.stop_flag.set()
