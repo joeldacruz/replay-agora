@@ -47,7 +47,7 @@ def serve(token: str, db: Session = Depends(get_db)):
             key, mime, name = v.thumb_key, "image/jpeg", f"replay-{v.code}.jpg"
     elif kind == "export":
         j = db.get(ExportJob, rid)
-        if not j or j.user_id != user.id or j.status != "ready" or not j.output_key:
+        if not j or (j.purpose != "preview" and j.user_id != user.id) or j.status != "ready" or not j.output_key:
             raise HTTPException(404, "não encontrado")
         v = db.get(Video, j.video_id)
         if not v or not can_view_video(db, user, v):
