@@ -17,3 +17,11 @@ jobs:
         run: |
           npm --prefix e2e install && npx --prefix e2e playwright install --with-deps chromium
           PY=$(which python) NODE_PATH=$PWD/e2e/node_modules scripts/e2e.sh
+  docker_smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker, Compose e smoke HTTP isolados
+        env:
+          RUN_DOCKER_HOMOLOGACAO: SIM
+        run: scripts/docker-smoke.sh
