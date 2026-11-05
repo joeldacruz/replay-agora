@@ -28,7 +28,7 @@ def test_courts_do_not_block_each_other(tmp_path):
     for i in range(5):                        # 5 replays rápidos na quadra 2 enquanto a 1 trabalha
         e.trigger("REPLAY_02", T0 + timedelta(seconds=10 * (i + 1)))
     t = time.perf_counter()
-    while e.workers["REPLAY_02"].q.unfinished_tasks and time.perf_counter() - t < 5:
+    while store.job_counts("REPLAY_02").get("done", 0) < 5 and time.perf_counter() - t < 5:
         time.sleep(0.01)
     assert e.workers["REPLAY_02"].completed == 5
     assert e.workers["REPLAY_01"].completed == 0 and e.workers["REPLAY_01"].processing  # ainda renderizando: não atrasou a 2
@@ -143,12 +143,15 @@ def test_unexpected_renderer_error_does_not_kill_court_worker(tmp_path):
             if Boom.n == 1:
                 raise RuntimeError("falha inesperada")
             return super().render(*a, **k)
-    e, _, store = make(tmp_path, renderer=Boom(size_bytes=1000))
-    e.trigger("REPLAY_01", T0)
+    e, _, store = make(tmp_path, renderer=Boom(size_bytes=1000), retry_backoff_s=0.0)
+    r1 = e.trigger("REPLAY_01", T0)
     e.trigger("REPLAY_01", T0 + timedelta(seconds=10))
     e.wait_idle(5)
     w = e.workers["REPLAY_01"]
-    assert (w.failed, w.completed, w.state) == (1, 1, "ok") and w.is_alive()
+    # falha transitória => nova tentativa automática: os dois replays saem, nada se perde
+    assert (w.failed, w.completed, w.state, w.retries) == (0, 2, "ok", 1) and w.is_alive()
+    assert [x["event"] for x in store.job_events(r1["localId"])] == ["queued", "started", "retry_scheduled", "started", "done"]
+    assert store.job(r1["localId"])["attempts"] == 2
     e.stop()
 
 
@@ -198,7 +201,7 @@ def test_shared_store_is_safe_under_concurrent_court_workers(tmp_path):
 
 
 def test_court_worker_survives_unexpected_error_outside_render(tmp_path):
-    e, _, store = make(tmp_path)
+    e, _, store = make(tmp_path, retry_backoff_s=0.0)
     real = store.usage
     calls = {"n": 0}
 
@@ -213,5 +216,5 @@ def test_court_worker_survives_unexpected_error_outside_render(tmp_path):
     e.trigger("REPLAY_01", T0 + timedelta(seconds=10))
     assert e.wait_idle(5)
     w = e.workers["REPLAY_01"]
-    assert w.is_alive() and w.completed == 1 and w.failed == 1
+    assert w.is_alive() and w.completed == 2 and w.failed == 0 and w.retries == 1
     e.stop()

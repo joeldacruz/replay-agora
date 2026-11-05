@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS replays(
   protected INTEGER NOT NULL DEFAULT 0, central_protected INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0,
   sync_state TEXT NOT NULL DEFAULT 'pending', sync_reason TEXT, synced_at TEXT, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_replays_sync ON replays(sync_state, created_at);
+CREATE TABLE IF NOT EXISTS jobs(
+  job_id TEXT PRIMARY KEY, court_key TEXT NOT NULL, captured_at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3,
+  last_error TEXT, next_attempt_at TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+CREATE INDEX IF NOT EXISTS ix_jobs_court_state ON jobs(court_key, state, created_at);
+CREATE TABLE IF NOT EXISTS job_events(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, ts TEXT NOT NULL, event TEXT NOT NULL, detail TEXT);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -100,6 +107,72 @@ class LocalStore:
         rows = self._x("SELECT local_id FROM replays WHERE court_key=? AND deleted=0 AND protected=0 AND central_protected=0 "
                        "AND captured_at<? ORDER BY captured_at", (court_key, cut)).fetchall()
         return [r[0] for r in rows]
+
+    # ----- fila persistente de acionamentos (estados: queued -> processing -> done | failed) -----
+    def _event(self, job_id: str, event: str, detail: str | None = None) -> None:
+        self._db.execute("INSERT INTO job_events(job_id,ts,event,detail) VALUES(?,?,?,?)", (job_id, _now(), event, detail))
+
+    def enqueue_job(self, job_id: str, court_key: str, captured_at: datetime, max_attempts: int = 3) -> bool:
+        """Idempotente: o mesmo job_id nunca entra duas vezes (mesmo após reinício)."""
+        with self._lock:
+            cur = self._db.execute("INSERT OR IGNORE INTO jobs(job_id,court_key,captured_at,max_attempts,created_at) VALUES(?,?,?,?,?)",
+                                   (job_id, court_key, captured_at.isoformat(), max_attempts, _now()))
+            if cur.rowcount == 1:
+                self._event(job_id, "queued")
+            return cur.rowcount == 1
+
+    def claim_job(self, court_key: str):
+        """Reivindicação atômica do job mais antigo ELEGÍVEL desta quadra (outras quadras nunca interferem)."""
+        with self._lock:
+            row = self._db.execute("SELECT * FROM jobs WHERE court_key=? AND state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?) "
+                                   "ORDER BY created_at, job_id LIMIT 1", (court_key, _now())).fetchone()
+            if not row:
+                return None
+            self._db.execute("UPDATE jobs SET state='processing', attempts=attempts+1, started_at=? WHERE job_id=?", (_now(), row["job_id"]))
+            self._event(row["job_id"], "started", f"tentativa {row['attempts'] + 1}")
+            return self._db.execute("SELECT * FROM jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+
+    def finish_job(self, job_id: str, state: str, error: str | None = None, retry_in_s: float | None = None) -> None:
+        with self._lock:
+            if state == "queued":  # nova tentativa agendada
+                nxt = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=retry_in_s or 0)).isoformat()
+                self._db.execute("UPDATE jobs SET state='queued', last_error=?, next_attempt_at=? WHERE job_id=?", (error, nxt, job_id))
+                self._event(job_id, "retry_scheduled", error)
+            else:
+                self._db.execute("UPDATE jobs SET state=?, last_error=?, finished_at=? WHERE job_id=?", (state, error, _now(), job_id))
+                self._event(job_id, state, error)
+
+    def recover_jobs(self) -> int:
+        """Após reinício inesperado: 'processing' órfão volta à fila (ou falha se esgotou tentativas)."""
+        with self._lock:
+            rows = self._db.execute("SELECT job_id, attempts, max_attempts FROM jobs WHERE state='processing'").fetchall()
+            for r in rows:
+                if r["attempts"] >= r["max_attempts"]:
+                    self._db.execute("UPDATE jobs SET state='failed', last_error='interrompido', finished_at=? WHERE job_id=?", (_now(), r["job_id"]))
+                    self._event(r["job_id"], "failed", "interrompido; tentativas esgotadas")
+                else:
+                    self._db.execute("UPDATE jobs SET state='queued', next_attempt_at=NULL WHERE job_id=?", (r["job_id"],))
+                    self._event(r["job_id"], "recovered", "reiniciado após interrupção")
+            return len(rows)
+
+    def job_counts(self, court_key: str | None = None) -> dict:
+        q, a = "SELECT state, COUNT(*) c FROM jobs", ()
+        if court_key:
+            q, a = q + " WHERE court_key=?", (court_key,)
+        return {r["state"]: r["c"] for r in self._x(q + " GROUP BY state", a).fetchall()}
+
+    def active_jobs(self) -> int:
+        return self._x("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','processing')").fetchone()[0]
+
+    def last_job_time(self, court_key: str) -> datetime | None:
+        r = self._x("SELECT MAX(captured_at) FROM jobs WHERE court_key=?", (court_key,)).fetchone()
+        return datetime.fromisoformat(r[0]) if r and r[0] else None
+
+    def job(self, job_id: str):
+        return self._x("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+
+    def job_events(self, job_id: str) -> list:
+        return self._x("SELECT ts,event,detail FROM job_events WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
 
     # ----- kv -----
     def kv_get(self, k: str, default: str | None = None) -> str | None:

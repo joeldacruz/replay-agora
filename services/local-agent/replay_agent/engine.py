@@ -1,11 +1,13 @@
-"""Motor de replay local: UMA fila e UM worker por quadra (quadras nunca bloqueiam umas às outras).
+"""Motor de replay local: UMA fila PERSISTENTE (SQLite) e UM worker por quadra.
 
-Limites de armazenamento são aplicados na CRIAÇÃO (recusa gerar quando estouraria o limite); nunca apaga arquivos.
-Funciona sem a API central: tudo que importa fica no LocalStore e é sincronizado depois.
+* Acionamentos são gravados no disco ANTES de qualquer processamento; reinício inesperado => `recover_jobs()`.
+* `job_id == local_id` (quadra + instante): não existe geração duplicada, nem após reinício ou reenvio.
+* Tentativas/erros/estados ficam registrados em `jobs` e `job_events`.
+* Limites de armazenamento são aplicados na CRIAÇÃO (recusa gerar); nunca apaga arquivos.
+* Funciona sem a API central.
 """
 import json
 import os
-import queue
 import shutil
 import statistics
 import threading
@@ -18,59 +20,87 @@ from .render import CameraDown, SimRenderer
 from .store import LocalStore
 
 
+class StorageRefused(Exception):
+    """Recusa por limite/disco: terminal (não adianta repetir sem mudar a configuração)."""
+
+
 class CourtWorker(threading.Thread):
     def __init__(self, engine: "Engine", court_key: str):
         super().__init__(name=f"court-{court_key}", daemon=True)
         self.engine, self.court_key = engine, court_key
-        self.q: queue.Queue = queue.Queue()
-        self.completed = self.failed = 0
+        self.wake = threading.Event()
+        self.stop_flag = False
         self.rejected_full = 0
+        self.retries = 0
         self.durations: deque[float] = deque(maxlen=500)
         self.state = "ok"
         self.last_error: str | None = None
         self.processing = False
 
     def run(self) -> None:
-        while True:
-            job = self.q.get()
-            if job is None:
-                self.q.task_done()
-                return
+        st = self.engine.store
+        while not self.stop_flag:
+            try:
+                job = st.claim_job(self.court_key)
+            except Exception:  # noqa: BLE001 - banco momentaneamente indisponível: tenta de novo
+                time.sleep(0.2)
+                continue
+            if not job:
+                self.wake.wait(0.2)  # acorda por trigger ou para pegar retentativas agendadas
+                self.wake.clear()
+                continue
             self.processing = True
             try:
-                self.engine._process(self, *job)
+                self.engine._process(self, job)
             except BaseException as e:  # noqa: BLE001 - o worker de uma quadra NUNCA pode morrer
-                self.failed, self.state, self.last_error = self.failed + 1, "degraded", f"worker:{type(e).__name__}"
+                self.engine._fail(self, job, f"worker:{type(e).__name__}", retriable=True)
             finally:
                 self.processing = False
-                self.q.task_done()
+
+    # contadores derivados do banco => sobrevivem a reinício
+    @property
+    def completed(self) -> int:
+        return self.engine.store.job_counts(self.court_key).get("done", 0)
+
+    @property
+    def failed(self) -> int:
+        return self.engine.store.job_counts(self.court_key).get("failed", 0)
 
     def stats(self) -> dict:
-        d = list(self.durations)
+        d, c = list(self.durations), self.engine.store.job_counts(self.court_key)
         p95 = sorted(d)[max(0, int(len(d) * 0.95) - 1)] if d else None
-        return {"courtKey": self.court_key, "state": self.state, "queueDepth": self.q.qsize() + (1 if self.processing else 0),
-                "completed": self.completed, "failed": self.failed, "lastRenderS": round(d[-1], 3) if d else None,
-                "avgRenderS": round(statistics.fmean(d), 3) if d else None, "p95RenderS": round(p95, 3) if p95 is not None else None,
-                "storageUsedBytes": self.engine.store.usage(self.court_key)}
+        return {"courtKey": self.court_key, "state": self.state, "queueDepth": c.get("queued", 0) + c.get("processing", 0),
+                "completed": c.get("done", 0), "failed": c.get("failed", 0), "retries": self.retries,
+                "lastRenderS": round(d[-1], 3) if d else None, "avgRenderS": round(statistics.fmean(d), 3) if d else None,
+                "p95RenderS": round(p95, 3) if p95 is not None else None, "storageUsedBytes": self.engine.store.usage(self.court_key)}
 
 
 class Engine:
     def __init__(self, arena_tag: str, root: Path, court_keys: list[str], store: LocalStore, renderer: SimRenderer,
-                 dedup_s: float = 3.0, disk_reserve_bytes: int = 0, max_queue: int = 50, pre: int = 15, post: int = 5):
+                 dedup_s: float = 3.0, disk_reserve_bytes: int = 0, max_queue: int = 50, pre: int = 15, post: int = 5,
+                 max_attempts: int = 3, retry_backoff_s: float = 2.0):
         self.arena_tag, self.root, self.store, self.renderer = arena_tag, Path(root), store, renderer
         self.dedup_s, self.disk_reserve, self.max_queue, self.pre, self.post = dedup_s, disk_reserve_bytes, max_queue, pre, post
+        self.max_attempts, self.retry_backoff_s = max_attempts, retry_backoff_s
         self.root.mkdir(parents=True, exist_ok=True)
         self.workers = {k: CourtWorker(self, k) for k in court_keys}
         self.arena_limit: int | None = None
         self.court_cfg: dict[str, dict] = {}
-        self._last_trigger: dict[str, datetime] = {}
         self._lock = threading.Lock()
         self.disk_usage = shutil.disk_usage  # injetável nos testes
         cached = store.kv_get("config")
         if cached:  # configuração em cache: o motor opera mesmo com a central fora do ar desde o boot
             self.apply_config(json.loads(cached), persist=False)
+        self.recovered = store.recover_jobs()  # reinício inesperado: retoma o que estava em andamento
+        self._clean_partials()
         for w in self.workers.values():
             w.start()
+
+    def _clean_partials(self) -> None:
+        """Remove SOMENTE arquivos parciais de execuções anteriores (pasta .tmp do próprio motor)."""
+        for k in self.workers:
+            for p in (self.root / k / ".tmp").glob("*.mp4"):
+                p.unlink(missing_ok=True)
 
     # ----- configuração -----
     def apply_config(self, cfg: dict, persist: bool = True) -> None:
@@ -92,15 +122,17 @@ class Engine:
             return {"accepted": False, "reason": "court_inactive"}
         at = at or datetime.now(timezone.utc).replace(tzinfo=None)
         with self._lock:
-            last = self._last_trigger.get(court_key)
+            last = self.store.last_job_time(court_key)  # debounce persistente: vale também após reinício
             if last and abs((at - last).total_seconds()) < self.dedup_s:
                 return {"accepted": False, "reason": "duplicate"}
-            if w.q.qsize() >= self.max_queue:
+            c = self.store.job_counts(court_key)
+            if c.get("queued", 0) + c.get("processing", 0) >= self.max_queue:
                 w.rejected_full += 1
                 return {"accepted": False, "reason": "queue_full"}
-            self._last_trigger[court_key] = at
-        local_id = f"{self.arena_tag}-{court_key}-{int(at.timestamp() * 1000)}"
-        w.q.put((local_id, at))
+            local_id = f"{self.arena_tag}-{court_key}-{int(at.timestamp() * 1000)}"
+            if not self.store.enqueue_job(local_id, court_key, at, self.max_attempts):
+                return {"accepted": False, "reason": "duplicate"}
+        w.wake.set()
         return {"accepted": True, "localId": local_id}
 
     # ----- armazenamento -----
@@ -119,32 +151,44 @@ class Engine:
         return None
 
     # ----- processamento (por worker de quadra) -----
-    def _process(self, w: CourtWorker, local_id: str, at: datetime) -> None:
+    def _fail(self, w: CourtWorker, job, reason: str, retriable: bool, state: str = "degraded") -> None:
+        w.state, w.last_error = state, reason
+        if retriable and job["attempts"] < job["max_attempts"]:
+            w.retries += 1
+            self.store.finish_job(job["job_id"], "queued", reason, retry_in_s=self.retry_backoff_s * job["attempts"])
+        else:
+            self.store.finish_job(job["job_id"], "failed", reason)
+
+    def _process(self, w: CourtWorker, job) -> None:
         t0 = time.perf_counter()
-        est = getattr(self.renderer, "size_bytes", 0)
-        why = self._check_storage(w.court_key, est)
-        if why:
-            w.failed, w.state, w.last_error = w.failed + 1, "storage_failure", why
-            return
+        local_id, at = job["job_id"], datetime.fromisoformat(job["captured_at"])
         cdir = self.root / w.court_key
-        tmp = cdir / ".tmp" / f"{local_id}.mp4"
         final = cdir / f"{local_id}.mp4"
+        existing = self.store.get(local_id)
+        if existing and final.is_file():  # já gerado (queda entre gravar e concluir): NÃO regenera
+            self.store.finish_job(local_id, "done")
+            return
+        why = self._check_storage(w.court_key, getattr(self.renderer, "size_bytes", 0))
+        if why:
+            return self._fail(w, job, why, retriable=False, state="storage_failure")
+        tmp = cdir / ".tmp" / f"{local_id}.mp4"
         try:
             tmp.parent.mkdir(parents=True, exist_ok=True)
             r = self.renderer.render(w.court_key, tmp, self.pre, self.post)
             os.replace(tmp, final)  # publicação atômica: nunca expõe arquivo parcial
             self.store.add_replay(local_id, w.court_key, at, str(final), r.bytes, r.duration, r.width, r.height, r.has_audio, r.codec)
-            w.completed += 1
+            self.store.finish_job(local_id, "done")
             w.state, w.last_error = "ok", None
             w.durations.append(time.perf_counter() - t0)
-        except CameraDown as e:
-            w.failed, w.state, w.last_error = w.failed + 1, "camera_down", f"camera:{e}"
-        except OSError as e:  # disco cheio/erro de escrita: remove só o PARCIAL que este job criou
+        except CameraDown as e:  # o trecho do buffer não volta: sem retentativa
             tmp.unlink(missing_ok=True)
-            w.failed, w.state, w.last_error = w.failed + 1, "storage_failure", f"io:{e.errno}"
+            self._fail(w, job, f"camera:{e}", retriable=False, state="camera_down")
+        except OSError as e:  # disco cheio/erro de escrita: remove só o PARCIAL deste job
+            tmp.unlink(missing_ok=True)
+            self._fail(w, job, f"io:{e.errno}", retriable=True, state="storage_failure")
         except Exception as e:  # noqa: BLE001 - um job ruim não pode matar o worker da quadra
             tmp.unlink(missing_ok=True)
-            w.failed, w.state, w.last_error = w.failed + 1, "degraded", type(e).__name__
+            self._fail(w, job, type(e).__name__, retriable=True)
 
     # ----- observabilidade / ciclo de vida -----
     def court_stats(self) -> list[dict]:
@@ -152,13 +196,13 @@ class Engine:
 
     def wait_idle(self, timeout: float = 60) -> bool:
         end = time.monotonic() + timeout
-        for w in self.workers.values():
-            while w.q.unfinished_tasks and time.monotonic() < end:
-                time.sleep(0.01)
-        return all(w.q.unfinished_tasks == 0 for w in self.workers.values())
+        while self.store.active_jobs() and time.monotonic() < end:
+            time.sleep(0.01)
+        return self.store.active_jobs() == 0
 
     def stop(self) -> None:
         for w in self.workers.values():
-            w.q.put(None)
+            w.stop_flag = True
+            w.wake.set()
         for w in self.workers.values():
             w.join(timeout=10)
