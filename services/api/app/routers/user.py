@@ -1,4 +1,5 @@
 """API do App do Usuário (atleta). Nenhum endpoint administrativo aqui."""
+import hashlib
 import json
 import secrets
 from datetime import timedelta
@@ -153,7 +154,72 @@ def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_
     v = _get_visible(db, a, video_id)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
+    if policy.select_overlays(db, v):
+        raise HTTPException(409, "Replay patrocinado: utilize a prévia processada")
     return {"url": sign("video", v.id, a.user.id), "expiresIn": settings.signed_url_ttl_s}
+
+
+def _preview_out(db: Session, job: ExportJob, uid: str) -> dict:
+    valid_file = bool(job.output_key and storage.path_for(job.output_key).is_file())
+    ready = job.status == "ready" and valid_file
+    return {"id": job.id, "status": job.status if ready or job.status != "ready" else "failed",
+            "progress": job.progress, "error": job.error if job.status == "failed" else None,
+            "url": sign("export", job.id, uid) if ready else None,
+            "sponsored": True}
+
+
+@router.post("/videos/{video_id}/preview")
+def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
+    """Gera uma prévia patrocinada sem consumir a cota diária de exportação."""
+    v = _get_visible(db, a, video_id)
+    if v.processing_status != "ready":
+        raise HTTPException(409, "replay ainda em processamento")
+    spec = policy.select_overlays(db, v)
+    if not spec:
+        return {"status": "ready", "url": sign("video", v.id, a.user.id), "sponsored": False}
+
+    # Se a arena desabilita som original, a prévia é muda. O atleta pode
+    # escolher uma trilha licenciada separadamente no editor de exportação.
+    arena = db.get(Arena, v.arena_id)
+    mode = "original" if v.has_audio and "original" in (arena.audio_allowed_modes or "").split(",") else "mute"
+    ov, mv = 1.0, 0.0
+    ph = hashlib.sha256(("preview:" + policy.params_hash(v.id, mode, None, ov, mv, spec)).encode()).hexdigest()
+    candidates = db.query(ExportJob).filter(
+        ExportJob.user_id == a.user.id, ExportJob.video_id == v.id,
+        ExportJob.purpose == "preview", ExportJob.params_hash == ph,
+        ExportJob.status.in_(("queued", "processing", "ready"))
+    ).order_by(ExportJob.created_at.desc()).all()
+    for old in candidates:
+        if old.status != "ready" or (old.output_key and storage.path_for(old.output_key).is_file()):
+            return _preview_out(db, old, a.user.id)
+
+    active = db.query(func.count(ExportJob.id)).filter(
+        ExportJob.user_id == a.user.id, ExportJob.status.in_(("queued", "processing"))
+    ).scalar()
+    if active >= settings.max_active_exports_per_user:
+        raise HTTPException(429, "limite de processamentos simultâneos; tente novamente")
+
+    job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id,
+                    purpose="preview", audio_mode=mode, music_id=None,
+                    original_volume=ov, music_volume=mv, apply_sponsors=True,
+                    overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec),
+                    params_hash=ph)
+    db.add(job)
+    db.flush()
+    audit.record(db, a.user.id, v.arena_id, "preview.create", "export", job.id)
+    db.commit()
+    return _preview_out(db, job, a.user.id)
+
+
+@router.get("/previews/{preview_id}")
+def preview_status(preview_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
+    job = db.get(ExportJob, preview_id)
+    if not job or job.user_id != a.user.id or job.purpose != "preview":
+        raise HTTPException(404, "prévia não encontrada")
+    v = _get_visible(db, a, job.video_id)
+    if policy.spec_version(policy.select_overlays(db, v)) != job.sponsor_template_version:
+        raise HTTPException(409, "Patrocínio atualizado: gere uma nova prévia")
+    return _preview_out(db, job, a.user.id)
 
 
 @router.post("/videos/{video_id}/download-link")
@@ -317,13 +383,13 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
 @router.get("/exports")
 def my_exports(a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     rows = (db.query(ExportJob, Video.code).join(Video, Video.id == ExportJob.video_id)
-            .filter(ExportJob.user_id == a.user.id).order_by(ExportJob.created_at.desc()).limit(50).all())
+            .filter(ExportJob.user_id == a.user.id, ExportJob.purpose == "export").order_by(ExportJob.created_at.desc()).limit(50).all())
     return [export_out(j, a.user.id, code) for j, code in rows]
 
 
 def _own_export(db: Session, a: Auth, export_id: str) -> ExportJob:
     j = db.get(ExportJob, export_id)
-    if not j or j.user_id != a.user.id:
+    if not j or j.user_id != a.user.id or j.purpose != "export":
         raise HTTPException(404, "exportação não encontrada")
     return j
 
@@ -339,6 +405,9 @@ def export_link(export_id: str, a: Auth = Depends(user_auth), db: Session = Depe
     j = _own_export(db, a, export_id)
     if j.status != "ready":
         raise HTTPException(409, "exportação ainda não está pronta")
+    v = _get_visible(db, a, j.video_id)
+    if not policy.export_matches_campaigns(db, v, j):
+        raise HTTPException(409, "Patrocinadores atualizados: gere uma nova versão")
     return {"url": sign("export", j.id, a.user.id, "attachment"), "expiresIn": settings.signed_url_ttl_s}
 
 
@@ -348,6 +417,8 @@ def export_download(export_id: str, a: Auth = Depends(user_auth), db: Session = 
     v = db.get(Video, j.video_id)
     if j.status != "ready" or not j.output_key or not video_visible_to(db, a.user, v):
         raise HTTPException(409, "exportação indisponível")
+    if not policy.export_matches_campaigns(db, v, j):
+        raise HTTPException(409, "Patrocinadores atualizados: gere uma nova versão")
     p = storage.path_for(j.output_key)
     if not p.exists():
         raise HTTPException(404, "arquivo indisponível")
