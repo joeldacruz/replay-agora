@@ -34,7 +34,12 @@ class SimRenderer:
         self._lock = threading.Lock()
         self.max_concurrent = 0
 
-    def render(self, court_key: str, dest: Path, pre: int, post: int) -> Rendered:
+    needs_buffer = False
+
+    def ready_at(self, court_key: str, at_epoch: float, post: float) -> float | None:
+        return None
+
+    def render(self, court_key: str, dest: Path, pre: int, post: int, at=None) -> Rendered:
         if not self.camera_up[court_key]:
             raise CameraDown(court_key)
         with self._lock:

@@ -84,6 +84,7 @@ class Engine:
         self.max_attempts, self.retry_backoff_s = max_attempts, retry_backoff_s
         self.root.mkdir(parents=True, exist_ok=True)
         self.workers = {k: CourtWorker(self, k) for k in court_keys}
+        self.policy: dict[str, dict] = {k: {"cooldown_s": dedup_s, "pre": pre, "post": post} for k in court_keys}   # por quadra
         self.arena_limit: int | None = None
         self.court_cfg: dict[str, dict] = {}
         self._lock = threading.Lock()
@@ -109,12 +110,22 @@ class Engine:
         if persist:
             self.store.kv_set("config", json.dumps(cfg))
 
+    def configure_court(self, court_key: str, cooldown_s: float | None = None, pre: int | None = None, post: int | None = None) -> None:
+        """Política independente por quadra (cooldown entre replays e janela pré/pós)."""
+        p = self.policy[court_key]
+        if cooldown_s is not None:
+            p["cooldown_s"] = cooldown_s
+        if pre is not None:
+            p["pre"] = pre
+        if post is not None:
+            p["post"] = post
+
     # ----- botoeira -----
     def on_serial_line(self, line: str, at: datetime | None = None) -> dict:
         """Equivalente ao leitor.py: a mensagem serial (REPLAY_01/REPLAY_02) é a chave da quadra."""
         return self.trigger(line.strip(), at)
 
-    def trigger(self, court_key: str, at: datetime | None = None) -> dict:
+    def trigger(self, court_key: str, at: datetime | None = None, source: str = "api", button: str | None = None) -> dict:
         w = self.workers.get(court_key)
         if not w:
             return {"accepted": False, "reason": "unknown_court"}
@@ -123,14 +134,14 @@ class Engine:
         at = at or datetime.now(timezone.utc).replace(tzinfo=None)
         with self._lock:
             last = self.store.last_job_time(court_key)  # debounce persistente: vale também após reinício
-            if last and abs((at - last).total_seconds()) < self.dedup_s:
+            if last and abs((at - last).total_seconds()) < self.policy[court_key]["cooldown_s"]:
                 return {"accepted": False, "reason": "duplicate"}
             c = self.store.job_counts(court_key)
             if c.get("queued", 0) + c.get("processing", 0) >= self.max_queue:
                 w.rejected_full += 1
                 return {"accepted": False, "reason": "queue_full"}
             local_id = f"{self.arena_tag}-{court_key}-{int(at.timestamp() * 1000)}"
-            if not self.store.enqueue_job(local_id, court_key, at, self.max_attempts):
+            if not self.store.enqueue_job(local_id, court_key, at, self.max_attempts, source=source, button=button):
                 return {"accepted": False, "reason": "duplicate"}
         w.wake.set()
         return {"accepted": True, "localId": local_id}
@@ -174,7 +185,8 @@ class Engine:
         tmp = cdir / ".tmp" / f"{local_id}.mp4"
         try:
             tmp.parent.mkdir(parents=True, exist_ok=True)
-            r = self.renderer.render(w.court_key, tmp, self.pre, self.post)
+            pol = self.policy[w.court_key]
+            r = self.renderer.render(w.court_key, tmp, pol["pre"], pol["post"], at)
             os.replace(tmp, final)  # publicação atômica: nunca expõe arquivo parcial
             self.store.add_replay(local_id, w.court_key, at, str(final), r.bytes, r.duration, r.width, r.height, r.has_audio, r.codec)
             self.store.finish_job(local_id, "done")

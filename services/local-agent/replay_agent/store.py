@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS job_events(
 CREATE TABLE IF NOT EXISTS renders(
   job_id TEXT PRIMARY KEY, local_id TEXT NOT NULL, path TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'done', purpose TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS trigger_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, source TEXT NOT NULL, button TEXT, court_key TEXT,
+  outcome TEXT, job_id TEXT, detail TEXT);
+CREATE INDEX IF NOT EXISTS ix_trigger_court ON trigger_log(court_key, ts);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -52,6 +56,10 @@ class LocalStore:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
             cols = {r["name"] for r in self._db.execute("PRAGMA table_info(replays)")}
+            jcols = {r["name"] for r in self._db.execute("PRAGMA table_info(jobs)")}
+            for col, ddl in (("source", "TEXT"), ("button", "TEXT")):
+                if col not in jcols:
+                    self._db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ddl}")
             if "file_ok" not in cols:  # bancos criados por versões anteriores
                 self._db.execute("ALTER TABLE replays ADD COLUMN file_ok INTEGER NOT NULL DEFAULT 1")
 
@@ -135,11 +143,12 @@ class LocalStore:
     def _event(self, job_id: str, event: str, detail: str | None = None) -> None:
         self._db.execute("INSERT INTO job_events(job_id,ts,event,detail) VALUES(?,?,?,?)", (job_id, _now(), event, detail))
 
-    def enqueue_job(self, job_id: str, court_key: str, captured_at: datetime, max_attempts: int = 3) -> bool:
+    def enqueue_job(self, job_id: str, court_key: str, captured_at: datetime, max_attempts: int = 3,
+                    source: str | None = None, button: str | None = None) -> bool:
         """Idempotente: o mesmo job_id nunca entra duas vezes (mesmo após reinício)."""
         with self._lock:
-            cur = self._db.execute("INSERT OR IGNORE INTO jobs(job_id,court_key,captured_at,max_attempts,created_at) VALUES(?,?,?,?,?)",
-                                   (job_id, court_key, captured_at.isoformat(), max_attempts, _now()))
+            cur = self._db.execute("INSERT OR IGNORE INTO jobs(job_id,court_key,captured_at,max_attempts,created_at,source,button) VALUES(?,?,?,?,?,?,?)",
+                                   (job_id, court_key, captured_at.isoformat(), max_attempts, _now(), source, button))
             if cur.rowcount == 1:
                 self._event(job_id, "queued")
             return cur.rowcount == 1
@@ -204,6 +213,32 @@ class LocalStore:
 
     def render(self, job_id: str):
         return self._x("SELECT * FROM renders WHERE job_id=?", (job_id,)).fetchone()
+
+    # ----- log durável de acionamentos (horário e origem de CADA acionamento) -----
+    def log_trigger(self, ts: float, source: str, button: str | None, court_key: str | None) -> int:
+        with self._lock:
+            cur = self._db.execute("INSERT INTO trigger_log(ts,source,button,court_key) VALUES(?,?,?,?)", (ts, source, button, court_key))
+            n = cur.lastrowid
+            if n % 500 == 0:  # mantém o log limitado (não são vídeos)
+                self._db.execute("DELETE FROM trigger_log WHERE id < ?", (n - 5000,))
+            return n
+
+    def set_trigger_outcome(self, tid: int, outcome: str, job_id: str | None = None, detail: str | None = None) -> None:
+        self._x("UPDATE trigger_log SET outcome=?, job_id=?, detail=? WHERE id=?", (outcome, job_id, detail, tid))
+
+    def pending_triggers(self) -> list:
+        return self._x("SELECT * FROM trigger_log WHERE outcome IS NULL AND court_key IS NOT NULL ORDER BY id").fetchall()
+
+    def recent_triggers(self, limit: int = 20, court_key: str | None = None) -> list:
+        if court_key:
+            return self._x("SELECT * FROM trigger_log WHERE court_key=? ORDER BY id DESC LIMIT ?", (court_key, limit)).fetchall()
+        return self._x("SELECT * FROM trigger_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    def trigger_outcomes(self, court_key: str | None = None) -> dict:
+        q, a = "SELECT COALESCE(outcome,'pending') o, COUNT(*) c FROM trigger_log", ()
+        if court_key:
+            q, a = q + " WHERE court_key=?", (court_key,)
+        return {r["o"]: r["c"] for r in self._x(q + " GROUP BY o", a).fetchall()}
 
     # ----- kv -----
     def kv_get(self, k: str, default: str | None = None) -> str | None:
