@@ -61,9 +61,9 @@ await step('usuário: exporta MÚDO (sem faixa de áudio) e baixa MP4', async ()
 await step('usuário: exporta MÚSICA e baixa MP4 com áudio', async () => { const s = await exportAndDownload(u, 'music'); assert.ok(s.includes('audio')); });
 await step('usuário: exporta MISTURA com volumes e baixa MP4', async () => { const s = await exportAndDownload(u, 'mix'); assert.ok(s.includes('audio') && s.includes('video')); });
 await step('usuário: exporta ORIGINAL e baixa MP4', async () => { const s = await exportAndDownload(u, 'original'); assert.ok(s.includes('audio')); });
-await step('usuário: download do MP4 original funciona', async () => {
-  const [dl] = await Promise.all([u.waitForEvent('download'), u.click('button:has-text("Baixar MP4 original")')]);
-  assert.match(dl.suggestedFilename(), /^replay-[A-Z0-9]+\.mp4$/);
+await step('usuário: só pode exportar replays com patrocinadores', async () => {
+  assert.equal(await u.locator('button:has-text("Baixar MP4 original")').count(), 0);
+  assert.ok((await u.locator('body').innerText()).includes('Patrocinadores da arena'));
 });
 await shot(u, 'usuario-exports-antes');
 await step('usuário: "Meus downloads" lista as exportações prontas', async () => {
