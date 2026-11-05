@@ -44,6 +44,19 @@ class Settings:
         self.login_window_s = _env_int("LOGIN_WINDOW_S", 300)
         self.ffmpeg_bin = os.environ.get("FFMPEG_BIN", "ffmpeg")
         self.ffprobe_bin = os.environ.get("FFPROBE_BIN", "ffprobe")
+        # Agentes locais / multiarena
+        self.agent_heartbeat_s = _env_int("AGENT_HEARTBEAT_S", 30)
+        self.agent_sync_batch_max = _env_int("AGENT_SYNC_BATCH_MAX", 200)
+        self.storage_sample_min_interval_s = _env_int("STORAGE_SAMPLE_MIN_INTERVAL_S", 60)
+        # Legado: o agente enviava o MP4 à API. O novo contrato mantém o vídeo na arena; desligar em produção.
+        self.allow_agent_video_upload = os.environ.get("ALLOW_AGENT_VIDEO_UPLOAD", "true").lower() in ("1", "true", "yes")
+        # Redundância da API central (preparação): somente o nó 'primary' aceita escrita de agentes.
+        # 'epoch' é um token de fencing: sobe a cada promoção do reserva; agentes recusam/ignoram nó com epoch menor.
+        self.node_id = os.environ.get("NODE_ID", "central-1")
+        self.node_role = os.environ.get("NODE_ROLE", "primary")
+        if self.node_role not in ("primary", "standby"):
+            raise RuntimeError("NODE_ROLE deve ser 'primary' ou 'standby'")
+        self.central_epoch = _env_int("CENTRAL_EPOCH", 1)
         self.frontend_dir = Path(os.environ.get("FRONTEND_DIR", str(REPO_ROOT)))
 
 

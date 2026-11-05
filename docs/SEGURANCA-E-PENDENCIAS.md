@@ -54,3 +54,13 @@
 - Limpeza conservadora: `PYTHONPATH=services/api python -m app.retention --days 7 --limit 200` apenas informa elegíveis (**dry-run**). A remoção efetiva requer **ação explícita**, `--apply --confirm PREVIEWS_ONLY`. Remove exclusivamente jobs de prévia `ready`/`failed` cujo processamento terminou há mais de N dias; recusa chaves fora do diretório esperado e preserva vídeos originais, músicas, logos e jobs ativos. Não existe limpeza automática instalada.
 - O prazo da rotina de teste é **7 dias após processamento**, não a última visualização: frequência de leitura não renova o TTL. Para produção, revisar e implementar política de `last_accessed_at`, cotas de disco por arena, limpeza de exportações personalizadas e vídeos brutos conforme regras de retenção/consentimento.
 - Pendências: benchmark de 50 requisições HTTP não equivale a 50 transcodificações simultâneas. Para produção 24×7, ainda faltam teste de carga real, fila justa por arena, observabilidade, PostgreSQL, uso de CPU/armazenamento e homologação RTSP/Arduino. Não rodar o utilitário nos servidores ativos sem procedimento de backup e autorização.
+
+
+## Multiarena, armazenamento e agentes — etapa simulada (branch do PR #2)
+
+- **Migração `0004_multiarena_capacity.py`** (aplicar **antes** do deploy da API; rollback `alembic downgrade 0003`, preserva vídeos). Nenhuma coluna existente foi alterada; legado vira `storage_location='central'`.
+- **Novos endpoints:** `/api/agent/v1/*` (agente), `/api/arena/{id}/{storage,runtime,storage-policy,courts/{cid}/storage-policy,videos/{vid}/protection,retention/plan}` (gestor/operador da própria arena) e `/api/platform/{capacity,arenas/{id}/capacity,arenas/{id}/storage-limit,agents/connections}` (global_admin + MFA). Todos cobertos por testes de IDOR/papéis.
+- **Preservados e verificados:** cache de prévias patrocinadas, URLs assinadas, regras de retenção de prévias (`app.retention`, dry-run), upload legado de agente, E2E de navegador (20/20).
+- **Testes:** 157 passando localmente (100 anteriores + 57 novos: contrato do agente, isolamento multiarena, limites/previsão/retenção, motor local, queda/reconexão, failover/fencing, migração, benchmark). o workflow de CI foi configurado para executar também `scripts/simulate_fleet.py` (ainda não executado no GitHub).
+- **Sem remoção automática de arquivos reais:** `autoDelete:false` na config; plano de retenção é dry-run; proteção é respeitada duas vezes (central e agente).
+- **Pendências desta etapa:** ver §8 de CAPACIDADE-E-ARMAZENAMENTO.md (entrega do MP4 local ao app, fila local em memória, sem thumbnail, sem mTLS, SQLite) e ALTA-DISPONIBILIDADE.md (failover real não implementado). **Nada foi homologado com câmeras, Arduino ou servidores reais.**

@@ -92,6 +92,8 @@ def _code(db: Session) -> str:
 async def ingest_video(file: UploadFile = File(...), idempotencyKey: str = Form(..., min_length=8, max_length=120),
                        courtKey: str = Form(..., pattern=r"^[A-Za-z0-9_\-]{1,60}$"), capturedAt: datetime | None = Form(None),
                        ag: ArenaAgent = Depends(agent_auth), db: Session = Depends(get_db)):
+    if not settings.allow_agent_video_upload:
+        raise HTTPException(410, "envio de vídeo à central desativado: o MP4 permanece na arena; use /api/agent/v1/sync/replays")
     ct = _court(db, ag, courtKey)
     ev = db.query(ReplayEvent).filter_by(arena_id=ag.arena_id, idempotency_key=idempotencyKey).first()
     if ev and ev.court_id != ct.id:
@@ -142,5 +144,6 @@ class Heartbeat(BaseModel):
 @router.post("/heartbeat")
 def heartbeat(body: Heartbeat, ag: ArenaAgent = Depends(agent_auth), db: Session = Depends(get_db)):
     ag.agent_version, ag.pending_sync = body.version, body.pendingSync
+    ag.last_heartbeat_at = utcnow()
     db.commit()
     return {"ok": True}

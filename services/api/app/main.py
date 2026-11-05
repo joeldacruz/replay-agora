@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import arena, auth, ingest, media, platform, user
+from .routers import agent, arena, arena_capacity, auth, ingest, media, platform, platform_capacity, user
 
 CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -23,11 +23,16 @@ def create_app() -> FastAPI:
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.url.path.startswith("/api/agent/v1"):  # também em respostas de erro (503 do reserva, 409 de fencing)
+            resp.headers["X-Central-Epoch"] = str(settings.central_epoch)
+            resp.headers["X-Central-Role"] = settings.node_role
+            resp.headers["X-Central-Node"] = settings.node_id
         if not request.url.path.startswith("/api/docs"):
             resp.headers.setdefault("Content-Security-Policy", CSP)
         return resp
 
-    for r in (auth.router, user.router, arena.router, platform.router, ingest.router, media.router):
+    for r in (auth.router, user.router, arena.router, arena_capacity.router, platform.router, platform_capacity.router,
+              ingest.router, agent.router, media.router):
         app.include_router(r)
 
     @app.get("/api/health")

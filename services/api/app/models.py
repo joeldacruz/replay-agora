@@ -58,6 +58,10 @@ class Arena(Base):
     audio_music_volume: Mapped[float] = mapped_column(Float, default=0.6)
     # modos que a arena oferece ao atleta (csv de AUDIO_MODES); o atleta escolhe dentro deles
     audio_allowed_modes: Mapped[str] = mapped_column(String(60), default="original,music,mix,mute")
+    # Armazenamento: override do plano (definido SOMENTE pelo portal) e limiares de alerta (definidos pela arena)
+    storage_limit_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_warn_pct: Mapped[int] = mapped_column(Integer, default=80)
+    storage_critical_pct: Mapped[int] = mapped_column(Integer, default=95)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -86,6 +90,7 @@ class Court(Base):
     camera_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)  # referência, nunca URL com senha
     button_ref: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ex.: D2
     retention_days: Mapped[int] = mapped_column(Integer, default=30)
+    storage_limit_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)  # limite da quadra (≤ limite da arena)
     visibility: Mapped[str] = mapped_column(String(20), default="arena")  # padrão para novos replays
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -101,7 +106,43 @@ class ArenaAgent(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     agent_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     pending_sync: Mapped[int] = mapped_column(Integer, default=0)
+    # Registro do computador da arena: o token fica vinculado ao primeiro node_id (evita clonagem silenciosa)
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hostname: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    registered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    config_ack: Mapped[str | None] = mapped_column(String(40), nullable=True)  # configVersion aplicado pelo agente
+    system_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # CPU/memória/disco do último heartbeat
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class CourtRuntime(Base):
+    """Última telemetria reportada pelo motor local para UMA quadra (sem caminhos nem segredos)."""
+    __tablename__ = "court_runtime"
+    court_id: Mapped[str] = mapped_column(ForeignKey("courts.id", ondelete="CASCADE"), primary_key=True)
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
+    state: Mapped[str] = mapped_column(String(20), default="ok")  # ok|degraded|storage_failure|camera_down
+    queue_depth: Mapped[int] = mapped_column(Integer, default=0)
+    completed_total: Mapped[int] = mapped_column(Integer, default=0)
+    failed_total: Mapped[int] = mapped_column(Integer, default=0)
+    last_render_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_render_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p95_render_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_used_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class StorageSample(Base):
+    """Série temporal de uso (arena inteira quando court_id é NULL) para previsão de esgotamento."""
+    __tablename__ = "storage_samples"
+    __table_args__ = (Index("ix_samples_arena_court_ts", "arena_id", "court_id", "ts"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"))
+    court_id: Mapped[str | None] = mapped_column(ForeignKey("courts.id", ondelete="CASCADE"), nullable=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    used_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    disk_free_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    disk_total_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class ReplayEvent(Base):
@@ -125,7 +166,8 @@ class ReplayEvent(Base):
 
 class Video(Base):
     __tablename__ = "videos"
-    __table_args__ = (Index("ix_videos_arena_created", "arena_id", "created_at"),)
+    __table_args__ = (Index("ix_videos_arena_created", "arena_id", "created_at"),
+                      UniqueConstraint("arena_id", "local_id", name="uq_videos_arena_local_id"))
     id: Mapped[str] = _id()
     arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"))
     court_id: Mapped[str] = mapped_column(ForeignKey("courts.id", ondelete="CASCADE"), index=True)
@@ -146,6 +188,10 @@ class Video(Base):
     captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 'central' = arquivo no storage da API (legado/simulado); 'agent' = só metadados aqui, o MP4 fica no computador da arena
+    storage_location: Mapped[str] = mapped_column(String(10), default="central")
+    local_id: Mapped[str | None] = mapped_column(String(120), nullable=True)  # id estável gerado pelo motor local (idempotência)
+    protected: Mapped[bool] = mapped_column(Boolean, default=False)  # protegido contra qualquer exclusão/retenção
 
 
 class VideoAccess(Base):

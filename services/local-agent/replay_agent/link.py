@@ -1,0 +1,103 @@
+"""Ligação com a central: registro, heartbeat, config, sincronização idempotente de metadados.
+
+Regras: (1) nunca envia arquivo; (2) falha da central NUNCA interrompe o motor; (3) reenvio é sempre seguro;
+(4) troca de epoch (failover) => revalida registro e reenvia a janela recente (a central deduplica por localId).
+"""
+import json
+import random
+import threading
+
+from .client import CentralClient, CentralRejected, CentralUnavailable
+from .engine import Engine
+from .metrics import SystemSampler
+from .store import LocalStore
+
+VERSION = "0.1.0-sim"
+
+
+class CentralLink:
+    def __init__(self, client: CentralClient, store: LocalStore, engine: Engine, hostname: str = "sim-host",
+                 sampler: SystemSampler | None = None, batch: int = 100, resync_hours: int = 24):
+        self.client, self.store, self.engine = client, store, engine
+        self.hostname, self.sampler, self.batch, self.resync_hours = hostname, sampler, batch, resync_hours
+        self.registered = False
+        self.state = "offline"          # online|offline|rejected
+        self.last_error: str | None = None
+        self.fail_streak = 0
+        self.config_version = ""
+
+    # ----- passos -----
+    def _register(self) -> None:
+        r = self.client.call("POST", "/register", {"nodeId": self.client.node_id, "hostname": self.hostname, "version": VERSION,
+                                                   "courts": list(self.engine.workers)})
+        self.registered = True
+        self._apply(r["config"])
+
+    def _apply(self, cfg: dict) -> None:
+        self.engine.apply_config(cfg)
+        self.config_version = cfg["configVersion"]
+
+    def _heartbeat(self) -> dict:
+        body = {"version": VERSION, "configVersion": self.config_version, "pendingSync": self.store.count("pending"),
+                "system": self.sampler.sample() if self.sampler else {}, "courts": self.engine.court_stats()}
+        return self.client.call("POST", "/heartbeat", body)
+
+    def _sync(self) -> int:
+        sent = 0
+        while True:
+            rows = self.store.pending(self.batch)
+            if not rows:
+                return sent
+            items = [{"localId": r["local_id"], "courtKey": r["court_key"], "capturedAt": r["captured_at"] + "Z",
+                      "durationS": r["duration"], "bytes": r["bytes"], "width": r["width"] or 0, "height": r["height"] or 0,
+                      "hasAudio": bool(r["has_audio"]), "videoCodec": r["codec"], "protected": bool(r["protected"])} for r in rows]
+            res = self.client.call("POST", "/sync/replays", {"replays": items})
+            by_id = {x["localId"]: x for x in res["results"]}
+            for r in rows:  # só marca o que a central CONFIRMOU; o resto continua pendente
+                x = by_id.get(r["local_id"])
+                if not x:
+                    continue
+                if x["status"] in ("created", "duplicate"):
+                    self.store.mark(r["local_id"], "synced")
+                else:
+                    self.store.mark(r["local_id"], "rejected", x.get("reason"))
+            sent += len(rows)
+            if not any(by_id.get(r["local_id"]) for r in rows):
+                return sent
+
+    def tick(self) -> dict:
+        """Um ciclo completo. Retorna o resultado; nunca propaga erro de rede."""
+        try:
+            if not self.registered:
+                self._register()
+            hb = self._heartbeat()
+            if self.client.epoch_changed:  # failover detectado
+                self.client.epoch_changed = False
+                self.registered = False
+                self._register()
+                self.store.requeue_recent(self.resync_hours)
+            if hb.get("configChanged"):
+                self._apply(self.client.call("GET", "/config"))
+            self.store.set_central_protected(self.client.call("GET", "/sync/protection")["localIds"])
+            synced = self._sync()
+            self.state, self.last_error, self.fail_streak = "online", None, 0
+            return {"online": True, "synced": synced, "pending": self.store.count("pending")}
+        except CentralUnavailable as e:
+            self.state, self.last_error = "offline", str(e)
+            self.fail_streak += 1
+            return {"online": False, "error": str(e), "pending": self.store.count("pending")}
+        except CentralRejected as e:
+            self.state, self.last_error = "rejected", str(e)
+            self.fail_streak += 1
+            return {"online": False, "error": str(e), "pending": self.store.count("pending")}
+
+    def backoff_s(self, base: float = 2.0, cap: float = 120.0) -> float:
+        return min(cap, base * (2 ** min(self.fail_streak, 10))) * random.uniform(0.8, 1.2) if self.fail_streak else base
+
+    def run_forever(self, stop: threading.Event, interval_s: float = 30.0) -> None:  # pragma: no cover - laço de produção
+        while not stop.is_set():
+            self.tick()
+            stop.wait(interval_s if self.state == "online" else self.backoff_s())
+
+    def summary(self) -> str:
+        return json.dumps({"state": self.state, "pending": self.store.count("pending"), "error": self.last_error})

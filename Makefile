@@ -1,4 +1,4 @@
-.PHONY: setup test e2e dev seed migrate
+.PHONY: setup test e2e dev seed migrate simulate-fleet
 PY=.venv/bin/python
 setup:
 	python3 -m venv .venv && .venv/bin/pip install -r services/api/requirements-dev.txt
@@ -13,3 +13,5 @@ seed:
 dev:
 	@echo "Terminal 1: make migrate && make seed && PYTHONPATH=services/api:services/media-worker $(PY) -m uvicorn app.main:app --reload"
 	@echo "Terminal 2: PYTHONPATH=services/api:services/media-worker $(PY) -m worker"
+simulate-fleet:
+	$(PY) scripts/simulate_fleet.py --arenas 4 --courts 2 --rounds 6 --renderer ffmpeg --outage

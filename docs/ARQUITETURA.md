@@ -11,7 +11,8 @@ apps/portal-dev/   Portal do Desenvolvedor (desktop)         -> servido em  /por
 packages/ui/       CSS + utilitários JS compartilhados       -> servido em  /shared/
 services/api/      FastAPI + SQLAlchemy + Alembic (RBAC multiarenas, URLs assinadas, ingestão)
 services/media-worker/  Worker FFmpeg (fila persistente no banco)
-scripts/           simulate_arena.py (motor local simulado), e2e.sh
+services/local-agent/  Motor local SIMULADO por arena (fila por quadra, store local, sincronização) — referência do contrato
+scripts/           simulate_arena.py (legado), simulate_fleet.py (frota multiarena), e2e.sh
 e2e/               E2E de navegador (Playwright)
 ```
 
@@ -59,3 +60,8 @@ Sem áudio original: `original`/`mix` são recusados (422) e a interface desabil
 ## Modelo de dados
 
 `users, plans, arenas, arena_memberships, courts, arena_agents, replay_events, videos, video_access, share_links, sponsors, sponsor_campaigns, music_tracks, export_jobs, audit_log` — migração `0001` (Alembic). Cotas vêm do plano (`max_courts`, `max_storage_mb`, `max_exports_per_user_day`). A tabela `arena_quotas` sugerida na especificação foi substituída por `plans` + `arenas.plan_id`.
+
+
+## Multiarena, agentes e capacidade (etapa posterior)
+
+Cada computador de arena roda seu próprio motor (captura, buffer, geração) e **mantém os MP4**; a API guarda só metadados via `/api/agent/v1` (register, heartbeat, config, sync idempotente, plano de retenção). Tabelas novas (migração `0004`): `court_runtime`, `storage_samples`; colunas em `arenas` (limite/limiares), `courts` (limite), `arena_agents` (node, heartbeat, telemetria) e `videos` (`storage_location`, `local_id`, `protected`). Veja [CAPACIDADE-E-ARMAZENAMENTO.md](CAPACIDADE-E-ARMAZENAMENTO.md) e [ALTA-DISPONIBILIDADE.md](ALTA-DISPONIBILIDADE.md).

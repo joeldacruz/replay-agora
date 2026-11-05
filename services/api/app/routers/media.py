@@ -37,6 +37,8 @@ def serve(token: str, db: Session = Depends(get_db)):
         if not v or not can_view_video(db, user, v):
             raise HTTPException(404, "não encontrado")
         arena_id = v.arena_id
+        if kind == "video" and v.storage_location == "agent":
+            raise HTTPException(409, "O MP4 está no computador da arena; a entrega ao app depende da integração local (pendente)")
         if kind == "video":
             # Nunca entregar o video bruto ao atleta quando houver campanha.
             # Equipe autorizada pode acessar a origem somente pelo painel da arena.

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, policy, storage
+from .. import audit, capacity, policy, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..deps import ArenaCtx, ArenaGate
@@ -672,7 +672,8 @@ class AgentIn(BaseModel):
 def list_agents(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
     rows = db.query(ArenaAgent).filter_by(arena_id=c.arena.id).order_by(ArenaAgent.created_at).all()
     return [{"id": a.id, "label": a.label, "active": a.active, "lastSeenAt": iso(a.last_used_at), "version": a.agent_version,
-             "pendingSync": a.pending_sync} for a in rows]
+             "pendingSync": a.pending_sync, "connectionState": capacity.connection_state(a),
+             "hostname": a.hostname} for a in rows]
 
 
 @router.post("/agents", status_code=201)

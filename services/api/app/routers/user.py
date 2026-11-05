@@ -36,6 +36,12 @@ def _get_visible(db: Session, a: Auth, video_id: str) -> Video:
     return v
 
 
+def _require_central_file(v: Video) -> None:
+    """Replays sincronizados pelo motor local só têm metadados na central (o MP4 fica na arena)."""
+    if v.storage_location == "agent":
+        raise HTTPException(409, "O MP4 está no computador da arena; renderização/entrega dependem da integração local (pendente)")
+
+
 # ---------- arenas / quadras ----------
 @router.get("/arenas")
 def my_arenas(a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
@@ -173,6 +179,7 @@ def _preview_out(db: Session, job: ExportJob, uid: str) -> dict:
 def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     """Gera uma prévia patrocinada sem consumir a cota diária de exportação."""
     v = _get_visible(db, a, video_id)
+    _require_central_file(v)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
     spec = policy.select_overlays(db, v)
@@ -253,6 +260,8 @@ def download_link(video_id: str, a: Auth = Depends(user_auth), db: Session = Dep
 @router.get("/videos/{video_id}/download")
 def download(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
+    if v.storage_location == "agent":
+        raise HTTPException(409, "O MP4 está no computador da arena; entrega pendente de integração local")
     if policy.select_overlays(db, v):
         raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
     p = storage.path_for(v.storage_key)
@@ -349,6 +358,7 @@ class ExportReq(BaseModel):
 @router.post("/videos/{video_id}/exports")
 def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
+    _require_central_file(v)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
     arena = db.get(Arena, v.arena_id)

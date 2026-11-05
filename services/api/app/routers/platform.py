@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, capacity
 from ..db import get_db, utcnow
 from ..deps import Auth, platform_auth
 from ..models import (AuditLog, Arena, ArenaAgent, Court, ExportJob, Membership, Plan, ReplayEvent, User, Video)
@@ -219,7 +219,8 @@ def agents(a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     now = utcnow()
     return [{"id": g.id, "arena": name, "arenaId": g.arena_id, "label": g.label, "active": g.active,
              "lastSeenAt": iso(g.last_used_at), "version": g.agent_version, "pendingSync": g.pending_sync,
-             "online": bool(g.active and g.last_used_at and (now - g.last_used_at).total_seconds() < 300)} for g, name in rows]
+             "online": bool(g.active and g.last_used_at and (now - g.last_used_at).total_seconds() < 300),
+             "connectionState": capacity.connection_state(g, now)} for g, name in rows]
 
 
 @router.get("/status")

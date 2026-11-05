@@ -56,6 +56,10 @@ Rollback/limpeza local: apague `var/` (banco e mídia de desenvolvimento) ou rod
 
 Arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) · Integração futura com Arduino/RTSP: [docs/INTEGRACAO-LOCAL.md](docs/INTEGRACAO-LOCAL.md).
 
+## Multiarena e armazenamento (simulado)
+
+Motor local por arena (simulado em `services/local-agent`), API só com metadados, limites de armazenamento, previsão de esgotamento, retenção em dry-run e compatibilidade com a futura redundância da central: [capacidade](docs/CAPACIDADE-E-ARMAZENAMENTO.md) · [alta disponibilidade](docs/ALTA-DISPONIBILIDADE.md). Rode `make simulate-fleet`. **Não homologado com câmeras, Arduino ou servidores reais.**
+
 ## Documentação para Claude
 
 - [CLAUDE.md](CLAUDE.md): instruções de execução do agente.
