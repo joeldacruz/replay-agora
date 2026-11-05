@@ -255,7 +255,9 @@ class SegmentRecorder(threading.Thread):
         except OSError as e:
             self.last_error = f"não foi possível iniciar o FFmpeg: {type(e).__name__}"
             return 0.0
-        self.state, self.started_at = "connecting", self.clock()
+        if self.state not in ("down", "reconnecting"):        # "down" só sai quando houver quadros de novo (sem piscar)
+            self.state = "connecting"
+        self.started_at = self.clock()
         self.last_out_us = -1
         last_change = time.monotonic()
         last_out = -1

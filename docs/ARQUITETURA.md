@@ -69,3 +69,7 @@ Cada computador de arena roda seu próprio motor (captura, buffer, geração) e 
 ## Entrega, renderização local e segurança do agente (etapa posterior)
 
 O MP4 e as saídas renderizadas permanecem na arena; a central valida o link assinado e **repassa** trechos buscados pelo agente por conexão de saída (relay), sem armazená-los. Prévias/exportações de vídeos da arena são renderizadas pelo agente (`render_location='agent'`). Migrações `0005` (credenciais/assinatura/nonces), `0006` (relay, `media_state`) e `0007` (render no agente). Fila de acionamentos persistente no agente. Ver [ENTREGA-E-SEGURANCA-DO-AGENTE.md](ENTREGA-E-SEGURANCA-DO-AGENTE.md).
+
+## Motor real: captura, acionamento e diagnóstico (etapa posterior)
+
+`replay_agent` ganhou captura RTSP por segmentos (`capture.py`), corte a partir do instante do acionamento (`clipper.py`), leitura serial REPLAY (`triggers.py`), configuração por quadra (`config.py`), governança de recursos (`resources.py`), diagnóstico (`diagnostics.py`) e serviço único (`service.py`). Migrações `0008` (recursos por arena) e `0009` (diagnóstico por quadra e comandos do painel). Painel **Diagnóstico** no App da Arena. Detalhes em [INTEGRACAO-MOTOR-REAL.md](INTEGRACAO-MOTOR-REAL.md); medições em [RELATORIO-RECURSOS.md](RELATORIO-RECURSOS.md).

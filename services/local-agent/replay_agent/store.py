@@ -229,6 +229,10 @@ class LocalStore:
     def job(self, job_id: str):
         return self._x("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
 
+    def job_source(self, job_id: str) -> str | None:
+        r = self._x("SELECT source FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        return r[0] if r else None
+
     def job_events(self, job_id: str) -> list:
         return self._x("SELECT ts,event,detail FROM job_events WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
 

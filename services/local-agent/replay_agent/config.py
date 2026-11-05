@@ -208,6 +208,8 @@ def parse(data: dict) -> AgentCfg:
     if not (1 <= res.max_ffmpeg <= 16) or res.hwaccel not in HWACCEL or not (0 <= res.render_nice <= 19):
         errs.append("resources: max_ffmpeg em [1,16], hwaccel em none|auto|vaapi|qsv, render_nice em [0,19]")
     central = _mk(CentralCfg, data.get("central", {}), "central", errs)
+    if central.base_url and not re.match(r"^(https://|http://(127\.0\.0\.1|localhost)([:/]|$))", central.base_url):
+        errs.append("central.base_url deve usar https:// (http só para localhost em desenvolvimento)")
     if "data_dir" not in data:
         errs.append("data_dir obrigatório")
     if errs:

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import audit, capacity
 from ..config import settings
 from ..db import get_db, utcnow
-from ..models import ArenaAgent, Arena, Court, CourtRuntime, ExportJob, MusicTrack, ReplayEvent, Video
+from ..models import AgentCommand, ArenaAgent, Arena, Court, CourtRuntime, ExportJob, MusicTrack, ReplayEvent, Video
 from .. import policy, storage
 from fastapi.responses import FileResponse
 from ..agent_security import agent_auth_v1 as agent_auth, rotate as rotate_credentials, rotation_hint, issue_credentials
@@ -120,6 +120,7 @@ class HeartbeatIn(BaseModel):
     pendingSync: int = Field(0, ge=0, le=10_000_000)
     system: SystemIn = Field(default_factory=SystemIn)
     courts: list[CourtStat] = Field(default_factory=list, max_length=50)
+    diagnostics: dict | None = None      # diagnóstico completo (câmeras, buffer, botoeiras, fila, recursos, alertas); sem segredos
 
 
 @router.post("/heartbeat")
@@ -128,7 +129,11 @@ def heartbeat(body: HeartbeatIn, ag: ArenaAgent = Depends(bound), db: Session = 
     arena = db.get(Arena, ag.arena_id)
     ag.last_heartbeat_at, ag.agent_version, ag.pending_sync = now, body.version or ag.agent_version, body.pendingSync
     ag.config_ack = body.configVersion or None
-    ag.system_json = body.system.model_dump_json()
+    diag = body.diagnostics if body.diagnostics and len(json.dumps(body.diagnostics, default=str)) <= 120_000 else None
+    sysd = body.system.model_dump()
+    if diag:  # peças do nível do agente (as por quadra vão em court_runtime)
+        sysd["diag"] = {k: diag.get(k) for k in ("resources", "link", "triggerSources", "alerts", "relay", "render", "version") if k in diag}
+    ag.system_json = json.dumps(sysd, default=str)
     courts, unknown = _courts(db, ag.arena_id), []
     for cs in body.courts:
         ct = courts.get(cs.courtKey)
@@ -139,15 +144,51 @@ def heartbeat(body: HeartbeatIn, ag: ArenaAgent = Depends(bound), db: Session = 
         rt.state, rt.queue_depth, rt.completed_total, rt.failed_total = cs.state, cs.queueDepth, cs.completed, cs.failed
         rt.last_render_s, rt.avg_render_s, rt.p95_render_s = cs.lastRenderS, cs.avgRenderS, cs.p95RenderS
         rt.storage_used_bytes, rt.updated_at = cs.storageUsedBytes, now
+        if diag and isinstance(diag.get("courts"), dict) and cs.courtKey in diag["courts"]:
+            rt.diag_json = json.dumps(diag["courts"][cs.courtKey], default=str)
         db.merge(rt)
         capacity.record_sample(db, ag.arena_id, ct.id, cs.storageUsedBytes, None, None, now)
     total = sum(c.storageUsedBytes for c in body.courts if c.courtKey in courts)
     capacity.record_sample(db, ag.arena_id, None, total, body.system.diskFreeBytes, body.system.diskTotalBytes, now)
     current = capacity.agent_config(db, arena)["configVersion"]
+    cmds = _deliver_commands(db, ag, now)
     db.commit()
-    return {"ok": True, "serverTime": now.isoformat() + "Z", "epoch": settings.central_epoch,
+    return {"ok": True, "serverTime": now.isoformat() + "Z", "epoch": settings.central_epoch, "commands": cmds,
             "configVersion": current, "configChanged": current != body.configVersion, "unknownCourts": unknown,
             **rotation_hint(ag)}
+
+
+def _deliver_commands(db: Session, ag: ArenaAgent, now) -> list[dict]:
+    """Entrega (uma única vez) os comandos pendentes DA PRÓPRIA arena; vencidos viram 'expired'."""
+    db.query(AgentCommand).filter(AgentCommand.arena_id == ag.arena_id, AgentCommand.status.in_(("pending", "delivered")),
+                                  AgentCommand.expires_at < now).update({"status": "expired", "finished_at": now}, synchronize_session=False)
+    rows = (db.query(AgentCommand).filter(AgentCommand.arena_id == ag.arena_id, AgentCommand.status == "pending")
+            .order_by(AgentCommand.created_at).limit(5).all())
+    out = []
+    for c in rows:
+        if db.query(AgentCommand).filter(AgentCommand.id == c.id, AgentCommand.status == "pending").update(
+                {"status": "delivered", "agent_id": ag.id}, synchronize_session=False) == 1:
+            out.append({"id": c.id, "kind": c.kind, "courtKey": c.court_key, "by": f"painel-{c.created_by[:8]}"})
+    return out
+
+
+class CmdResult(BaseModel):
+    outcome: str = Field(max_length=30)
+    jobId: str | None = Field(None, max_length=120)
+    detail: str | None = Field(None, max_length=200)
+
+
+@router.post("/commands/{cmd_id}/result")
+def command_result(cmd_id: str, body: CmdResult, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    c = db.get(AgentCommand, cmd_id)
+    if not c or c.arena_id != ag.arena_id or c.agent_id != ag.id:  # comando de outra arena/agente => inexistente
+        raise HTTPException(404, "comando não encontrado")
+    if c.status != "delivered":
+        raise HTTPException(409, "comando não está aguardando resultado")
+    c.status = "done" if body.outcome == "accepted" else "failed"
+    c.outcome, c.job_id, c.detail, c.finished_at = body.outcome, body.jobId, body.detail, utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 # ---------------- sincronização de metadados de replays ----------------
@@ -164,6 +205,7 @@ class ReplayIn(BaseModel):
     protected: bool = False
     deletedLocally: bool = False
     fileAvailable: bool = True  # o agente confirma que o MP4 existe em disco
+    title: str | None = Field(None, max_length=160)  # só na criação (ex.: replay de teste manual)
 
 
 class SyncIn(BaseModel):
@@ -194,7 +236,7 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
     ev.status = "completed"
     v = Video(arena_id=ag.arena_id, court_id=ct.id, event_id=ev.id, code=_code(db), storage_key="", thumb_key=None,
               bytes=it.bytes, duration=it.durationS, width=it.width, height=it.height, video_codec=it.videoCodec,
-              has_audio=it.hasAudio, visibility="private", processing_status="ready", captured_at=at,
+              title=it.title or "", has_audio=it.hasAudio, visibility="private", processing_status="ready", captured_at=at,
               storage_location="agent", local_id=it.localId, protected=it.protected,
               media_state="ok" if it.fileAvailable else "missing",
               deleted_at=utcnow() if it.deletedLocally else None)

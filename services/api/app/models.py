@@ -172,7 +172,29 @@ class CourtRuntime(Base):
     avg_render_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     p95_render_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     storage_used_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    diag_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # diagnóstico da quadra (câmera, buffer, botoeira, fila) — sem segredos
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AgentCommand(Base):
+    """Comando enfileirado pelo painel para o agente da arena (hoje: teste manual de acionamento). O agente nunca é chamado
+    pela internet: ele busca os comandos no heartbeat (conexão de saída) e devolve o resultado."""
+    __tablename__ = "agent_commands"
+    __table_args__ = (Index("ix_cmd_arena_status", "arena_id", "status", "created_at"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"))
+    court_id: Mapped[str] = mapped_column(ForeignKey("courts.id", ondelete="CASCADE"))
+    court_key: Mapped[str] = mapped_column(String(60))
+    kind: Mapped[str] = mapped_column(String(20), default="test_trigger")
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending|delivered|done|failed|expired
+    created_by: Mapped[str] = mapped_column(String(32))
+    agent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class StorageSample(Base):

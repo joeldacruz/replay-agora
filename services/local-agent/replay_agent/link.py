@@ -6,6 +6,7 @@ Regras: (1) nunca envia arquivo; (2) falha da central NUNCA interrompe o motor; 
 import json
 import random
 import threading
+import time
 
 from .client import CentralClient, CentralRejected, CentralUnavailable
 from .creds import CredentialStore
@@ -29,6 +30,9 @@ class CentralLink:
         self.config_version = ""
         self.creds = creds
         self.governor = governor
+        self.diag_provider = None          # callable() -> dict (diagnóstico completo)
+        self.command_handler = None        # callable(cmd) -> dict(outcome, jobId, detail)
+        self.last_ok_at: float | None = None
         self.rotations = 0
 
     # ----- passos -----
@@ -48,7 +52,23 @@ class CentralLink:
     def _heartbeat(self) -> dict:
         body = {"version": VERSION, "configVersion": self.config_version, "pendingSync": self.store.count("pending"),
                 "system": self.sampler.sample() if self.sampler else {}, "courts": self.engine.court_stats()}
+        if self.diag_provider:
+            try:
+                body["diagnostics"] = self.diag_provider()
+            except Exception:  # noqa: BLE001 - diagnóstico nunca derruba o heartbeat
+                body["diagnostics"] = None
         return self.client.call("POST", "/heartbeat", body)
+
+    def _run_commands(self, commands: list[dict]) -> None:
+        for cmd in commands or []:
+            if self.command_handler is None:
+                continue
+            try:
+                res = self.command_handler(cmd)
+            except Exception as e:  # noqa: BLE001
+                res = {"outcome": "error", "detail": type(e).__name__}
+            self.client.call("POST", f"/commands/{cmd['id']}/result", {"outcome": str(res.get("outcome", "error"))[:30],
+                                                                         "jobId": res.get("jobId"), "detail": res.get("detail")})
 
     def rotate_credentials(self) -> None:
         """Troca de credencial: persiste o par NOVO em disco antes de usá-lo (a anterior ainda vale pela janela de carência)."""
@@ -67,7 +87,9 @@ class CentralLink:
             items = [{"localId": r["local_id"], "courtKey": r["court_key"], "capturedAt": r["captured_at"] + "Z",
                       "durationS": r["duration"], "bytes": r["bytes"], "width": r["width"] or 0, "height": r["height"] or 0,
                       "hasAudio": bool(r["has_audio"]), "videoCodec": r["codec"], "protected": bool(r["protected"]),
-                      "fileAvailable": bool(r["file_ok"])} for r in rows]
+                      "fileAvailable": bool(r["file_ok"]),
+                      **({"title": "Teste de acionamento (painel)"} if (self.store.job_source(r["local_id"]) or "").startswith("manual:") else {})}
+                     for r in rows]
             res = self.client.call("POST", "/sync/replays", {"replays": items})
             by_id = {x["localId"]: x for x in res["results"]}
             for r in rows:  # só marca o que a central CONFIRMOU; o resto continua pendente
@@ -94,6 +116,7 @@ class CentralLink:
                 self.registered = False
                 self._register()
                 self.store.requeue_recent(self.resync_hours)
+            self._run_commands(hb.get("commands", []))
             if hb.get("rotateRecommended") and self.creds is not None:
                 self.rotate_credentials()
             if hb.get("configChanged"):
@@ -101,6 +124,7 @@ class CentralLink:
             self.store.set_central_protected(self.client.call("GET", "/sync/protection")["localIds"])
             synced = self._sync()
             self.state, self.last_error, self.fail_streak = "online", None, 0
+            self.last_ok_at = time.time()
             return {"online": True, "synced": synced, "pending": self.store.count("pending")}
         except CentralUnavailable as e:
             self.state, self.last_error = "offline", str(e)

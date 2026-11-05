@@ -1,4 +1,6 @@
-# Integração futura: Arduino (D2/A2), buffers RTSP e API central
+# Integração: Arduino (D2/A2), buffers RTSP e API central
+
+> **Atualização:** o agente com captura RTSP por segmentos, leitura serial REPLAY, fila persistente e painel de diagnóstico está **implementado e testado só em simulação** — ver [INTEGRACAO-MOTOR-REAL.md](INTEGRACAO-MOTOR-REAL.md), [INSTALACAO-UBUNTU.md](INSTALACAO-UBUNTU.md) e [HOMOLOGACAO-replayagora-srv01.md](HOMOLOGACAO-replayagora-srv01.md). O texto abaixo é o histórico do contrato com a API.
 
 > **Nada aqui foi implantado ou testado em hardware.** O leitor real (`/srv/replayagora/botoeira/leitor.py`), `buffer.py` e `replay.py` **não estão neste repositório** e **não foram alterados**. Este documento descreve o contrato que o motor local deverá cumprir. Antes de qualquer alteração no servidor `replayagora-srv01`, é necessário inventariar o código real e obter autorização.
 

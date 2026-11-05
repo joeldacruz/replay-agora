@@ -82,3 +82,19 @@
 7. Rotação automática testada com arquivo local; falta o procedimento operacional (guardar credenciais em `/etc/replayagora`, permissões 0600, backup, revogação) e o primeiro provisionamento seguro do par token+chave.
 8. Navegador real: Range/seek validados por testes HTTP, não em Safari/Chrome/iOS com `<video>`; verificar `Content-Length` com proxy/CDN e compressão desabilitada para vídeo.
 9. Acesso excepcional do `global_admin` à mídia privada continua não implementado (por desenho não existe rota).
+
+
+## Integração do motor real (branch do PR #2, baseline `ae3cd19`)
+
+**Implementado (simulação):** configuração por quadra; captura RTSP por segmentos com reconexão, buffer circular por câmera e diagnóstico de FPS/perdas/reconexões; leitura serial REPLAY (pty), botoeiras por quadra, debounce/cooldown e `trigger_log`; acionamentos ligados a janelas do buffer com recuperação, estado `unrecoverable` e conclusão só com arquivo íntegro; governança de recursos (limite de FFmpeg, prioridade da captura, VAAPI/QSV com recuo para CPU) ajustável por arena; painel de **Diagnóstico** e teste manual pelo painel; adaptadores para o legado (log-tail, buffer externo somente leitura, comando externo); inventário somente leitura. Migrações **0008 e 0009** (aditivas).
+
+**Pendências / riscos para a homologação física (nada disso foi testado fora de simulação):**
+1. **Código legado não inspecionado**: formato dos segmentos do `buffer.py`, CLI do `replay.py`, formato de log do `leitor.py` e como o `leitor.py` usa a porta são suposições configuráveis; rodar o inventário e ajustar.
+2. **RTSP real**: só a montagem do comando foi testada (sem servidor RTSP aqui). Verificar GOP ≤ `segment_s`, H.264/H.265, áudio G.711, limite de sessões por câmera, `-timeout` do FFmpeg instalado, reconexão real após queda de rede/câmera.
+3. **Conflito de porta serial**: só um processo pode abrir a porta; o cutover exige parar o `leitor.py` (janela autorizada) e tem rollback. CH340 sem número de série ⇒ nome udev depende da porta USB física.
+4. **Precisão temporal** ±1–2 s (nome do segmento em segundos, latência RTSP, corte no keyframe); calibrar `pre/post`, `min_*` e tolerância de lacuna em quadra; relógio do servidor deve estar sincronizado (NTP/chrony).
+5. **Recursos**: medidas em sandbox com vídeo sintético; GPU (VAAPI/QSV) **nunca exercitada** (sem `/dev/dri`); o recuo para CPU foi testado com FFmpeg falso. Prévia patrocinada durante a captura pode ser pausada pelo governor — medir.
+6. **Rotação do buffer** apaga segmentos do **próprio** buffer (circular por definição); nenhuma regra apaga replays, renders ou arquivos fora de `seg_<epoch>.ts` do diretório gerenciado; em `external_dir` nada é apagado.
+7. **Painel**: telemetria a cada 30 s (heartbeat); dados ≥ 65 s ficam marcados como desatualizados. Teste manual depende do agente estar online; a fila local é durável, mas o trecho do buffer depende do disco do agente.
+8. Sem miniaturas para replays da arena; sem H.265 validado; sem multi-câmera por quadra; um único computador por arena.
+9. **Docker smoke** executa no CI do GitHub (este ambiente não tem daemon Docker).

@@ -60,6 +60,8 @@ Arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) · Integração futura c
 
 Motor local por arena (simulado em `services/local-agent`), API só com metadados, limites de armazenamento, previsão de esgotamento, retenção em dry-run e compatibilidade com a futura redundância da central: [capacidade](docs/CAPACIDADE-E-ARMAZENAMENTO.md) · [alta disponibilidade](docs/ALTA-DISPONIBILIDADE.md). Rode `make simulate-fleet`. **Não homologado com câmeras, Arduino ou servidores reais.**
 
+Motor real (RTSP, serial REPLAY, buffer, painel de diagnóstico — **só simulado**): [INTEGRACAO-MOTOR-REAL.md](docs/INTEGRACAO-MOTOR-REAL.md) · [instalação Ubuntu](docs/INSTALACAO-UBUNTU.md) · [plano de homologação do srv01](docs/HOMOLOGACAO-replayagora-srv01.md) · [relatório de recursos](docs/RELATORIO-RECURSOS.md).
+
 Entrega de vídeo por relay, renderização local e segurança do agente: [ENTREGA-E-SEGURANCA-DO-AGENTE.md](docs/ENTREGA-E-SEGURANCA-DO-AGENTE.md).
 
 ## Documentação para Claude

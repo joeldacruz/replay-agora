@@ -89,3 +89,6 @@ O script usa banco e armazenamento **temporários**, sai com código ≠ 0 se ho
 6. Fila de exportações do worker central continua simples (sem justiça entre arenas); relevante só se houver exportação central em escala.
 7. SQLite apenas; PostgreSQL não exercitado. Sem teste de carga com rede real, sem câmeras RTSP, sem Arduino real.
 8. Telemetria de CPU/memória do agente simulado lê `/proc` (Linux).
+
+## Atualização — motor real
+Medições de CPU/memória/disco da captura e do corte em [RELATORIO-RECURSOS.md](RELATORIO-RECURSOS.md). A fila de geração é persistente e o buffer rotativo preserva as janelas dos acionamentos pendentes.

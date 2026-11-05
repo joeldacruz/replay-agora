@@ -8,7 +8,7 @@ const isAdmin = () => arena && arena.role === 'arena_admin';
 const base = () => `/api/arena/${arena.arenaId}`;
 const MODES = { original: 'Original', music: 'Música', mix: 'Mistura', mute: 'Mudo' };
 
-const NAV = [['/', 'Painel'], ['/courts', 'Quadras'], ['/videos', 'Replays'], ['/sponsors', 'Patrocinadores'], ['/campaigns', 'Campanhas'], ['/music', 'Música e áudio'], ['/team', 'Equipe', true], ['/agents', 'Motor local', true], ['/audit', 'Auditoria', true]];
+const NAV = [['/', 'Painel'], ['/courts', 'Quadras'], ['/videos', 'Replays'], ['/sponsors', 'Patrocinadores'], ['/campaigns', 'Campanhas'], ['/music', 'Música e áudio'], ['/team', 'Equipe', true], ['/diagnostics', 'Diagnóstico'], ['/agents', 'Motor local', true], ['/audit', 'Auditoria', true]];
 function chrome() {
   document.getElementById('who').textContent = me ? `${me.name}${arena ? ' · ' + (isAdmin() ? 'gestor' : 'operador') : ''}` : '';
   document.getElementById('logout').hidden = !me;
@@ -173,7 +173,7 @@ async function agents() {
   if (!(await ensure()) || !isAdmin()) return;
   const ag = await api.get(base() + '/agents');
   mount(root, h('h1', {}, 'Motor local da arena'), h('p', { class: 'muted' }, 'Credenciais usadas pelo servidor da arena para enviar eventos e vídeos. Mostradas uma única vez, nunca versione em repositórios.'),
-    h('button', { class: 'primary', onclick: () => simpleForm('Nova credencial de agente', [inp('label', 'Identificação (ex.: srv01-quadras)', { required: true, minlength: 2 })], async (fd) => { const r = await api.post(base() + '/agents', { label: fd.get('label') }); window.prompt('Copie o token agora (não será exibido novamente):', r.token); reload(); }, 'Gerar') }, '+ Nova credencial'),
+    h('button', { class: 'primary', onclick: () => simpleForm('Nova credencial de agente', [inp('label', 'Identificação (ex.: srv01-quadras)', { required: true, minlength: 2 })], async (fd) => { const r = await api.post(base() + '/agents', { label: fd.get('label') }); window.prompt('Copie AGORA token e chave de assinatura (não serão exibidos novamente) e guarde em arquivo 0600 no servidor:', JSON.stringify({ token: r.token, signingKey: r.signingKey })); reload(); }, 'Gerar') }, '+ Nova credencial'),
     table(['Identificação', 'Última comunicação', 'Versão', 'Pendentes', 'Estado', ''], ag.map((g) => h('tr', {}, h('td', {}, g.label), h('td', {}, fmt.dt(g.lastSeenAt)), h('td', {}, g.version || '—'), h('td', {}, g.pendingSync), h('td', {}, g.active ? 'ativa' : 'revogada'), h('td', {}, g.active ? h('button', { class: 'small danger', onclick: guard(async () => { if (confirm('Revogar credencial?')) { await api.del(`${base()}/agents/${g.id}`); reload(); } }) }, 'Revogar') : '')))));
 }
 
@@ -183,6 +183,86 @@ async function auditPage() {
   mount(root, h('h1', {}, 'Auditoria'), table(['Quando', 'Quem', 'Ação', 'Recurso', 'Detalhes'], log.map((e) => h('tr', {}, h('td', {}, fmt.dt(e.createdAt)), h('td', {}, e.actor || 'sistema/agente'), h('td', {}, h('code', {}, e.action)), h('td', {}, e.resourceType), h('td', { class: 'muted' }, JSON.stringify(e.changes).slice(0, 140))))));
 }
 
-const router = createRouter(root, { '/': dashboard, '/login': login, '/courts': courts, '/videos': videos, '/sponsors': sponsors, '/campaigns': campaigns, '/music': music, '/team': team, '/agents': agents, '/audit': auditPage });
+
+// ---------- painel de diagnóstico do motor local (câmeras, botoeiras, buffer, fila, armazenamento, sincronização) ----------
+const SEVERITY = { critical: ['crítico', 'bad'], warning: ['atenção', 'warn'], info: ['info', ''] };
+const CAM = { streaming: ['transmitindo', 'ok'], connecting: ['conectando', 'warn'], reconnecting: ['reconectando', 'warn'], down: ['sem sinal', 'bad'], disabled: ['desativada', ''], external: ['buffer externo', 'ok'], stopped: ['parada', 'warn'], external_command: ['comando externo', 'ok'] };
+const TRG = { connected: ['conectada', 'ok'], running: ['monitorando log', 'ok'], disconnected: ['desconectada', 'bad'], busy: ['porta ocupada', 'bad'], none: ['não configurada', ''], stopped: ['parada', 'warn'], log_unavailable: ['log indisponível', 'bad'] };
+const CONN = { online: ['online', 'ok'], delayed: ['atrasado', 'warn'], offline: ['offline', 'bad'], never_connected: ['nunca conectou', 'bad'], no_agent: ['sem motor cadastrado', 'bad'] };
+const LEVEL = { ok: ['normal', 'ok'], unlimited: ['sem limite', ''], warning: ['atenção', 'warn'], critical: ['crítico', 'bad'], full: ['cheio', 'bad'] };
+const pill = (map, k) => { const [t, c] = map[k] || [k || 'desconhecido', '']; return h('span', { class: 'badge ' + c }, t); };
+const ago = (s) => (s == null ? '—' : s < 90 ? `há ${Math.round(s)} s` : s < 5400 ? `há ${Math.round(s / 60)} min` : `há ${Math.round(s / 3600)} h`);
+const kv = (k, v) => h('div', { style: 'display:flex;justify-content:space-between;gap:.5rem;padding:.15rem 0' }, h('span', { class: 'muted' }, k), h('span', {}, v ?? '—'));
+
+function courtCard(c, canTest) {
+  const d = c.diag; const cam = d?.camera || {}; const buf = cam.buffer || {}; const trg = d?.trigger || {}; const q = d?.queue || {};
+  const target = buf.targetSeconds || 0; const pct = target ? Math.min(100, Math.round(((buf.availableSeconds || 0) / target) * 100)) : 0;
+  const btn = h('button', { class: 'small', disabled: !canTest || c.status !== 'active', onclick: async () => {
+    btn.disabled = true;
+    try {
+      const r = await api.post(`${base()}/courts/${c.courtId}/test-trigger`); toast('Teste enviado ao motor local…');
+      for (let i = 0; i < 40; i++) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        const s = await api.get(`${base()}/commands/${r.commandId}`);
+        if (s.status === 'done') { toast('Acionamento de teste aceito: o replay aparece em Replays em instantes.'); break; }
+        if (s.status === 'failed') { toast(`Teste recusado pelo motor local (${s.outcome || 'sem detalhe'})`, true); break; }
+        if (s.status === 'expired') { toast('O motor local não buscou o comando a tempo.', true); break; }
+      }
+    } catch (e) { toast(e.message, true); } finally { btn.disabled = false; }
+  } }, 'Testar acionamento');
+  return h('div', { class: 'card', 'aria-label': 'Quadra ' + c.label },
+    h('div', { style: 'display:flex;justify-content:space-between;align-items:center' }, h('h3', {}, c.label), pill(CAM, cam.state)),
+    c.stale ? h('p', { class: 'warn', role: 'status' }, 'Sem telemetria recente deste motor — os dados abaixo podem estar desatualizados.') : '',
+    d ? h('div', {},
+      h('h4', {}, 'Câmera'), kv('FPS recebido', cam.fps != null ? `${cam.fps}${cam.declaredFps ? ' / ' + cam.declaredFps : ''}` : '—'), kv('Perda de quadros', cam.lossPct != null ? cam.lossPct + '%' : '—'),
+      kv('Bitrate', cam.bitrateKbps ? Math.round(cam.bitrateKbps) + ' kb/s' : '—'), kv('Reconexões', cam.reconnects), kv('Último quadro', ago(cam.lastFrameAgeS)),
+      cam.lastError ? h('p', { class: 'muted' }, 'Último erro: ' + cam.lastError) : '',
+      h('h4', {}, 'Buffer'), kv('Disponível', `${buf.availableSeconds ?? 0} s${target ? ' de ' + target + ' s' : ''}`),
+      h('progress', { max: 100, value: pct, 'aria-label': 'Ocupação do buffer' }), kv('Segmentos / lacunas', `${buf.segments ?? 0} / ${buf.gaps ?? 0}`),
+      h('h4', {}, 'Botoeira'), kv('Estado', pill(TRG, trg.state)), kv('Botões', (trg.buttons || []).join(', ')),
+      kv('Último acionamento', trg.last ? `${ago(trg.last.ageS)} · ${trg.last.source} · ${trg.last.outcome}` : 'nenhum'),
+      h('h4', {}, 'Fila de processamento'), kv('Na fila / processando', `${q.queued ?? 0} / ${q.processing ?? 0}`), kv('Concluídos / falhas', `${q.done ?? 0} / ${q.failed ?? 0}`),
+      kv('Sem vídeo recuperável', q.unrecoverable ?? 0), kv('Mais antigo aguardando', q.oldestWaitS != null ? Math.round(q.oldestWaitS) + ' s' : '—'))
+      : h('p', { class: 'muted' }, 'Sem dados do motor local para esta quadra.'),
+    h('h4', {}, 'Armazenamento da quadra'), kv('Uso', c.storage ? `${fmt.bytes(c.storage.usedBytes)}${c.storage.limitBytes ? ' / ' + fmt.bytes(c.storage.limitBytes) : ''}` : '—'), kv('Situação', c.storage ? pill(LEVEL, c.storage.level) : '—'),
+    h('div', { class: 'row-actions', style: 'margin-top:.6rem' }, btn));
+}
+
+function renderDiagnostics(box, d, canTest) {
+  const a = d.agent; const sys = a?.system || {}; const res = a?.resources; const link = a?.link;
+  const st = d.storage;
+  const fc = st.forecast?.daysToFull != null ? `~${st.forecast.daysToFull} dias` : ({ insufficient_data: 'dados insuficientes', stable: 'estável', no_limit: 'sem limite' }[st.forecast?.status] || '—');
+  box.replaceChildren(
+    d.stale ? h('div', { class: 'card', role: 'alert' }, h('b', {}, 'Dados desatualizados: '), 'o motor local não enviou telemetria recentemente.') : '',
+    h('h2', {}, 'Alertas e falhas'),
+    d.alerts.length ? h('ul', {}, d.alerts.map((x) => h('li', {}, h('span', { class: 'badge ' + SEVERITY[x.severity][1] }, SEVERITY[x.severity][0]), ' ', x.court ? `[${x.court}] ` : '', x.message))) : h('p', { class: 'muted' }, 'Nenhum alerta.'),
+    h('div', { class: 'grid' },
+      h('div', { class: 'card' }, h('h3', {}, 'Sincronização com a central'), kv('Conexão', pill(CONN, d.connection)), kv('Último contato', a?.lastHeartbeatAt ? fmt.dt(a.lastHeartbeatAt) : '—'),
+        kv('Replays aguardando envio', a?.pendingSync ?? '—'), kv('Estado do enlace', link?.state || '—'), kv('Configuração aplicada', a?.configApplied ? 'sim' : '—'),
+        kv('Credencial expira', a?.credentialExpiresAt ? fmt.dt(a.credentialExpiresAt) : 'sem prazo'), kv('Computador', a ? `${a.hostname || '—'} · v${a.version || '—'}` : '—')),
+      h('div', { class: 'card' }, h('h3', {}, 'Armazenamento da arena'), kv('Uso', `${fmt.bytes(st.usedBytes)}${st.limitBytes ? ' / ' + fmt.bytes(st.limitBytes) : ''}`), kv('Situação', pill(LEVEL, st.level)),
+        kv('Previsão de esgotamento', fc), kv('Vídeos protegidos', st.protectedVideos), kv('Disco do computador livre', sys.diskTotalBytes ? `${fmt.bytes(sys.diskFreeBytes)} de ${fmt.bytes(sys.diskTotalBytes)}` : '—')),
+      h('div', { class: 'card' }, h('h3', {}, 'Recursos do computador'), kv('CPU', sys.cpuPct != null ? sys.cpuPct + '%' : '—'), kv('Memória', sys.memUsedPct != null ? sys.memUsedPct + '%' : '—'),
+        kv('FFmpeg ativos / máximo', res ? `${res.activeFfmpeg} / ${res.maxFfmpeg}` : '—'), kv('Codificação', res ? (res.hw.active === 'cpu' ? 'CPU' : res.hw.active.toUpperCase()) : '—'),
+        kv('Render em pausa p/ priorizar captura', res ? (res.pausedNow ? 'sim' : 'não') : '—'), kv('Tempo médio de render', res?.avgRunS != null ? res.avgRunS + ' s' : '—'))),
+    h('h2', {}, 'Quadras'), h('div', { class: 'grid' }, d.courts.map((c) => courtCard(c, canTest))));
+}
+
+async function diagnostics() {
+  if (!(await ensure())) return;
+  const box = h('div', { 'aria-live': 'polite' });
+  mount(root, h('h1', {}, 'Diagnóstico do motor local'), h('p', { class: 'muted' }, 'Atualiza a cada 5 s. Mostra somente a sua arena; nenhuma URL ou senha de câmera é exibida.'), box);
+  let timer; const initial = location.hash;
+  const loop = async () => {
+    if (location.hash !== initial) return;
+    try { renderDiagnostics(box, await api.get(base() + '/diagnostics'), true); } catch (e) { box.replaceChildren(h('p', { class: 'err' }, e.message)); }
+    timer = setTimeout(loop, 5000);
+  };
+  window.addEventListener('hashchange', () => clearTimeout(timer), { once: true });
+  loop();
+}
+
+
+const router = createRouter(root, { '/': dashboard, '/login': login, '/courts': courts, '/videos': videos, '/sponsors': sponsors, '/campaigns': campaigns, '/music': music, '/team': team, '/diagnostics': diagnostics, '/agents': agents, '/audit': auditPage });
 router.go();
 registerSW('sw.js', '/arena/');

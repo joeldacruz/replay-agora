@@ -104,6 +104,14 @@ await step('arena: publica replay pendente', async () => {
   await pub.first().click();
   await a.waitForFunction((n) => [...document.querySelectorAll('button')].filter((b) => b.textContent === 'Publicar').length === n - 1, before);
 });
+await step('arena: painel de diagnóstico lista as quadras e avisa que ainda não há telemetria v1 (sem expor segredos)', async () => {
+  await a.click('nav.tabs a:has-text("Diagnóstico")'); await a.waitForSelector('h1:has-text("Diagnóstico do motor local")');
+  await a.waitForSelector('h2:has-text("Alertas e falhas")'); await a.waitForSelector('h3:has-text("Sincronização com a central")');
+  const txt = await a.locator('#app').innerText();
+  assert.ok(/Sem dados do motor local para esta quadra/.test(txt), 'sem telemetria v1 do motor legado simulado');
+  assert.ok((await a.locator('button:text-is("Testar acionamento")').count()) >= 2, 'uma ação de teste por quadra');
+  assert.ok(!/rtsp:\/\/|S3nh4|password/i.test(txt), 'nenhum segredo de câmera no painel');
+});
 await step('arena: cadastra patrocinador com logo PNG, cria campanha e vê a prévia', async () => {
   const logo = join(tmp, 'logo.png');
   execFileSync(PY, ['-I', '-c', `from PIL import Image; Image.new("RGBA",(400,160),(255,120,0,255)).save(${JSON.stringify(logo)})`]);
