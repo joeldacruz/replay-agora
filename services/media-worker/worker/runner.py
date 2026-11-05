@@ -30,7 +30,8 @@ def recover_stale(db: Session) -> int:
     """Jobs 'processing' sem heartbeat (worker caiu) voltam à fila, até o limite de tentativas."""
     cutoff = utcnow() - timedelta(seconds=settings.export_stale_after_s)
     n = 0
-    for j in db.query(ExportJob).filter(ExportJob.status == "processing", ExportJob.heartbeat_at < cutoff).all():
+    for j in db.query(ExportJob).filter(ExportJob.status == "processing", ExportJob.render_location == "central",
+                                        ExportJob.heartbeat_at < cutoff).all():
         if j.attempts >= settings.export_max_attempts:
             j.status, j.error, j.finished_at = "failed", "tempo esgotado após várias tentativas", utcnow()
         else:
@@ -42,7 +43,7 @@ def recover_stale(db: Session) -> int:
 
 
 def claim(db: Session) -> ExportJob | None:
-    cand = db.query(ExportJob.id).filter(ExportJob.status == "queued").order_by(ExportJob.created_at).limit(5).all()
+    cand = db.query(ExportJob.id).filter(ExportJob.status == "queued", ExportJob.render_location == "central").order_by(ExportJob.created_at).limit(5).all()
     for (jid,) in cand:
         res = db.execute(update(ExportJob).where(ExportJob.id == jid, ExportJob.status == "queued").values(
             status="processing", attempts=ExportJob.attempts + 1, started_at=utcnow(), heartbeat_at=utcnow(), progress=0, error=None))

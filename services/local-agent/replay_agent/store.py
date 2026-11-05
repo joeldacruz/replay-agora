@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS jobs(
 CREATE INDEX IF NOT EXISTS ix_jobs_court_state ON jobs(court_key, state, created_at);
 CREATE TABLE IF NOT EXISTS job_events(
   id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, ts TEXT NOT NULL, event TEXT NOT NULL, detail TEXT);
+CREATE TABLE IF NOT EXISTS renders(
+  job_id TEXT PRIMARY KEY, local_id TEXT NOT NULL, path TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'done', purpose TEXT, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -194,8 +197,13 @@ class LocalStore:
     def job_events(self, job_id: str) -> list:
         return self._x("SELECT ts,event,detail FROM job_events WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
 
+    # ----- saídas renderizadas (prévias patrocinadas / exportações com áudio) — ficam NA ARENA -----
+    def add_render(self, job_id: str, local_id: str, path: str, size: int, sha256: str, purpose: str) -> None:
+        self._x("INSERT OR REPLACE INTO renders(job_id,local_id,path,bytes,sha256,state,purpose,created_at) VALUES(?,?,?,?,?,'done',?,?)",
+                (job_id, local_id, path, size, sha256, purpose, _now()))
+
     def render(self, job_id: str):
-        return None  # preenchido na etapa de renderização local
+        return self._x("SELECT * FROM renders WHERE job_id=?", (job_id,)).fetchone()
 
     # ----- kv -----
     def kv_get(self, k: str, default: str | None = None) -> str | None:

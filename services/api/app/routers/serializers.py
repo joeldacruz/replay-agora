@@ -21,11 +21,12 @@ def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False, 
     return out
 
 
-def export_out(j: ExportJob, user_id: str, code: str | None = None) -> dict:
+def export_out(j: ExportJob, user_id: str, code: str | None = None, reachable: bool = True) -> dict:
     return {
         "id": j.id, "videoId": j.video_id, "videoCode": code, "audioMode": j.audio_mode, "musicId": j.music_id,
         "originalVolume": j.original_volume, "musicVolume": j.music_volume, "applySponsors": j.apply_sponsors,
         "status": j.status, "progress": j.progress, "error": j.error, "createdAt": iso(j.created_at),
         "finishedAt": iso(j.finished_at), "bytes": j.output_bytes, "attempts": j.attempts,
-        "downloadUrl": sign("export", j.id, user_id, "attachment") if j.status == "ready" else None,
+        "downloadUrl": sign("export", j.id, user_id, "attachment") if j.status == "ready" and reachable else None,
+        "renderLocation": j.render_location, "available": j.status != "ready" or reachable,
     }

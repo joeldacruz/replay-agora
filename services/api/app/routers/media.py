@@ -53,7 +53,7 @@ def serve(token: str, request: Request, db: Session = Depends(get_db)):
             key, mime, name = v.thumb_key, "image/jpeg", f"replay-{v.code}.jpg"
     elif kind == "export":
         j = db.get(ExportJob, rid)
-        if not j or (j.purpose != "preview" and j.user_id != user.id) or j.status != "ready" or not j.output_key:
+        if not j or (j.purpose != "preview" and j.user_id != user.id) or j.status != "ready" or not delivery.job_output_ok(j):
             raise HTTPException(404, "não encontrado")
         v = db.get(Video, j.video_id)
         if not v or not can_view_video(db, user, v):
@@ -64,6 +64,12 @@ def serve(token: str, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(409, "Patrocínio atualizado: gere uma nova versão")
         arena_id = j.arena_id
         key, mime, name = j.output_key, "video/mp4", f"replay-{v.code}-{j.audio_mode}.mp4"
+        if j.render_location == "agent":  # a saída renderizada mora no computador da arena
+            if disp == "attachment":
+                audit.record(db, user.id, arena_id, f"{kind}.download", kind, rid)
+                db.commit()
+            return delivery.remote_response(db, j.arena_id, "render", j.id, j.output_bytes, mime, name, disp,
+                                            request.headers.get("range"), job=j)
     elif kind == "logo":
         s = db.get(Sponsor, rid)
         if not s or not _staff(db, user.id, s.arena_id):

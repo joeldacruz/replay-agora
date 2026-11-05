@@ -7,6 +7,7 @@ servidor reserva da API central; ver docs/ALTA-DISPONIBILIDADE.md).
 from datetime import datetime, timedelta, timezone
 
 import hashlib
+import json
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -17,7 +18,9 @@ from sqlalchemy.orm import Session
 from .. import audit, capacity
 from ..config import settings
 from ..db import get_db, utcnow
-from ..models import ArenaAgent, Arena, Court, CourtRuntime, ReplayEvent, Video
+from ..models import ArenaAgent, Arena, Court, CourtRuntime, ExportJob, MusicTrack, ReplayEvent, Video
+from .. import policy, storage
+from fastapi.responses import FileResponse
 from ..agent_security import agent_auth_v1 as agent_auth, rotate as rotate_credentials, rotation_hint, issue_credentials
 from .ingest import _code
 from ..delivery import purge_spool, spool_file
@@ -322,6 +325,150 @@ class RelayErr(BaseModel):
 def relay_error(rid: str, body: RelayErr, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     r = _claimed(db, ag, rid)
     r.status, r.error, r.done_at = "failed", body.code, utcnow()
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------- renderização local: o agente reivindica jobs de prévia/exportação ----------------
+def _job_for(db: Session, ag: ArenaAgent, job_id: str) -> ExportJob:
+    j = db.get(ExportJob, job_id)
+    if not j or j.arena_id != ag.arena_id or j.render_location != "agent":  # outra arena/central => inexistente
+        raise HTTPException(404, "job não encontrado")
+    return j
+
+
+def _fail_job(j: ExportJob, msg: str) -> None:
+    j.status, j.error, j.finished_at, j.lease_until = "failed", msg[:300], utcnow(), None
+
+
+def _asset_table(db: Session, j: ExportJob) -> dict[str, tuple[str, str]]:
+    """name -> (storage_key, mime). Só logos da MESMA arena listados no snapshot do job e a faixa licenciada dele."""
+    out: dict[str, tuple[str, str]] = {}
+    if j.apply_sponsors:
+        for i, o in enumerate(json.loads(j.overlay_spec or "[]")):
+            if o["asset_key"].startswith(f"arenas/{j.arena_id}/"):
+                out[f"logo{i}"] = (o["asset_key"], "image/png")
+    if j.audio_mode in ("music", "mix") and j.music_id:
+        t = db.get(MusicTrack, j.music_id)
+        if t and t.arena_id == j.arena_id:
+            out["music"] = (t.asset_key, "application/octet-stream")
+    return out
+
+
+def _sha(key: str) -> str:
+    p = storage.path_for(key)
+    return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else ""
+
+
+@router.get("/render/next")
+def render_next(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    """Concede (lease) o job mais antigo da PRÓPRIA arena. Jobs com concessão vencida são reatribuídos até o limite."""
+    now = utcnow()
+    base = db.query(ExportJob).filter(ExportJob.arena_id == ag.arena_id, ExportJob.render_location == "agent")
+    for j in base.filter(ExportJob.status == "processing", ExportJob.lease_until < now, ExportJob.attempts >= settings.render_max_attempts).all():
+        _fail_job(j, "tempo esgotado após várias tentativas")
+    db.commit()
+    cand = (base.filter(((ExportJob.status == "queued")) | ((ExportJob.status == "processing") & (ExportJob.lease_until < now)))
+            .order_by(ExportJob.created_at).limit(5).all())
+    for c in cand:
+        n = (db.query(ExportJob).filter(ExportJob.id == c.id, ExportJob.status == c.status)
+             .update({"status": "processing", "attempts": ExportJob.attempts + 1, "started_at": now, "heartbeat_at": now,
+                      "lease_until": now + timedelta(seconds=settings.render_lease_s), "progress": 0, "error": None}))
+        db.commit()
+        if n != 1:
+            continue
+        j = db.get(ExportJob, c.id)
+        v = db.get(Video, j.video_id)
+        if not v or v.deleted_at or v.arena_id != ag.arena_id or not v.local_id:
+            _fail_job(j, "replay indisponível")
+            db.commit()
+            continue
+        if j.audio_mode in ("music", "mix"):  # revalida licença/arena NO MOMENTO da renderização
+            t = db.get(MusicTrack, j.music_id) if j.music_id else None
+            if not t or t.arena_id != j.arena_id or not policy.track_usable(t):
+                _fail_job(j, "faixa musical sem licença válida no momento da exportação")
+                db.commit()
+                continue
+        assets = _asset_table(db, j)
+        overlays = []
+        for i, o in enumerate(json.loads(j.overlay_spec or "[]") if j.apply_sponsors else []):
+            if f"logo{i}" not in assets or not storage.path_for(assets[f"logo{i}"][0]).is_file():
+                _fail_job(j, "logotipo de patrocinador ausente; exportação recusada")
+                db.commit()
+                overlays = None
+                break
+            overlays.append({"asset": f"logo{i}", "sha256": _sha(assets[f"logo{i}"][0]), "logoW": o["logo_w"], "logoH": o["logo_h"],
+                             "position": o["position"], "sizePct": o["size_pct"], "opacity": o["opacity"], "durationS": o["duration_s"]})
+        if overlays is None:
+            continue
+        music = {"asset": "music", "sha256": _sha(assets["music"][0])} if "music" in assets else None
+        audit.record(db, None, j.arena_id, "render.claim", "export", j.id, {"purpose": j.purpose, "attempt": j.attempts})
+        db.commit()
+        return {"jobId": j.id, "purpose": j.purpose, "localId": v.local_id, "audioMode": j.audio_mode, "originalVolume": j.original_volume,
+                "musicVolume": j.music_volume, "overlays": overlays, "music": music, "leaseS": settings.render_lease_s,
+                "sponsorVersion": j.sponsor_template_version}
+    return Response(status_code=204)
+
+
+@router.get("/render/{job_id}/asset/{name}")
+def render_asset(job_id: str, name: str, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    """Logos e música (NÃO vídeo) necessários ao job que este agente reivindicou."""
+    j = _job_for(db, ag, job_id)
+    if j.status != "processing":
+        raise HTTPException(409, "job não está em processamento")
+    key = _asset_table(db, j).get(name)
+    if not key or not storage.path_for(key[0]).is_file():
+        raise HTTPException(404, "recurso não encontrado")
+    r = FileResponse(storage.path_for(key[0]), media_type=key[1])
+    r.headers["Cache-Control"] = "private, no-store"
+    return r
+
+
+class RenderProgress(BaseModel):
+    progress: int = Field(ge=0, le=99)
+
+
+@router.post("/render/{job_id}/progress")
+def render_progress(job_id: str, body: RenderProgress, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    j = _job_for(db, ag, job_id)
+    if j.status != "processing":
+        raise HTTPException(409, "job não está em processamento")
+    now = utcnow()
+    j.progress, j.heartbeat_at, j.lease_until = body.progress, now, now + timedelta(seconds=settings.render_lease_s)  # renova a concessão
+    db.commit()
+    return {"ok": True}
+
+
+class RenderDone(BaseModel):
+    bytes: int = Field(gt=0, le=50 * 1024**3)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.post("/render/{job_id}/complete")
+def render_complete(job_id: str, body: RenderDone, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    j = _job_for(db, ag, job_id)
+    if j.status != "processing":
+        raise HTTPException(409, "job não está em processamento")
+    j.status, j.progress, j.output_bytes, j.output_sha256 = "ready", 100, body.bytes, body.sha256
+    j.finished_at, j.lease_until, j.output_key = utcnow(), None, None  # a saída NÃO está na central
+    db.commit()
+    return {"ok": True}
+
+
+class RenderFail(BaseModel):
+    error: str = Field(max_length=300)
+    retriable: bool = False
+
+
+@router.post("/render/{job_id}/fail")
+def render_fail(job_id: str, body: RenderFail, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    j = _job_for(db, ag, job_id)
+    if j.status != "processing":
+        raise HTTPException(409, "job não está em processamento")
+    if body.retriable and j.attempts < settings.render_max_attempts:
+        j.status, j.lease_until, j.error = "queued", None, body.error
+    else:
+        _fail_job(j, body.error)
     db.commit()
     return {"ok": True}
 

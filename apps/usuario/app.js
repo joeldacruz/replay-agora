@@ -123,6 +123,11 @@ async function watch(p) {
       playerBox.replaceChildren(h('video', { src: preview.url, controls: true, playsinline: true, poster: v.thumbnailUrl || null }));
       return;
     }
+    if (preview.status === 'unavailable') {
+      playerBox.replaceChildren(h('div', { class: 'card', role: 'status' }, h('p', { class: 'err' }, 'Vídeo indisponível no momento'),
+        h('p', { class: 'muted' }, preview.error || 'A arena está temporariamente offline.'), h('button', { onclick: () => watch(p) }, 'Tentar novamente')));
+      return;
+    }
     if (preview.status === 'failed') {
       playerBox.replaceChildren(h('p', { class: 'err' }, preview.error || 'Falha ao gerar a prévia patrocinada.'));
       return;

@@ -57,6 +57,8 @@ class Settings:
         self.relay_poll_max_s = _env_int("RELAY_POLL_MAX_S", 25)
         self.relay_spool_dir = Path(os.environ.get("RELAY_SPOOL_DIR", str(Path(tempfile.gettempdir()) / "replay-agora-relay"))).resolve()
         self.agent_reachable_s = _env_int("AGENT_REACHABLE_S", 90)  # arena "acessível" se o agente falou nos últimos N s
+        self.render_lease_s = _env_int("RENDER_LEASE_S", 600)
+        self.render_max_attempts = _env_int("RENDER_MAX_ATTEMPTS", 3)
         # Credenciais do agente: rotação, assinatura de requisições e mTLS (preparação)
         self.agent_token_ttl_days = _env_int("AGENT_TOKEN_TTL_DAYS", 90)
         self.agent_rotate_before_days = _env_int("AGENT_ROTATE_BEFORE_DAYS", 7)

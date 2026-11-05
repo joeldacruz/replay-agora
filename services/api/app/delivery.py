@@ -62,6 +62,14 @@ def availability(db: Session, v: Video, cache: dict | None = None) -> dict:
     return {"playable": True, "availability": "available", "reason": None}
 
 
+def job_output_ok(job) -> bool:
+    """A saída de um job existe? (central: arquivo em disco; agente: renderizada e registrada, o arquivo mora na arena)."""
+    if job.render_location == "agent":
+        return bool(job.status == "ready" and job.output_bytes and job.output_bytes > 0)
+    from . import storage
+    return bool(job.output_key and storage.path_for(job.output_key).is_file())
+
+
 # ---------- spool temporário ----------
 def spool_dir() -> Path:
     settings.relay_spool_dir.mkdir(parents=True, exist_ok=True)
@@ -151,7 +159,7 @@ def safe_name(name: str) -> str:
 
 
 def remote_response(db: Session, v_arena_id: str, kind: str, ref: str, total: int, mime: str, filename: str, disp: str,
-                    range_header: str | None, video: Video | None = None) -> StreamingResponse:
+                    range_header: str | None, video: Video | None = None, job=None, arena_ok: bool | None = None) -> StreamingResponse:
     """Resposta HTTP 200/206 com streaming por janelas. `inline` limita cada resposta a uma janela (seek barato);
     `attachment` entrega até o fim (download/retomada)."""
     if video is not None:
@@ -159,6 +167,8 @@ def remote_response(db: Session, v_arena_id: str, kind: str, ref: str, total: in
         if not av["playable"]:
             code = 404 if av["availability"] in ("missing", "deleted") else 503
             raise HTTPException(code, av["reason"], headers={"Retry-After": "10"} if code == 503 else None)
+    if job is not None and not arena_reachable(db, v_arena_id):
+        raise HTTPException(503, "A arena está temporariamente offline; tente novamente em instantes", headers={"Retry-After": "10"})
     rng = parse_range(range_header, total)
     if rng == "invalid":
         raise HTTPException(416, "intervalo inválido", headers={"Content-Range": f"bytes */{total}"})
@@ -171,10 +181,13 @@ def remote_response(db: Session, v_arena_id: str, kind: str, ref: str, total: in
     try:
         first, real_total = fetch_range(v_arena_id, kind, ref, start, first_end)
     except RelayError as e:
-        _relay_http_error(db, e, video)
+        _relay_http_error(db, e, video, job)
     if real_total and real_total != total:  # metadado desatualizado: corrige e pede nova tentativa
         if video is not None:
             video.bytes = real_total
+            db.commit()
+        if job is not None:
+            job.output_bytes = real_total
             db.commit()
         raise HTTPException(409, "metadados do arquivo mudaram; tente novamente")
     if len(first) != first_end - start + 1:
@@ -201,11 +214,15 @@ def remote_response(db: Session, v_arena_id: str, kind: str, ref: str, total: in
     return StreamingResponse(body(), status_code=status, media_type=mime, headers=h)
 
 
-def _relay_http_error(db: Session, e: RelayError, video: Video | None):
+def _relay_http_error(db: Session, e: RelayError, video: Video | None, job=None):
     if e.code == "not_found":
         if video is not None:
             video.media_state = "missing"
             db.commit()
+        if job is not None:  # saída renderizada sumiu da arena: volta à fila para renderizar de novo
+            job.status, job.output_bytes, job.output_sha256, job.progress, job.attempts, job.finished_at = "queued", 0, None, 0, 0, None
+            db.commit()
+            raise HTTPException(503, "O arquivo gerado não está mais na arena; ele será gerado novamente", headers={"Retry-After": "10"})
         raise HTTPException(404, "Arquivo não encontrado na arena")
     if e.code == "integrity":
         raise HTTPException(502, "falha de integridade na entrega")

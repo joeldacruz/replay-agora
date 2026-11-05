@@ -333,6 +333,10 @@ class ExportJob(Base):
     log: Mapped[str] = mapped_column(Text, default="")
     output_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
     output_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    # 'central' = worker FFmpeg da API (legado); 'agent' = renderizado e guardado no computador da arena
+    render_location: Mapped[str] = mapped_column(String(8), default="central")
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # concessão do agente; expirada => reatribui
+    output_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

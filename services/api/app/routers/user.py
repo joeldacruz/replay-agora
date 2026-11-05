@@ -44,10 +44,15 @@ def _require_playable(db: Session, v: Video) -> None:
         raise HTTPException(code, av["reason"], headers={"Retry-After": "10"} if code == 503 else None)
 
 
-def _require_central_file(v: Video) -> None:
-    """Replays sincronizados pelo motor local só têm metadados na central (o MP4 fica na arena)."""
-    if v.storage_location == "agent":
-        raise HTTPException(409, "O MP4 está no computador da arena; renderização/entrega dependem da integração local (pendente)")
+def _export_out(db: Session, j: ExportJob, uid: str, code: str | None = None) -> dict:
+    """Exportação pronta que mora na arena só oferece download enquanto a arena está acessível."""
+    ok = j.render_location != "agent" or delivery.arena_reachable(db, j.arena_id)
+    return export_out(j, uid, code, reachable=ok)
+
+
+def _where(v: Video) -> str:
+    """Onde renderizar: vídeos que moram na arena são renderizados NA arena (o MP4 original nunca sobe)."""
+    return "agent" if v.storage_location == "agent" else "central"
 
 
 # ---------- arenas / quadras ----------
@@ -177,8 +182,12 @@ def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_
 
 
 def _preview_out(db: Session, job: ExportJob, uid: str) -> dict:
-    valid_file = bool(job.output_key and storage.path_for(job.output_key).is_file())
+    valid_file = delivery.job_output_ok(job)
     ready = job.status == "ready" and valid_file
+    if ready and job.render_location == "agent" and not delivery.arena_reachable(db, job.arena_id):
+        # pronta, mas guardada na arena e a arena está offline: não oferece como reproduzível
+        return {"id": job.id, "status": "unavailable", "progress": 100, "url": None, "sponsored": True,
+                "error": "A arena está temporariamente offline; tente novamente em instantes"}
     return {"id": job.id, "status": job.status if ready or job.status != "ready" else "failed",
             "progress": job.progress, "error": job.error if job.status == "failed" else None,
             "url": sign("export", job.id, uid) if ready else None,
@@ -195,7 +204,8 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
     if not spec:
         _require_playable(db, v)
         return {"status": "ready", "url": sign("video", v.id, a.user.id), "sponsored": False}
-    _require_central_file(v)
+    if v.storage_location == "agent":
+        _require_playable(db, v)  # a arena precisa estar acessível e com o arquivo para renderizar
 
     # Se a arena desabilita som original, a prévia é muda. O atleta pode
     # escolher uma trilha licenciada separadamente no editor de exportação.
@@ -210,7 +220,7 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
         ExportJob.video_id == v.id, ExportJob.preview_cache_key == ph
     ).first()
     if existing:
-        if existing.status == "ready" and not (existing.output_key and storage.path_for(existing.output_key).is_file()):
+        if existing.status == "ready" and not delivery.job_output_ok(existing):
             # Cache evictado: apenas a primeira requisição o recoloca na fila.
             db.execute(update(ExportJob).where(
                 ExportJob.id == existing.id, ExportJob.status == "ready"
@@ -226,7 +236,7 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
     if active >= settings.max_active_exports_per_user:
         raise HTTPException(429, "limite de processamentos simultâneos; tente novamente")
 
-    job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id,
+    job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, render_location=_where(v),
                     purpose="preview", preview_cache_key=ph, audio_mode=mode, music_id=None,
                     original_volume=ov, music_volume=mv, apply_sponsors=True,
                     overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec),
@@ -374,7 +384,8 @@ class ExportReq(BaseModel):
 @router.post("/videos/{video_id}/exports")
 def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
-    _require_central_file(v)
+    if v.storage_location == "agent":
+        _require_playable(db, v)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
     arena = db.get(Arena, v.arena_id)
@@ -401,8 +412,8 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
 
     same = db.query(ExportJob).filter(ExportJob.user_id == a.user.id, ExportJob.params_hash == ph,
                                       ExportJob.status.in_(("queued", "processing", "ready"))).first()
-    if same and (same.status != "ready" or (same.output_key and storage.path_for(same.output_key).exists())):
-        return export_out(same, a.user.id, v.code)
+    if same and (same.status != "ready" or delivery.job_output_ok(same)):
+        return _export_out(db, same, a.user.id, v.code)
 
     plan = db.get(Plan, arena.plan_id) if arena.plan_id else None
     active = db.query(func.count(ExportJob.id)).filter(ExportJob.user_id == a.user.id,
@@ -417,21 +428,21 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
         if today >= plan.max_exports_per_user_day:
             raise HTTPException(429, "limite diário de exportações da arena atingido")
 
-    job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, audio_mode=mode, music_id=music_id,
+    job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, render_location=_where(v), audio_mode=mode, music_id=music_id,
                     original_volume=ov, music_volume=mv, apply_sponsors=bool(spec),
                     overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec), params_hash=ph)
     db.add(job)
     db.flush()
     audit.record(db, a.user.id, v.arena_id, "export.create", "export", job.id, {"mode": mode, "music_id": music_id})
     db.commit()
-    return export_out(job, a.user.id, v.code)
+    return _export_out(db, job, a.user.id, v.code)
 
 
 @router.get("/exports")
 def my_exports(a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     rows = (db.query(ExportJob, Video.code).join(Video, Video.id == ExportJob.video_id)
             .filter(ExportJob.user_id == a.user.id, ExportJob.purpose == "export").order_by(ExportJob.created_at.desc()).limit(50).all())
-    return [export_out(j, a.user.id, code) for j, code in rows]
+    return [_export_out(db, j, a.user.id, code) for j, code in rows]
 
 
 def _own_export(db: Session, a: Auth, export_id: str) -> ExportJob:
@@ -444,7 +455,7 @@ def _own_export(db: Session, a: Auth, export_id: str) -> ExportJob:
 @router.get("/exports/{export_id}")
 def get_export(export_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     j = _own_export(db, a, export_id)
-    return export_out(j, a.user.id, db.get(Video, j.video_id).code)
+    return _export_out(db, j, a.user.id, db.get(Video, j.video_id).code)
 
 
 @router.post("/exports/{export_id}/download-link")
@@ -459,13 +470,18 @@ def export_link(export_id: str, a: Auth = Depends(user_auth), db: Session = Depe
 
 
 @router.get("/exports/{export_id}/download")
-def export_download(export_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
+def export_download(export_id: str, request: Request, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     j = _own_export(db, a, export_id)
     v = db.get(Video, j.video_id)
-    if j.status != "ready" or not j.output_key or not video_visible_to(db, a.user, v):
+    if j.status != "ready" or not delivery.job_output_ok(j) or not video_visible_to(db, a.user, v):
         raise HTTPException(409, "exportação indisponível")
     if not policy.export_matches_campaigns(db, v, j):
         raise HTTPException(409, "Patrocinadores atualizados: gere uma nova versão")
+    if j.render_location == "agent":
+        audit.record(db, a.user.id, j.arena_id, "export.download", "export", j.id)
+        db.commit()
+        return delivery.remote_response(db, j.arena_id, "render", j.id, j.output_bytes, "video/mp4",
+                                        f"replay-{v.code}-{j.audio_mode}.mp4", "attachment", request.headers.get("range"), job=j)
     p = storage.path_for(j.output_key)
     if not p.exists():
         raise HTTPException(404, "arquivo indisponível")
