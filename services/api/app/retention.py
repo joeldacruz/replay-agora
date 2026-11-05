@@ -7,6 +7,7 @@ import argparse
 import json
 from datetime import timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal, utcnow
@@ -21,7 +22,7 @@ def prune_previews(db: Session, days: int = 7, limit: int = 200, apply: bool = F
     jobs = (db.query(ExportJob)
             .filter(ExportJob.purpose == "preview",
                     ExportJob.status.in_(("ready", "failed")),
-                    ExportJob.created_at < cutoff)
+                    func.coalesce(ExportJob.finished_at, ExportJob.created_at) < cutoff)
             .order_by(ExportJob.created_at.asc())
             .limit(limit).all())
     scanned, removed, skipped, bytes_freed = len(jobs), 0, 0, 0
