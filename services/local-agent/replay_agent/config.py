@@ -170,8 +170,8 @@ def parse(data: dict) -> AgentCfg:
             errs.append(f"{w}.camera.transport deve ser tcp ou udp")
         if cam.external_time not in ("name_epoch", "mtime"):
             errs.append(f"{w}.camera.external_time inválido")
-        if not (0.5 <= cam.segment_s <= 10) or cam.buffer_s < clip.pre_s + clip.post_s + 2 * cam.segment_s:
-            errs.append(f"{w}.camera: segment_s em [0.5,10] e buffer_s >= pre+post+2*segment_s")
+        if not (1.0 <= cam.segment_s <= 10) or cam.buffer_s < clip.pre_s + clip.post_s + 2 * cam.segment_s:
+            errs.append(f"{w}.camera: segment_s em [1,10] e buffer_s >= pre+post+2*segment_s")
         if not (0 <= clip.min_pre_s <= clip.pre_s and 0 <= clip.min_post_s <= clip.post_s and clip.pre_s > 0 and clip.post_s >= 0):
             errs.append(f"{w}.clip: janelas inválidas (min_* <= valor)")
         if clip.mode not in ("copy", "encode") or clip.renderer not in ("internal", "external_command"):
