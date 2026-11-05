@@ -51,7 +51,7 @@ PRESENT, ABSENT = -40.0, -60.0
 
 
 def test_mode_original_keeps_only_original_audio(client, world, H):
-    jid = make_job(client, H, world, world.A.pub, audioMode="original", applySponsors=False)
+    jid = make_job(client, H, world, world.A.pub, audioMode="original")
     run_all()
     j = job(jid)
     assert j.status == "ready" and j.progress == 100
@@ -59,7 +59,7 @@ def test_mode_original_keeps_only_original_audio(client, world, H):
 
 
 def test_mode_music_replaces_audio_without_leaking_original(client, world, H):
-    jid = make_job(client, H, world, world.A.pub, audioMode="music", musicId=world.A.tracks["ok"], applySponsors=False)
+    jid = make_job(client, H, world, world.A.pub, audioMode="music", musicId=world.A.tracks["ok"])
     run_all()
     assert job(jid).status == "ready"
     o = out(jid)
@@ -69,7 +69,7 @@ def test_mode_music_replaces_audio_without_leaking_original(client, world, H):
 
 
 def test_mode_mix_has_both_tracks_synchronised(client, world, H):
-    jid = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=0.8, applySponsors=False)
+    jid = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=0.8)
     run_all()
     o = out(jid)
     assert band_db(o, ORIG_HZ) > PRESENT and band_db(o, MUSIC_HZ) > PRESENT
@@ -77,8 +77,8 @@ def test_mode_mix_has_both_tracks_synchronised(client, world, H):
 
 
 def test_mix_volumes_are_applied(client, world, H):
-    a = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=1.0, applySponsors=False)
-    b = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=0.2, applySponsors=False)
+    a = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=1.0)
+    b = make_job(client, H, world, world.A.pub, audioMode="mix", musicId=world.A.tracks["ok"], originalVolume=1.0, musicVolume=0.2)
     run_all()
     assert band_db(out(a), MUSIC_HZ) - band_db(out(b), MUSIC_HZ) > 8  # ~14 dB de diferença esperada
 
@@ -99,29 +99,34 @@ def test_source_without_audio_handled(client, world, H):
     opts = client.get(f"/api/videos/{world.A.mute}/export-options", headers=H("a_user")).json()
     assert opts["hasOriginalAudio"] is False and set(opts["modes"]) == {"music", "mute"}
     # ... e música e mudo funcionam
-    m = make_job(client, H, world, world.A.mute, audioMode="music", musicId=world.A.tracks["ok"], applySponsors=False)
-    z = make_job(client, H, world, world.A.mute, audioMode="mute", applySponsors=False)
+    m = make_job(client, H, world, world.A.mute, audioMode="music", musicId=world.A.tracks["ok"])
+    z = make_job(client, H, world, world.A.mute, audioMode="mute")
     run_all()
     assert band_db(out(m), MUSIC_HZ) > PRESENT
     assert not any(s["codec_type"] == "audio" for s in mediainfo.probe(out(z))["streams"])
 
 
 def test_sponsor_overlay_rendered_in_correct_corner(client, world, H, tmp_path):
-    jid = make_job(client, H, world, world.A.pub, audioMode="mute", applySponsors=True)
-    plain = make_job(client, H, world, world.A.pub, audioMode="mute", applySponsors=False)
+    jid = make_job(client, H, world, world.A.pub, audioMode="mute")
+    from app.models import Video
+    db = SessionLocal()
+    source = storage.path_for(db.get(Video, world.A.pub).storage_key)
+    db.close()
     run_all()
     assert job(jid).sponsor_template_version
     def frame(p, n):
         dst = tmp_path / f"{n}.png"
         subprocess.run([settings.ffmpeg_bin, "-y", "-v", "error", "-ss", "1", "-i", str(p), "-frames:v", "1", str(dst)], check=True)
         return Image.open(dst).convert("RGB")
-    f, g = frame(out(jid), "ov"), frame(out(plain), "plain")
+    f, g = frame(out(jid), "ov"), frame(source, "plain")
     # campanha da seed: top-left, 20% da largura (640px -> 128px), margem 2% (13px)
     px = f.getpixel((13 + 64, 13 + 25))
     assert px[0] > 200 and px[2] > 200 and px[1] < 80, px  # magenta do logo
     assert g.getpixel((13 + 64, 13 + 25)) != px
     # canto oposto intacto
-    assert f.getpixel((f.width - 20, f.height - 20)) == g.getpixel((g.width - 20, g.height - 20))
+    # A codificacao com overlay muda ligeiramente os pixels: comparar com tolerancia.
+    corner_a, corner_b = f.getpixel((f.width - 20, f.height - 20)), g.getpixel((g.width - 20, g.height - 20))
+    assert max(abs(a - b) for a, b in zip(corner_a, corner_b)) < 35
 
 
 def test_overlay_uses_only_own_arena_campaigns(client, world, H):
@@ -140,7 +145,7 @@ def test_overlay_uses_only_own_arena_campaigns(client, world, H):
 
 def test_license_expiring_before_render_blocks_music(client, world, H):
     from datetime import timedelta
-    jid = make_job(client, H, world, world.A.pub, audioMode="music", musicId=world.A.tracks["ok"], applySponsors=False)
+    jid = make_job(client, H, world, world.A.pub, audioMode="music", musicId=world.A.tracks["ok"])
     db = SessionLocal()
     db.get(MusicTrack, world.A.tracks["ok"]).license_valid_until = utcnow() - timedelta(seconds=5)
     db.commit()
