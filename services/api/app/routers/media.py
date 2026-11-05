@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from .. import audit, storage
+from .. import audit, policy, storage
 from ..db import get_db
 from ..deps import ARENA_STAFF, can_view_video
 from ..models import ExportJob, Membership, MusicTrack, Sponsor, User, Video
@@ -38,6 +38,9 @@ def serve(token: str, db: Session = Depends(get_db)):
             raise HTTPException(404, "não encontrado")
         arena_id = v.arena_id
         if kind == "video":
+            # A URL assinada nao pode contornar a regra do download oficial.
+            if disp == "attachment" and policy.select_overlays(db, v):
+                raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
             key, mime, name = v.storage_key, "video/mp4", f"replay-{v.code}.mp4"
         else:
             key, mime, name = v.thumb_key, "image/jpeg", f"replay-{v.code}.jpg"
