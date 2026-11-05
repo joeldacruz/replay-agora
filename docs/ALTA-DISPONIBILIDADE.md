@@ -24,3 +24,8 @@ Servidor reserva assume após falha do principal; devolve o serviço **somente a
 ## Riscos abertos
 * Janela de perda de escritas não replicadas é coberta pelo reenvio de 24 h do agente, mas **eventos de usuário/gestor** gravados no principal e não replicados (ex.: marcar proteção) podem se perder — exige replicação síncrona ou fila de reaplicação.
 * Fencing por epoch exige que a promoção realmente incremente o valor (configuração operacional; não há eleição automática).
+
+## Notas da etapa de entrega por relay
+* `relay_requests`, `agent_nonces` e os jobs de render ficam no banco: qualquer nó com o mesmo banco responde. O **spool** de trechos é local ao nó (arquivos efêmeros); um pedido em andamento durante o failover expira (`RELAY_TIMEOUT_S`) e o player refaz o `Range`.
+* Em modo `standby` os endpoints de relay/render respondem 503 (escrita de agente) e os agentes aguardam com *backoff*.
+* Nonces vistos pelo principal podem não ter replicado: a janela de timestamp (±120 s) limita a reutilização após o failover.

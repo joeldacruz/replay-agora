@@ -16,6 +16,11 @@ Cabeçalhos: `Authorization: Bearer <token>`, `X-Agent-Node: <nodeId estável>`,
 | `POST /api/agent/v1/sync/replays` `{replays:[{localId, courtKey, capturedAt, durationS, bytes, ...}]}` | metadados idempotentes por `localId` (≤ 200/lote); resultado por item: `created`/`duplicate`/`rejected` |
 | `GET /api/agent/v1/sync/protection` | lista autoritativa de replays protegidos (nunca remover) |
 | `GET /api/agent/v1/retention/plan` | candidatos à retenção (somente dry-run) |
+| `POST /api/agent/v1/credentials/rotate` | troca token + chave de assinatura (anterior vale 10 min) |
+| `GET /api/agent/v1/relay/next` · `POST /relay/{id}/data` · `POST /relay/{id}/error` | entrega de trechos do vídeo local ao jogador (long-poll de saída) |
+| `GET /api/agent/v1/render/next` · `/render/{id}/asset/{nome}` · `/progress` · `/complete` · `/fail` | renderização local de prévias/exportações |
+
+Assinatura (quando o agente tem chave): `X-Agent-Ts`, `X-Agent-Nonce`, `X-Agent-Sig = HMAC-SHA256(chave, "RA1\nMÉTODO\ncaminho?query\nts\nnonce\nsha256(corpo)")`. Detalhes em [ENTREGA-E-SEGURANCA-DO-AGENTE.md](ENTREGA-E-SEGURANCA-DO-AGENTE.md).
 
 Reenvio é sempre seguro. Falha de rede ou 5xx/503 ⇒ continuar operando localmente e tentar com *backoff*. Implementação de referência **simulada**: `services/local-agent/replay_agent`.
 

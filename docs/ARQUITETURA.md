@@ -65,3 +65,7 @@ Sem áudio original: `original`/`mix` são recusados (422) e a interface desabil
 ## Multiarena, agentes e capacidade (etapa posterior)
 
 Cada computador de arena roda seu próprio motor (captura, buffer, geração) e **mantém os MP4**; a API guarda só metadados via `/api/agent/v1` (register, heartbeat, config, sync idempotente, plano de retenção). Tabelas novas (migração `0004`): `court_runtime`, `storage_samples`; colunas em `arenas` (limite/limiares), `courts` (limite), `arena_agents` (node, heartbeat, telemetria) e `videos` (`storage_location`, `local_id`, `protected`). Veja [CAPACIDADE-E-ARMAZENAMENTO.md](CAPACIDADE-E-ARMAZENAMENTO.md) e [ALTA-DISPONIBILIDADE.md](ALTA-DISPONIBILIDADE.md).
+
+## Entrega, renderização local e segurança do agente (etapa posterior)
+
+O MP4 e as saídas renderizadas permanecem na arena; a central valida o link assinado e **repassa** trechos buscados pelo agente por conexão de saída (relay), sem armazená-los. Prévias/exportações de vídeos da arena são renderizadas pelo agente (`render_location='agent'`). Migrações `0005` (credenciais/assinatura/nonces), `0006` (relay, `media_state`) e `0007` (render no agente). Fila de acionamentos persistente no agente. Ver [ENTREGA-E-SEGURANCA-DO-AGENTE.md](ENTREGA-E-SEGURANCA-DO-AGENTE.md).

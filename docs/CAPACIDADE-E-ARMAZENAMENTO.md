@@ -22,7 +22,7 @@
   O envio legado `POST /api/ingest/videos` continua existindo para compatibilidade e pode ser desligado com `ALLOW_AGENT_VIDEO_UPLOAD=false` (responde 410).
 * **Isolamento:** o token identifica **uma** arena; toda leitura/escrita é filtrada por `arena_id` do token. Quadras de outra arena são "desconhecidas"; o mesmo `localId` em duas arenas gera vídeos distintos; o token é vinculado ao primeiro `nodeId` registrado (clonar o token em outro computador → 409).
 * **Fronteiras de papel preservadas:** Arena (admin) define limiares, limite por quadra (≤ limite da arena), retenção por quadra e proteção de vídeos; **somente o Portal** altera o limite global de uma arena (`PUT /api/platform/arenas/{id}/storage-limit`, auditado). Operador só lê.
-* Replays sincronizados nascem **privados** e com `storage_location='agent'`. A reprodução/download/exportação desses replays responde **409** com mensagem clara (entrega do MP4 ao atleta depende de integração local ainda inexistente; ver §7).
+* Replays sincronizados nascem **privados** e com `storage_location='agent'`. Reprodução, download, prévia e exportação são entregues por relay a partir do agente (ver [ENTREGA-E-SEGURANCA-DO-AGENTE.md](ENTREGA-E-SEGURANCA-DO-AGENTE.md)).
 
 ## 2. Processamento simultâneo
 
@@ -81,8 +81,8 @@ O script usa banco e armazenamento **temporários**, sai com código ≠ 0 se ho
 
 ## 8. Limitações conhecidas (não omitir)
 
-1. **Entrega do MP4 ao atleta/gestor** (player, download, prévia patrocinada, exportação de áudio) para replays `agent` está **bloqueada (409)**: o worker FFmpeg central e a prévia patrocinada hoje dependem do arquivo na central. Precisa de decisão: renderização no agente + URL assinada via túnel/relay, ou transferência temporária sob demanda (que contraria "não transferir vídeo"). **Pendente de decisão do produto.**
-2. Fila de geração do motor é **em memória**: acionamento enfileirado e ainda não renderizado se perde se o computador local reiniciar (o evento do buffer real também dependeria do buffer persistido).
+1. ~~**Entrega do MP4 ao atleta/gestor**~~ **RESOLVIDO na etapa seguinte** (relay de saída + renderização local; ver [ENTREGA-E-SEGURANCA-DO-AGENTE.md](ENTREGA-E-SEGURANCA-DO-AGENTE.md)). Texto original: **Entrega do MP4 ao atleta/gestor** (player, download, prévia patrocinada, exportação de áudio) para replays `agent` está **bloqueada (409)**: o worker FFmpeg central e a prévia patrocinada hoje dependem do arquivo na central. Precisa de decisão: renderização no agente + URL assinada via túnel/relay, ou transferência temporária sob demanda (que contraria "não transferir vídeo"). **Pendente de decisão do produto.**
+2. ~~Fila em memória~~ **RESOLVIDO**: fila SQLite persistente com recuperação após kill -9. Texto original: Fila de geração do motor é **em memória**: acionamento enfileirado e ainda não renderizado se perde se o computador local reiniciar (o evento do buffer real também dependeria do buffer persistido).
 3. Sem miniatura (thumbnail) para replays sincronizados (a miniatura teria de ser enviada como imagem: decisão pendente).
 4. Sem rotação/limpeza real: remoção efetiva de arquivos exige etapa própria, com backup e aprovação.
 5. Token de agente = segredo de portador sobre TLS; sem assinatura por requisição nem mTLS (recomendado antes de produção). Rate limiting continua em memória por processo.

@@ -372,3 +372,42 @@ def test_central_never_keeps_video_bytes(rig):
     assert states <= {"consumed", "expired"}                                              # nada fica aguardando/guardado
     assert db.query(Video).filter(Video.storage_location == "agent", Video.storage_key != "").count() == 0
     db.close()
+
+
+def test_full_journey_offline_capture_reconnect_then_playable(client, world, tmp_path, monkeypatch, H):
+    """Arena fica sem internet, continua gerando replays (duas quadras); ao voltar, os metadados sincronizam sozinhos
+    e o jogador passa a ver e baixar os vídeos — que continuam só no disco da arena."""
+    from replay_agent.render import SimRenderer
+    monkeypatch.setattr(settings, "relay_spool_dir", tmp_path / "spool")
+    db = SessionLocal()
+    db.query(SponsorCampaign).filter_by(arena_id=world.A.id).update({"active": False})
+    db.commit()
+    db.close()
+    ar = build_arena("A", world.A.token, ["A_01", "A_02"], client, root=tmp_path / "A", renderer=SimRenderer(mode="ffmpeg", clip_seconds=2), dedup_s=0)
+    assert ar.link.tick()["online"]
+    ar.http.down = True                                                   # sem internet na arena
+    for k in ("A_01", "A_02"):
+        ar.engine.trigger(k, T0)                                          # acionamentos simultâneos nas duas quadras
+    assert ar.engine.wait_idle(60) and not ar.link.tick()["online"]
+    assert ar.store.count() == 2 and ar.store.count("pending") == 2
+    ar.http.down = False                                                  # voltou
+    assert ar.link.tick()["online"] and ar.store.count("pending") == 0
+    srv = RelayServer(CentralClient(TestClient(app), world.A.token, "node-A"), ar.store, [tmp_path / "A"])
+    stop = threading.Event()
+    threads = srv.start(stop, workers=2, wait=1)
+    try:
+        db = SessionLocal()
+        vids = db.query(Video).filter(Video.arena_id == world.A.id, Video.local_id.like("A-A_0%-%")).all()
+        assert len(vids) == 2
+        for v in vids:
+            client.patch(f"/api/arena/{world.A.id}/videos/{v.id}", headers=H("a_admin_arena"), json={"visibility": "arena"})
+            assert client.get(f"/api/videos/{v.id}", headers=H("a_user")).json()["playable"] is True
+            url = client.get(f"/api/videos/{v.id}/play", headers=H("a_user")).json()["url"]
+            got = client.get(url).content
+            assert got == Path(ar.store.get(v.local_id)["path"]).read_bytes()
+        db.close()
+    finally:
+        stop.set()
+        for t in threads:
+            t.join(timeout=5)
+        ar.engine.stop()

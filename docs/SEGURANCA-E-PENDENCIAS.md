@@ -64,3 +64,21 @@
 - **Testes:** 157 passando localmente (100 anteriores + 57 novos: contrato do agente, isolamento multiarena, limites/previsão/retenção, motor local, queda/reconexão, failover/fencing, migração, benchmark). o workflow de CI foi configurado para executar também `scripts/simulate_fleet.py` (ainda não executado no GitHub).
 - **Sem remoção automática de arquivos reais:** `autoDelete:false` na config; plano de retenção é dry-run; proteção é respeitada duas vezes (central e agente).
 - **Pendências desta etapa:** ver §8 de CAPACIDADE-E-ARMAZENAMENTO.md (entrega do MP4 local ao app, fila local em memória, sem thumbnail, sem mTLS, SQLite) e ALTA-DISPONIBILIDADE.md (failover real não implementado). **Nada foi homologado com câmeras, Arduino ou servidores reais.**
+
+
+## Entrega, render local, fila persistente e segurança do agente (branch do PR #2)
+
+**Implementado (simulação):** relay HTTPS de saída com links assinados, Range/seek e estado "indisponível"; renderização local de prévia patrocinada e exportação de áudio; fila SQLite persistente por quadra com recuperação após `kill -9`; credenciais rotativas, requisições assinadas com nonce, preparação mTLS e redação de segredos. Migrações **0005, 0006, 0007** (aditivas; aplicar antes do deploy, rollback por `alembic downgrade`). Preservados: cache de prévias, URLs assinadas, regras de patrocínio/privacidade, retenção, modo legado de upload, E2E 20/20.
+
+**Testes (local, 05/11/2026):** suíte completa 232 passando; E2E 20/20; simulação de frota OK (0 duplicados, 0 vídeo na central). Docker não pôde ser executado neste ambiente (sem daemon); o job `docker_smoke` do GitHub Actions é a referência.
+
+**Pendências para homologação em ambiente real (nada disso foi feito):**
+1. Adaptar `leitor.py`/`buffer.py`/`replay.py` reais ao contrato v1 (fila, relay, render) e inventariar o código do `replayagora-srv01`; testar com câmeras RTSP e botoeiras reais, duas quadras simultâneas, e medir CPU/disco do hardware real (renderização local compete com a captura).
+2. TLS real e domínio; proxy reverso com **rate limiting**, limites de corpo (trechos ≤ 4 MiB) e, se desejado, **mTLS** (cabeçalho de fingerprint precisa ser removido se vier da internet). Testar a latência do relay em rede real (cada janela custa um *round-trip* ao agente).
+3. PostgreSQL e escala do relay: cada player em reprodução ocupa uma thread da API durante a espera; com muitos jogadores simultâneos é preciso dimensionar workers, usar *async*/pub-sub no lugar de *polling* no banco e spool compartilhado entre nós.
+4. Retenção/limpeza de `renders/` e de replays na arena (nenhum arquivo é apagado automaticamente); `renders/` fica órfão quando a central apaga um job.
+5. Fila local: o acionamento é persistido, mas o **trecho do buffer** do evento só existe se o buffer real também sobreviver ao reinício; retentativa de geração depende do buffer real.
+6. Sem miniaturas para replays da arena (thumbnail exigiria envio de imagem); player sem poster.
+7. Rotação automática testada com arquivo local; falta o procedimento operacional (guardar credenciais em `/etc/replayagora`, permissões 0600, backup, revogação) e o primeiro provisionamento seguro do par token+chave.
+8. Navegador real: Range/seek validados por testes HTTP, não em Safari/Chrome/iOS com `<video>`; verificar `Content-Length` com proxy/CDN e compressão desabilitada para vídeo.
+9. Acesso excepcional do `global_admin` à mídia privada continua não implementado (por desenho não existe rota).
