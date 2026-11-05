@@ -95,6 +95,7 @@ async function watch(p) {
     play ? h('video', { src: play.url, controls: true, playsinline: true, poster: v.thumbnailUrl || null }) : h('p', { class: 'muted' }, 'Replay ainda em processamento.'),
     h('p', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}` + (v.sponsors?.length ? ' · Patrocínio: ' + v.sponsors.join(', ') : '')),
     h('div', { class: 'row-actions' },
+      v.sponsors?.length ? h('p', { class: 'muted' }, 'Para baixar, gere uma versão com os patrocinadores da arena abaixo.') :
       h('button', { class: 'primary', onclick: async () => { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } }, '⬇ Baixar MP4 original'),
       h('button', { onclick: () => share(p.id, v) }, '↗ Compartilhar')),
     h('h2', {}, 'Baixar com som personalizado'), exportBox);
