@@ -222,13 +222,17 @@ class MusicTrack(Base):
 
 class ExportJob(Base):
     __tablename__ = "export_jobs"
-    __table_args__ = (Index("ix_exports_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_exports_status_created", "status", "created_at"),
+        Index("ix_exports_preview_cache_key", "preview_cache_key", unique=True),
+    )
     id: Mapped[str] = _id()
     arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     video_id: Mapped[str] = mapped_column(ForeignKey("videos.id", ondelete="CASCADE"), index=True)
     audio_mode: Mapped[str] = mapped_column(String(10))
     purpose: Mapped[str] = mapped_column(String(12), default="export")  # export|preview
+    preview_cache_key: Mapped[str | None] = mapped_column(String(64), nullable=True)  # unico para previews compartilhados
     music_id: Mapped[str | None] = mapped_column(ForeignKey("music_tracks.id", ondelete="SET NULL"), nullable=True)
     original_volume: Mapped[float] = mapped_column(Float, default=1.0)
     music_volume: Mapped[float] = mapped_column(Float, default=0.6)
