@@ -63,6 +63,17 @@ def test_play_range_and_secure_download(client, world, H):
     assert full.headers["cache-control"] == "private, no-store"
     part = client.get(url, headers={"Range": "bytes=0-99"})
     assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-range"].startswith("bytes 0-99/")
+    # Um replay com campanha nao pode ser baixado pelo endpoint de origem sem logo.
+    assert client.post(f"/api/videos/{world.A.pub}/download-link", headers=h).status_code == 409
+    assert client.get(f"/api/videos/{world.A.pub}/download", headers=h).status_code == 409
+    from app.routers.media import sign
+    from app.db import SessionLocal
+    from app.models import SponsorCampaign
+    db = SessionLocal()
+    assert client.get(sign("video", world.A.pub, world.uid["a_user"], "attachment")).status_code == 409
+    db.query(SponsorCampaign).filter_by(arena_id=world.A.id).delete()
+    db.commit()
+    db.close()
     dl = client.post(f"/api/videos/{world.A.pub}/download-link", headers=h).json()["url"]
     r = client.get(dl)
     assert r.status_code == 200 and f'filename="replay-{world.A.pub_code}.mp4"' in r.headers["content-disposition"]
