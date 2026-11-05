@@ -16,6 +16,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .adapters import NotReady, Unrecoverable, utc_epoch
 from .render import CameraDown, SimRenderer
 from .store import LocalStore
 
@@ -70,7 +71,7 @@ class CourtWorker(threading.Thread):
         d, c = list(self.durations), self.engine.store.job_counts(self.court_key)
         p95 = sorted(d)[max(0, int(len(d) * 0.95) - 1)] if d else None
         return {"courtKey": self.court_key, "state": self.state, "queueDepth": c.get("queued", 0) + c.get("processing", 0),
-                "completed": c.get("done", 0), "failed": c.get("failed", 0), "retries": self.retries,
+                "completed": c.get("done", 0), "failed": c.get("failed", 0), "unrecoverable": c.get("unrecoverable", 0), "retries": self.retries,
                 "lastRenderS": round(d[-1], 3) if d else None, "avgRenderS": round(statistics.fmean(d), 3) if d else None,
                 "p95RenderS": round(p95, 3) if p95 is not None else None, "storageUsedBytes": self.engine.store.usage(self.court_key)}
 
@@ -141,7 +142,11 @@ class Engine:
                 w.rejected_full += 1
                 return {"accepted": False, "reason": "queue_full"}
             local_id = f"{self.arena_tag}-{court_key}-{int(at.timestamp() * 1000)}"
-            if not self.store.enqueue_job(local_id, court_key, at, self.max_attempts, source=source, button=button):
+            pol = self.policy[court_key]
+            t0 = utc_epoch(at)
+            ready = getattr(self.renderer, "ready_at", lambda *a: None)(court_key, t0, pol["post"])     # espera o pós-roll ser gravado
+            window = (t0 - pol["pre"], t0 + pol["post"]) if getattr(self.renderer, "needs_buffer", False) else None   # fixa o buffer
+            if not self.store.enqueue_job(local_id, court_key, at, self.max_attempts, source=source, button=button, ready_at=ready, window=window):
                 return {"accepted": False, "reason": "duplicate"}
         w.wake.set()
         return {"accepted": True, "localId": local_id}
@@ -187,11 +192,20 @@ class Engine:
             tmp.parent.mkdir(parents=True, exist_ok=True)
             pol = self.policy[w.court_key]
             r = self.renderer.render(w.court_key, tmp, pol["pre"], pol["post"], at)
+            self._verify_complete(tmp, r)
             os.replace(tmp, final)  # publicação atômica: nunca expõe arquivo parcial
+            self._fsync_dir(final.parent)
             self.store.add_replay(local_id, w.court_key, at, str(final), r.bytes, r.duration, r.width, r.height, r.has_audio, r.codec)
             self.store.finish_job(local_id, "done")
             w.state, w.last_error = "ok", None
             w.durations.append(time.perf_counter() - t0)
+        except NotReady as e:  # pós-roll ainda sendo gravado: não é falha nem gasta tentativa
+            tmp.unlink(missing_ok=True)
+            self.store.reschedule_job(local_id, e.retry_at)
+        except Unrecoverable as e:  # o momento não pode ser reconstruído: NÃO inventa replay
+            tmp.unlink(missing_ok=True)
+            w.state, w.last_error = "degraded", f"unrecoverable:{e.reason}"
+            self.store.finish_job(local_id, "unrecoverable", f"{e.reason}: {e}")
         except CameraDown as e:  # o trecho do buffer não volta: sem retentativa
             tmp.unlink(missing_ok=True)
             self._fail(w, job, f"camera:{e}", retriable=False, state="camera_down")
@@ -201,6 +215,28 @@ class Engine:
         except Exception as e:  # noqa: BLE001 - um job ruim não pode matar o worker da quadra
             tmp.unlink(missing_ok=True)
             self._fail(w, job, type(e).__name__, retriable=True)
+
+    @staticmethod
+    def _fsync_dir(d: Path) -> None:
+        try:
+            fd = os.open(d, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _verify_complete(path: Path, r) -> None:
+        """O arquivo precisa existir, ter o tamanho informado e estar em disco (fsync) ANTES de existir replay/job concluído."""
+        if not path.is_file() or path.stat().st_size == 0 or (r.bytes and path.stat().st_size != r.bytes):
+            raise OSError(5, "arquivo incompleto")
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     # ----- observabilidade / ciclo de vida -----
     def court_stats(self) -> list[dict]:

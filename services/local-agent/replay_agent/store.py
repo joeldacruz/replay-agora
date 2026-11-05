@@ -57,7 +57,7 @@ class LocalStore:
             self._db.executescript(SCHEMA)
             cols = {r["name"] for r in self._db.execute("PRAGMA table_info(replays)")}
             jcols = {r["name"] for r in self._db.execute("PRAGMA table_info(jobs)")}
-            for col, ddl in (("source", "TEXT"), ("button", "TEXT")):
+            for col, ddl in (("source", "TEXT"), ("button", "TEXT"), ("window_start", "REAL"), ("window_end", "REAL")):
                 if col not in jcols:
                     self._db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ddl}")
             if "file_ok" not in cols:  # bancos criados por versões anteriores
@@ -144,11 +144,15 @@ class LocalStore:
         self._db.execute("INSERT INTO job_events(job_id,ts,event,detail) VALUES(?,?,?,?)", (job_id, _now(), event, detail))
 
     def enqueue_job(self, job_id: str, court_key: str, captured_at: datetime, max_attempts: int = 3,
-                    source: str | None = None, button: str | None = None) -> bool:
+                    source: str | None = None, button: str | None = None, ready_at: float | None = None,
+                    window: tuple[float, float] | None = None) -> bool:
         """Idempotente: o mesmo job_id nunca entra duas vezes (mesmo após reinício)."""
         with self._lock:
-            cur = self._db.execute("INSERT OR IGNORE INTO jobs(job_id,court_key,captured_at,max_attempts,created_at,source,button) VALUES(?,?,?,?,?,?,?)",
-                                   (job_id, court_key, captured_at.isoformat(), max_attempts, _now(), source, button))
+            cur = self._db.execute("INSERT OR IGNORE INTO jobs(job_id,court_key,captured_at,max_attempts,created_at,source,button,next_attempt_at,window_start,window_end)"
+                                   " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                                   (job_id, court_key, captured_at.isoformat(), max_attempts, _now(), source, button,
+                                    datetime.fromtimestamp(ready_at, timezone.utc).replace(tzinfo=None).isoformat() if ready_at else None,
+                                    window[0] if window else None, window[1] if window else None))
             if cur.rowcount == 1:
                 self._event(job_id, "queued")
             return cur.rowcount == 1
@@ -173,6 +177,28 @@ class LocalStore:
             else:
                 self._db.execute("UPDATE jobs SET state=?, last_error=?, finished_at=? WHERE job_id=?", (state, error, _now(), job_id))
                 self._event(job_id, state, error)
+
+    def reschedule_job(self, job_id: str, retry_at: float, detail: str = "aguardando pós-roll") -> None:
+        """Volta à fila SEM gastar tentativa (o trecho do buffer ainda está sendo gravado)."""
+        with self._lock:
+            nxt = datetime.fromtimestamp(retry_at, timezone.utc).replace(tzinfo=None).isoformat()
+            self._db.execute("UPDATE jobs SET state='queued', attempts=MAX(attempts-1,0), next_attempt_at=? WHERE job_id=?", (nxt, job_id))
+            self._event(job_id, "waiting", detail)
+
+    def pinned_windows(self, court_key: str) -> list[tuple[float, float]]:
+        """Janelas de tempo de acionamentos ainda NÃO concluídos: o buffer não pode apagar esses segmentos."""
+        rows = self._x("SELECT window_start a, window_end b FROM jobs WHERE court_key=? AND state IN ('queued','processing') "
+                       "AND window_start IS NOT NULL", (court_key,)).fetchall()
+        return [(r["a"], r["b"]) for r in rows]
+
+    def oldest_wait_s(self, court_key: str | None = None) -> float | None:
+        q, a = "SELECT MIN(created_at) FROM jobs WHERE state IN ('queued','processing')", ()
+        if court_key:
+            q, a = q + " AND court_key=?", (court_key,)
+        r = self._x(q, a).fetchone()
+        if not r or not r[0]:
+            return None
+        return max(0.0, (datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(r[0])).total_seconds())
 
     def recover_jobs(self) -> int:
         """Após reinício inesperado: 'processing' órfão volta à fila (ou falha se esgotou tentativas)."""

@@ -6,8 +6,10 @@
 * Rotação apaga SOMENTE segmentos `seg_<epoch>.ts` do próprio diretório do buffer, nunca os de janelas de acionamentos pendentes.
 * Diagnóstico: FPS recebido, bitrate, frames descartados, reconexões, travamentos, lacunas e duração contínua disponível.
 """
+import ctypes
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -148,6 +150,14 @@ def rotate(index: BufferIndex, keep_s: float, pinned: list[tuple[float, float]],
     return removed
 
 
+def _die_with_parent() -> None:
+    """PR_SET_PDEATHSIG: se o agente morrer (kill -9, OOM), o FFmpeg de captura morre junto — sem processo órfão gravando."""
+    try:
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)
+    except Exception:  # noqa: BLE001 - melhor esforço (Linux)
+        pass
+
+
 _RTSP_TIMEOUT_OPT: dict[str, str] = {}
 
 
@@ -240,7 +250,8 @@ class SegmentRecorder(threading.Thread):
         self.runs += 1
         t_start = time.monotonic()
         try:
-            self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                         preexec_fn=_die_with_parent)
         except OSError as e:
             self.last_error = f"não foi possível iniciar o FFmpeg: {type(e).__name__}"
             return 0.0
