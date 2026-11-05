@@ -7,7 +7,8 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import audit, policy, storage
@@ -184,14 +185,22 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
     mode = "original" if v.has_audio and "original" in (arena.audio_allowed_modes or "").split(",") else "mute"
     ov, mv = 1.0, 0.0
     ph = hashlib.sha256(("preview:" + policy.params_hash(v.id, mode, None, ov, mv, spec)).encode()).hexdigest()
-    candidates = db.query(ExportJob).filter(
-        ExportJob.user_id == a.user.id, ExportJob.video_id == v.id,
-        ExportJob.purpose == "preview", ExportJob.params_hash == ph,
-        ExportJob.status.in_(("queued", "processing", "ready"))
-    ).order_by(ExportJob.created_at.desc()).all()
-    for old in candidates:
-        if old.status != "ready" or (old.output_key and storage.path_for(old.output_key).is_file()):
-            return _preview_out(db, old, a.user.id)
+    # Cache compartilhado: a chave cobre vídeo (ID global), áudio, logos e
+    # versão da campanha. Um índice UNIQUE no banco evita duplicação concorrente.
+    existing = db.query(ExportJob).filter(
+        ExportJob.purpose == "preview", ExportJob.arena_id == v.arena_id,
+        ExportJob.video_id == v.id, ExportJob.preview_cache_key == ph
+    ).first()
+    if existing:
+        if existing.status == "ready" and not (existing.output_key and storage.path_for(existing.output_key).is_file()):
+            # Cache evictado: apenas a primeira requisição o recoloca na fila.
+            db.execute(update(ExportJob).where(
+                ExportJob.id == existing.id, ExportJob.status == "ready"
+            ).values(status="queued", output_key=None, output_bytes=0, progress=0,
+                     attempts=0, error=None, finished_at=None))
+            db.commit()
+            db.refresh(existing)
+        return _preview_out(db, existing, a.user.id)
 
     active = db.query(func.count(ExportJob.id)).filter(
         ExportJob.user_id == a.user.id, ExportJob.status.in_(("queued", "processing"))
@@ -200,21 +209,32 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
         raise HTTPException(429, "limite de processamentos simultâneos; tente novamente")
 
     job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id,
-                    purpose="preview", audio_mode=mode, music_id=None,
+                    purpose="preview", preview_cache_key=ph, audio_mode=mode, music_id=None,
                     original_volume=ov, music_volume=mv, apply_sponsors=True,
                     overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec),
                     params_hash=ph)
-    db.add(job)
-    db.flush()
-    audit.record(db, a.user.id, v.arena_id, "preview.create", "export", job.id)
-    db.commit()
+    try:
+        db.add(job)
+        db.flush()
+        audit.record(db, a.user.id, v.arena_id, "preview.create", "export", job.id)
+        db.commit()
+    except IntegrityError:
+        # Outra requisição criou o mesmo cache simultaneamente.
+        db.rollback()
+        shared = db.query(ExportJob).filter(
+            ExportJob.purpose == "preview", ExportJob.arena_id == v.arena_id,
+            ExportJob.video_id == v.id, ExportJob.preview_cache_key == ph
+        ).first()
+        if shared is None:
+            raise
+        return _preview_out(db, shared, a.user.id)
     return _preview_out(db, job, a.user.id)
 
 
 @router.get("/previews/{preview_id}")
 def preview_status(preview_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     job = db.get(ExportJob, preview_id)
-    if not job or job.user_id != a.user.id or job.purpose != "preview":
+    if not job or job.purpose != "preview":
         raise HTTPException(404, "prévia não encontrada")
     v = _get_visible(db, a, job.video_id)
     if policy.spec_version(policy.select_overlays(db, v)) != job.sponsor_template_version:
