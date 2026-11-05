@@ -50,6 +50,18 @@ class Settings:
         self.storage_sample_min_interval_s = _env_int("STORAGE_SAMPLE_MIN_INTERVAL_S", 60)
         # Legado: o agente enviava o MP4 à API. O novo contrato mantém o vídeo na arena; desligar em produção.
         self.allow_agent_video_upload = os.environ.get("ALLOW_AGENT_VIDEO_UPLOAD", "true").lower() in ("1", "true", "yes")
+        # Credenciais do agente: rotação, assinatura de requisições e mTLS (preparação)
+        self.agent_token_ttl_days = _env_int("AGENT_TOKEN_TTL_DAYS", 90)
+        self.agent_rotate_before_days = _env_int("AGENT_ROTATE_BEFORE_DAYS", 7)
+        self.agent_rotate_grace_s = _env_int("AGENT_ROTATE_GRACE_S", 600)           # credencial anterior ainda vale por 10 min
+        self.agent_expired_rotate_days = _env_int("AGENT_EXPIRED_ROTATE_DAYS", 7)   # rotação permitida até N dias após expirar
+        self.agent_sig_skew_s = _env_int("AGENT_SIG_SKEW_S", 120)
+        self.agent_require_signature = os.environ.get("AGENT_REQUIRE_SIGNATURE", "false").lower() in ("1", "true", "yes")
+        self.agent_mtls_mode = os.environ.get("AGENT_MTLS_MODE", "off")  # off|optional|required
+        if self.agent_mtls_mode not in ("off", "optional", "required"):
+            raise RuntimeError("AGENT_MTLS_MODE deve ser off, optional ou required")
+        # Cabeçalho preenchido PELO PROXY REVERSO após validar o certificado de cliente (o proxy deve removê-lo se vier de fora)
+        self.agent_mtls_header = os.environ.get("AGENT_MTLS_HEADER", "X-Client-Cert-Sha256").lower()
         # Redundância da API central (preparação): somente o nó 'primary' aceita escrita de agentes.
         # 'epoch' é um token de fencing: sobe a cada promoção do reserva; agentes recusam/ignoram nó com epoch menor.
         self.node_id = os.environ.get("NODE_ID", "central-1")

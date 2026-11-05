@@ -11,7 +11,7 @@ from .. import audit, mediainfo, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..models import Arena, ArenaAgent, Court, Plan, ReplayEvent, Video
-from ..security import hash_agent_token
+from ..agent_security import authenticate
 from ..uploads import ext_of, to_temp, validate_video
 from .arena import storage_used
 
@@ -20,14 +20,8 @@ _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 def agent_auth(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> ArenaAgent:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "credencial do agente ausente")
-    ag = db.query(ArenaAgent).filter_by(token_hash=hash_agent_token(authorization[7:].strip()), active=True).first()
-    if not ag:
-        raise HTTPException(401, "credencial do agente inválida")
-    arena = db.get(Arena, ag.arena_id)
-    if not arena or arena.status != "active":
-        raise HTTPException(403, "arena suspensa")
+    """Autenticação do contrato LEGADO (sem corpo/assinatura: uploads multipart grandes). Respeita rotação e expiração."""
+    ag, _ = authenticate(db, authorization)
     ag.last_used_at = utcnow()
     return ag
 

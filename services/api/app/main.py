@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+from .logsafe import install_redaction
 from .routers import agent, arena, arena_capacity, auth, ingest, media, platform, platform_capacity, user
 
 CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
@@ -12,6 +13,7 @@ CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; 
 
 
 def create_app() -> FastAPI:
+    install_redaction()
     app = FastAPI(title="Replay Agora API", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],

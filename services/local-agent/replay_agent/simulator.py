@@ -44,15 +44,15 @@ class SimArena:
 
 
 def build_arena(tag: str, token: str, court_keys: list[str], http, root: Path | None = None, renderer: SimRenderer | None = None,
-                **engine_kw) -> SimArena:
+                signing_key: str | None = None, creds=None, **engine_kw) -> SimArena:
     root = Path(root or tempfile.mkdtemp(prefix=f"sim-{tag}-"))
     root.mkdir(parents=True, exist_ok=True)
     fh = FaultyHttp(http)
     renderer = renderer or SimRenderer()
     store = LocalStore(str(root / "local.db"))
     engine = Engine(tag, root / "replays", court_keys, store, renderer, **engine_kw)
-    client = CentralClient(fh, token, node_id=f"node-{tag}")
-    link = CentralLink(client, store, engine, hostname=f"sim-{tag}", sampler=SystemSampler(str(root)))
+    client = CentralClient(fh, token, node_id=f"node-{tag}", signing_key=signing_key)
+    link = CentralLink(client, store, engine, hostname=f"sim-{tag}", sampler=SystemSampler(str(root)), creds=creds)
     return SimArena(tag, token, court_keys, fh, renderer, store, engine, link)
 
 

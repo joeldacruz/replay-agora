@@ -15,7 +15,7 @@ from ..db import get_db, new_id, utcnow
 from ..deps import ArenaCtx, ArenaGate
 from ..models import (AUDIO_MODES, POSITIONS, ROLES, Arena, ArenaAgent, AuditLog, Court, ExportJob, Membership,
                       MusicTrack, Plan, ReplayEvent, Sponsor, SponsorCampaign, User, Video)
-from ..security import hash_agent_token, new_agent_token
+from ..agent_security import force_rotate, issue_credentials
 from ..uploads import ext_of, process_logo, to_temp, validate_music
 from .media import sign
 from .serializers import iso, video_out
@@ -673,18 +673,54 @@ def list_agents(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
     rows = db.query(ArenaAgent).filter_by(arena_id=c.arena.id).order_by(ArenaAgent.created_at).all()
     return [{"id": a.id, "label": a.label, "active": a.active, "lastSeenAt": iso(a.last_used_at), "version": a.agent_version,
              "pendingSync": a.pending_sync, "connectionState": capacity.connection_state(a),
-             "hostname": a.hostname} for a in rows]
+             "hostname": a.hostname, "credentialExpiresAt": iso(a.token_expires_at), "signed": bool(a.sig_key),
+             "certificateBound": bool(a.cert_fingerprint)} for a in rows]
 
 
 @router.post("/agents", status_code=201)
 def create_agent(body: AgentIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    token = new_agent_token()
-    ag = ArenaAgent(arena_id=c.arena.id, label=body.label, token_hash=hash_agent_token(token))
+    ag = ArenaAgent(arena_id=c.arena.id, label=body.label, token_hash="pending")
+    token, key = issue_credentials(ag)  # token + chave de assinatura, mostrados uma única vez
     db.add(ag)
     db.flush()
     audit.record(db, c.user.id, c.arena.id, "agent.create", "agent", ag.id, {"label": body.label})
     db.commit()
-    return {"id": ag.id, "label": ag.label, "token": token, "notice": "guarde agora; não será exibido novamente"}
+    return {"id": ag.id, "label": ag.label, "token": token, "signingKey": key,
+            "expiresAt": ag.token_expires_at.isoformat() + "Z" if ag.token_expires_at else None,
+            "notice": "guarde agora; não será exibido novamente"}
+
+
+def _agent(db: Session, c: ArenaCtx, agent_id: str) -> ArenaAgent:
+    ag = db.get(ArenaAgent, agent_id)
+    if not ag or ag.arena_id != c.arena.id:  # IDOR: agente de outra arena é inexistente
+        raise HTTPException(404, "agente não encontrado")
+    return ag
+
+
+@router.post("/agents/{agent_id}/rotate")
+def force_rotate_agent(agent_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+    """Rotação forçada (suspeita de vazamento): a credencial antiga é invalidada IMEDIATAMENTE."""
+    ag = _agent(db, c, agent_id)
+    if not ag.active:
+        raise HTTPException(409, "agente revogado")
+    token, key = force_rotate(ag)
+    audit.record(db, c.user.id, c.arena.id, "agent.rotate_forced", "agent", ag.id)
+    db.commit()
+    return {"id": ag.id, "token": token, "signingKey": key, "notice": "guarde agora; não será exibido novamente"}
+
+
+class CertIn(BaseModel):
+    fingerprint: str | None = Field(None, pattern=r"^([0-9a-fA-F]{2}:?){31}[0-9a-fA-F]{2}$")
+
+
+@router.put("/agents/{agent_id}/certificate")
+def set_certificate(agent_id: str, body: CertIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+    """Vincula o SHA-256 do certificado de cliente (mTLS, quando AGENT_MTLS_MODE != off). None remove."""
+    ag = _agent(db, c, agent_id)
+    ag.cert_fingerprint = body.fingerprint.replace(":", "").lower() if body.fingerprint else None
+    audit.record(db, c.user.id, c.arena.id, "agent.certificate", "agent", ag.id, {"set": bool(ag.cert_fingerprint)})
+    db.commit()
+    return {"id": ag.id, "certificateBound": bool(ag.cert_fingerprint)}
 
 
 @router.delete("/agents/{agent_id}", status_code=204)

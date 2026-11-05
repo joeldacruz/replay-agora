@@ -8,6 +8,7 @@ import random
 import threading
 
 from .client import CentralClient, CentralRejected, CentralUnavailable
+from .creds import CredentialStore
 from .engine import Engine
 from .metrics import SystemSampler
 from .store import LocalStore
@@ -17,7 +18,8 @@ VERSION = "0.1.0-sim"
 
 class CentralLink:
     def __init__(self, client: CentralClient, store: LocalStore, engine: Engine, hostname: str = "sim-host",
-                 sampler: SystemSampler | None = None, batch: int = 100, resync_hours: int = 24):
+                 sampler: SystemSampler | None = None, batch: int = 100, resync_hours: int = 24,
+                 creds: CredentialStore | None = None):
         self.client, self.store, self.engine = client, store, engine
         self.hostname, self.sampler, self.batch, self.resync_hours = hostname, sampler, batch, resync_hours
         self.registered = False
@@ -25,6 +27,8 @@ class CentralLink:
         self.last_error: str | None = None
         self.fail_streak = 0
         self.config_version = ""
+        self.creds = creds
+        self.rotations = 0
 
     # ----- passos -----
     def _register(self) -> None:
@@ -41,6 +45,14 @@ class CentralLink:
         body = {"version": VERSION, "configVersion": self.config_version, "pendingSync": self.store.count("pending"),
                 "system": self.sampler.sample() if self.sampler else {}, "courts": self.engine.court_stats()}
         return self.client.call("POST", "/heartbeat", body)
+
+    def rotate_credentials(self) -> None:
+        """Troca de credencial: persiste o par NOVO em disco antes de usá-lo (a anterior ainda vale pela janela de carência)."""
+        r = self.client.call("POST", "/credentials/rotate")
+        if self.creds:
+            self.creds.save(r["token"], r["signingKey"], r.get("expiresAt"))
+        self.client.set_credentials(r["token"], r["signingKey"])
+        self.rotations += 1
 
     def _sync(self) -> int:
         sent = 0
@@ -76,6 +88,8 @@ class CentralLink:
                 self.registered = False
                 self._register()
                 self.store.requeue_recent(self.resync_hours)
+            if hb.get("rotateRecommended") and self.creds is not None:
+                self.rotate_credentials()
             if hb.get("configChanged"):
                 self._apply(self.client.call("GET", "/config"))
             self.store.set_central_protected(self.client.call("GET", "/sync/protection")["localIds"])

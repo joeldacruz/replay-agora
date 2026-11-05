@@ -113,7 +113,25 @@ class ArenaAgent(Base):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     config_ack: Mapped[str | None] = mapped_column(String(40), nullable=True)  # configVersion aplicado pelo agente
     system_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # CPU/memória/disco do último heartbeat
+    # Credenciais rotativas: a anterior segue válida só por uma janela curta (o agente pode perder a resposta da rotação)
+    prev_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prev_valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    prev_sig_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_rotated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # NULL = legado, sem expiração
+    sig_key: Mapped[str | None] = mapped_column(String(64), nullable=True)  # HMAC de requisição; NULL = legado sem assinatura
+    cert_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)  # SHA-256 do certificado de cliente (mTLS futuro)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AgentNonce(Base):
+    """Nonces já usados por agente: uma requisição assinada só vale UMA vez (anti-replay)."""
+    __tablename__ = "agent_nonces"
+    __table_args__ = (UniqueConstraint("agent_id", "nonce"), Index("ix_nonces_ts", "ts"))
+    id: Mapped[str] = _id()
+    agent_id: Mapped[str] = mapped_column(ForeignKey("arena_agents.id", ondelete="CASCADE"))
+    nonce: Mapped[str] = mapped_column(String(64))
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class CourtRuntime(Base):

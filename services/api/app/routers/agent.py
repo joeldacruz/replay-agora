@@ -4,7 +4,7 @@ Autenticação: token por arena (hash no banco) + vínculo ao primeiro `nodeId` 
 arena do token. Escritas só são aceitas pelo nó `primary` e com epoch de fencing compatível (preparação para o
 servidor reserva da API central; ver docs/ALTA-DISPONIBILIDADE.md).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -15,7 +15,8 @@ from .. import audit, capacity
 from ..config import settings
 from ..db import get_db, utcnow
 from ..models import ArenaAgent, Arena, Court, CourtRuntime, ReplayEvent, Video
-from .ingest import _code, agent_auth
+from ..agent_security import agent_auth_v1 as agent_auth, rotate as rotate_credentials, rotation_hint, issue_credentials
+from .ingest import _code
 
 NODE_RE = r"^[A-Za-z0-9_.\-]{4,64}$"
 KEY_RE = r"^[A-Za-z0-9_\-]{1,60}$"
@@ -67,12 +68,14 @@ def register(body: RegisterIn, ag: ArenaAgent = Depends(writer), db: Session = D
     first = ag.node_id is None
     ag.node_id, ag.hostname, ag.agent_version = body.nodeId, body.hostname or None, body.version or None
     ag.registered_at = ag.registered_at or utcnow()
+    if ag.token_expires_at is None and settings.agent_token_ttl_days > 0:
+        ag.token_expires_at = utcnow() + timedelta(days=settings.agent_token_ttl_days)
     arena = db.get(Arena, ag.arena_id)
     known = _courts(db, ag.arena_id)
     if first:
         audit.record(db, None, ag.arena_id, "agent.register", "agent", ag.id, {"node": body.nodeId, "host": body.hostname})
     db.commit()
-    return {"agentId": ag.id, "arenaId": ag.arena_id, "epoch": settings.central_epoch,
+    return {"agentId": ag.id, "arenaId": ag.arena_id, "epoch": settings.central_epoch, **rotation_hint(ag),
             "unknownCourts": sorted(k for k in body.courts if k not in known), "config": capacity.agent_config(db, arena)}
 
 
@@ -134,7 +137,8 @@ def heartbeat(body: HeartbeatIn, ag: ArenaAgent = Depends(bound), db: Session = 
     current = capacity.agent_config(db, arena)["configVersion"]
     db.commit()
     return {"ok": True, "serverTime": now.isoformat() + "Z", "epoch": settings.central_epoch,
-            "configVersion": current, "configChanged": current != body.configVersion, "unknownCourts": unknown}
+            "configVersion": current, "configChanged": current != body.configVersion, "unknownCourts": unknown,
+            **rotation_hint(ag)}
 
 
 # ---------------- sincronização de metadados de replays ----------------
@@ -226,6 +230,17 @@ def protection(limit: int = Query(5000, ge=1, le=20000), ag: ArenaAgent = Depend
 def retention(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Somente candidatos (dry-run). Nesta etapa nenhum componente apaga arquivos automaticamente."""
     return capacity.retention_plan(db, db.get(Arena, ag.arena_id))
+
+
+@router.post("/credentials/rotate")
+def rotate(request: Request, ag: ArenaAgent = Depends(writer), db: Session = Depends(get_db)):
+    """O agente troca suas próprias credenciais. Resposta contém token e chave NOVOS (única vez); a anterior vale só
+    pela janela de carência, para sobreviver a uma resposta perdida. Nada disso vai para log/auditoria."""
+    token, key = rotate_credentials(ag, bool(getattr(request.state, "via_prev", False)))
+    audit.record(db, None, ag.arena_id, "agent.rotate", "agent", ag.id, {"by": "agent"})
+    db.commit()
+    return {"token": token, "signingKey": key, "expiresAt": ag.token_expires_at.isoformat() + "Z" if ag.token_expires_at else None,
+            "previousValidUntil": ag.prev_valid_until.isoformat() + "Z" if ag.prev_valid_until else None}
 
 
 @router.get("/status")
