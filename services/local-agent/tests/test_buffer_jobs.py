@@ -21,6 +21,17 @@ HERE = Path(__file__).parent
 LA = HERE.parent
 
 
+def readline_timeout(proc, seconds):
+    """Lê uma linha do subprocesso auxiliar com limite de tempo (nunca bloqueia para sempre); mata o auxiliar se estourar."""
+    import select
+    r, _, _ = select.select([proc.stdout], [], [], seconds)
+    if not r:
+        proc.kill()
+        proc.wait()
+        raise AssertionError(f"subprocesso auxiliar não respondeu em {seconds}s")
+    return proc.stdout.readline()
+
+
 def wait(cond, timeout=40, step=0.1):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -97,7 +108,7 @@ def test_sigkill_during_postroll_recovers_the_pending_trigger_and_leaves_no_orph
     (root / "agent.json").write_text(json.dumps(cfg_dict(root, *vids)))
     p = subprocess.Popen([sys.executable, str(HERE / "agent_helper.py"), str(root), str(vids[0]), str(vids[1])],
                          env={**os.environ, "PYTHONPATH": str(LA)}, stdout=subprocess.PIPE, text=True)
-    assert p.stdout.readline().startswith("TRIGGERED accepted accepted")
+    assert readline_timeout(p, 90).startswith("TRIGGERED accepted accepted")
     time.sleep(0.4)                                                             # ainda aguardando o pós-roll
     p.send_signal(signal.SIGKILL)
     p.wait()

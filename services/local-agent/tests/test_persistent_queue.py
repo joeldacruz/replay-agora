@@ -16,11 +16,22 @@ T0 = datetime(2026, 11, 5, 12, 0, 0)
 LA = HERE.parent  # services/local-agent
 
 
+def readline_timeout(proc, seconds):
+    """Lê uma linha do subprocesso auxiliar com limite de tempo (nunca bloqueia para sempre); mata o auxiliar se estourar."""
+    import select
+    r, _, _ = select.select([proc.stdout], [], [], seconds)
+    if not r:
+        proc.kill()
+        proc.wait()
+        raise AssertionError(f"subprocesso auxiliar não respondeu em {seconds}s")
+    return proc.stdout.readline()
+
+
 def spawn(root, delay):
     env = {**os.environ, "PYTHONPATH": str(LA)}
     p = subprocess.Popen([sys.executable, str(HERE / "crash_helper.py"), str(root), str(delay)], env=env,
                          stdout=subprocess.PIPE, text=True)
-    assert p.stdout.readline().strip() == "READY"
+    assert readline_timeout(p, 90).strip() == "READY"
     return p
 
 

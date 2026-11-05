@@ -13,6 +13,9 @@ from replay_agent.store import LocalStore
 from replay_agent.triggers import SerialTrigger, TriggerRouter
 
 
+pytestmark = pytest.mark.timeout(45)   # leitura serial nunca pode bloquear a suíte
+
+
 def wait(cond, timeout=8, step=0.02):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
