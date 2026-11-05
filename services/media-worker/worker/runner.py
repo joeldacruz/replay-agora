@@ -79,8 +79,9 @@ def _build_plan(db: Session, job: ExportJob, tmp_out: Path) -> ExportPlan:
             if not o["asset_key"].startswith(f"arenas/{job.arena_id}/"):
                 raise PlanError("logotipo de outra arena recusado")
             p = storage.path_for(o["asset_key"])
-            if p.exists():
-                overlays.append(Overlay(str(p), o["logo_w"], o["logo_h"], o["position"], o["size_pct"], o["opacity"], o["duration_s"]))
+            if not p.is_file():
+                raise PlanError("logotipo de patrocinador ausente; exportação recusada")
+            overlays.append(Overlay(str(p), o["logo_w"], o["logo_h"], o["position"], o["size_pct"], o["opacity"], o["duration_s"]))
     meta = SourceMeta(info.duration, info.width, info.height, info.video_codec, info.has_audio, info.audio_codec)
     return ExportPlan(str(src), str(tmp_out), meta, job.audio_mode, music_path, job.original_volume, job.music_volume, overlays)
 
