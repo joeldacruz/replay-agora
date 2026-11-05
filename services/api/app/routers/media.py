@@ -38,9 +38,10 @@ def serve(token: str, db: Session = Depends(get_db)):
             raise HTTPException(404, "não encontrado")
         arena_id = v.arena_id
         if kind == "video":
-            # A URL assinada nao pode contornar a regra do download oficial.
-            if disp == "attachment" and policy.select_overlays(db, v):
-                raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
+            # Nunca entregar o video bruto ao atleta quando houver campanha.
+            # Equipe autorizada pode acessar a origem somente pelo painel da arena.
+            if policy.select_overlays(db, v) and not _staff(db, user.id, v.arena_id):
+                raise HTTPException(409, "Replay patrocinado: utilize a prévia processada")
             key, mime, name = v.storage_key, "video/mp4", f"replay-{v.code}.mp4"
         else:
             key, mime, name = v.thumb_key, "image/jpeg", f"replay-{v.code}.jpg"
@@ -51,6 +52,10 @@ def serve(token: str, db: Session = Depends(get_db)):
         v = db.get(Video, j.video_id)
         if not v or not can_view_video(db, user, v):
             raise HTTPException(404, "não encontrado")
+        if j.purpose == "preview" and disp != "inline":
+            raise HTTPException(403, "prévia indisponível para download direto")
+        if not policy.export_matches_campaigns(db, v, j):
+            raise HTTPException(409, "Patrocínio atualizado: gere uma nova versão")
         arena_id = j.arena_id
         key, mime, name = j.output_key, "video/mp4", f"replay-{v.code}-{j.audio_mode}.mp4"
     elif kind == "logo":
