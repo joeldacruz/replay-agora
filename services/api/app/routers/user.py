@@ -4,14 +4,14 @@ import json
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import audit, policy, storage
+from .. import delivery, audit, policy, storage
 from ..config import settings
 from ..db import get_db, utcnow
 from ..deps import Auth, user_auth, video_visible_to
@@ -34,6 +34,14 @@ def _get_visible(db: Session, a: Auth, video_id: str) -> Video:
     if not v or not video_visible_to(db, a.user, v):
         raise HTTPException(404, "replay não encontrado")
     return v
+
+
+def _require_playable(db: Session, v: Video) -> None:
+    """Não entrega link para vídeo que não pode ser servido agora (arena offline, arquivo ausente...)."""
+    av = delivery.availability(db, v)
+    if not av["playable"]:
+        code = 404 if av["availability"] in ("missing", "deleted") else 503
+        raise HTTPException(code, av["reason"], headers={"Retry-After": "10"} if code == 503 else None)
 
 
 def _require_central_file(v: Video) -> None:
@@ -126,7 +134,8 @@ def list_videos(arenaId: str | None = None, courtId: str | None = None, date: st
         rows = rows[:limit]
         last = rows[-1][0]
         nxt = f"{last.captured_at.isoformat()}|{last.id}"
-    return {"items": [video_out(v, c, a.user.id) for v, c in rows], "nextCursor": nxt}
+    cache: dict = {}
+    return {"items": [video_out(v, c, a.user.id, avail=delivery.availability(db, v, cache)) for v, c in rows], "nextCursor": nxt}
 
 
 class Claim(BaseModel):
@@ -151,7 +160,7 @@ def claim(body: Claim, a: Auth = Depends(user_auth), db: Session = Depends(get_d
 @router.get("/videos/{video_id}")
 def get_video(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
-    out = video_out(v, db.get(Court, v.court_id), a.user.id)
+    out = video_out(v, db.get(Court, v.court_id), a.user.id, avail=delivery.availability(db, v))
     out["sponsors"] = [o["name"] for o in policy.select_overlays(db, v)]
     return out
 
@@ -163,6 +172,7 @@ def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_
         raise HTTPException(409, "replay ainda em processamento")
     if policy.select_overlays(db, v):
         raise HTTPException(409, "Replay patrocinado: utilize a prévia processada")
+    _require_playable(db, v)
     return {"url": sign("video", v.id, a.user.id), "expiresIn": settings.signed_url_ttl_s}
 
 
@@ -179,12 +189,13 @@ def _preview_out(db: Session, job: ExportJob, uid: str) -> dict:
 def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     """Gera uma prévia patrocinada sem consumir a cota diária de exportação."""
     v = _get_visible(db, a, video_id)
-    _require_central_file(v)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
     spec = policy.select_overlays(db, v)
     if not spec:
+        _require_playable(db, v)
         return {"status": "ready", "url": sign("video", v.id, a.user.id), "sponsored": False}
+    _require_central_file(v)
 
     # Se a arena desabilita som original, a prévia é muda. O atleta pode
     # escolher uma trilha licenciada separadamente no editor de exportação.
@@ -254,16 +265,21 @@ def download_link(video_id: str, a: Auth = Depends(user_auth), db: Session = Dep
     v = _get_visible(db, a, video_id)
     if policy.select_overlays(db, v):
         raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
+    _require_playable(db, v)
     return {"url": sign("video", v.id, a.user.id, "attachment"), "expiresIn": settings.signed_url_ttl_s}
 
 
 @router.get("/videos/{video_id}/download")
-def download(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
+def download(video_id: str, request: Request, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
-    if v.storage_location == "agent":
-        raise HTTPException(409, "O MP4 está no computador da arena; entrega pendente de integração local")
     if policy.select_overlays(db, v):
         raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
+    if v.storage_location == "agent":
+        _require_playable(db, v)
+        audit.record(db, a.user.id, v.arena_id, "video.download", "video", v.id)
+        db.commit()
+        return delivery.remote_response(db, v.arena_id, "video", v.local_id, v.bytes, "video/mp4", f"replay-{v.code}.mp4",
+                                        "attachment", request.headers.get("range"), video=v)
     p = storage.path_for(v.storage_key)
     if not p.exists():
         raise HTTPException(404, "arquivo indisponível")

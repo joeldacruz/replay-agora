@@ -1,9 +1,9 @@
 """Entrega de mídia por URL assinada de curta duração. Revalida autorização a cada requisição."""
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from .. import audit, policy, storage
+from .. import audit, delivery, policy, storage
 from ..db import get_db
 from ..deps import ARENA_STAFF, can_view_video
 from ..models import ExportJob, Membership, MusicTrack, Sponsor, User, Video
@@ -22,7 +22,7 @@ def _staff(db: Session, uid: str, arena_id: str) -> bool:
 
 
 @router.get("/media/{token}")
-def serve(token: str, db: Session = Depends(get_db)):
+def serve(token: str, request: Request, db: Session = Depends(get_db)):
     c = decode_media_token(token)
     if not c:
         raise HTTPException(403, "link expirado ou inválido")
@@ -37,14 +37,18 @@ def serve(token: str, db: Session = Depends(get_db)):
         if not v or not can_view_video(db, user, v):
             raise HTTPException(404, "não encontrado")
         arena_id = v.arena_id
-        if kind == "video" and v.storage_location == "agent":
-            raise HTTPException(409, "O MP4 está no computador da arena; a entrega ao app depende da integração local (pendente)")
         if kind == "video":
             # Nunca entregar o video bruto ao atleta quando houver campanha.
             # Equipe autorizada pode acessar a origem somente pelo painel da arena.
             if policy.select_overlays(db, v) and not _staff(db, user.id, v.arena_id):
                 raise HTTPException(409, "Replay patrocinado: utilize a prévia processada")
             key, mime, name = v.storage_key, "video/mp4", f"replay-{v.code}.mp4"
+            if v.storage_location == "agent":  # o MP4 está na arena: relay por conexão de saída do agente
+                if disp == "attachment":
+                    audit.record(db, user.id, arena_id, "video.download", "video", rid)
+                    db.commit()
+                return delivery.remote_response(db, v.arena_id, "video", v.local_id, v.bytes, mime, name, disp,
+                                                request.headers.get("range"), video=v)
         else:
             key, mime, name = v.thumb_key, "image/jpeg", f"replay-{v.code}.jpg"
     elif kind == "export":

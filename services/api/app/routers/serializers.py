@@ -6,7 +6,7 @@ def iso(d):
     return d.isoformat() + "Z" if d else None
 
 
-def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False) -> dict:
+def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False, avail: dict | None = None) -> dict:
     out = {
         "id": v.id, "code": v.code, "title": v.title or f"Replay {v.code}", "arenaId": v.arena_id,
         "courtId": v.court_id, "courtLabel": court.label if court else None,
@@ -14,6 +14,8 @@ def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False) 
         "processingStatus": v.processing_status, "width": v.width, "height": v.height,
         "thumbnailUrl": sign("thumb", v.id, user_id) if v.thumb_key else None,
     }
+    if avail is not None:  # nunca anunciar como reproduzível o que não pode ser entregue agora
+        out |= avail
     if admin:
         out |= {"visibility": v.visibility, "bytes": v.bytes, "createdAt": iso(v.created_at)}
     return out

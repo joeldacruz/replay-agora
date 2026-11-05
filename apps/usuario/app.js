@@ -46,7 +46,8 @@ function card(v) {
   return h('a', { class: 'card', href: '#/v/' + v.id, style: 'text-decoration:none;color:inherit;display:block;margin:0' },
     v.thumbnailUrl ? h('img', { class: 'thumb', src: v.thumbnailUrl, alt: 'Miniatura do replay', loading: 'lazy' }) : h('div', { class: 'thumb' }),
     h('h3', { style: 'margin-top:.5rem' }, v.title), h('div', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}`),
-    h('div', {}, v.hasAudio ? '' : h('span', { class: 'badge' }, 'sem áudio original'), ' ', v.processingStatus !== 'ready' && badge(v.processingStatus)));
+    h('div', {}, v.hasAudio ? '' : h('span', { class: 'badge' }, 'sem áudio original'), ' ', v.processingStatus !== 'ready' && badge(v.processingStatus),
+      v.playable === false && v.processingStatus === 'ready' ? h('span', { class: 'badge warn', title: v.reason || '' }, 'indisponível agora') : ''));
 }
 
 async function home() {
@@ -90,6 +91,7 @@ async function watch(p) {
   const v = await api.get('/api/videos/' + p.id);
   const opts = await api.get(`/api/videos/${p.id}/export-options`);
   const exportBox = h('div'), playerBox = h('div');
+  const unavailable = v.playable === false && v.processingStatus === 'ready';
   mount(root, h('p', {}, h('a', { href: '#/' }, '← Voltar')), h('h1', {}, v.title),
     playerBox,
     h('p', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}` +
@@ -97,9 +99,17 @@ async function watch(p) {
     h('div', { class: 'row-actions' },
       v.sponsors?.length
         ? h('p', { class: 'muted' }, 'O vídeo exibido e as versões para download incluem os patrocinadores da arena.')
-        : h('button', { class: 'primary', onclick: async () => { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } }, '⬇ Baixar MP4 original'),
+        : h('button', { class: 'primary', disabled: unavailable, onclick: async () => { try { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } catch (e) { toast(e.message, true); } } }, '⬇ Baixar MP4 original'),
       h('button', { onclick: () => share(p.id, v) }, '↗ Compartilhar')),
     h('h2', {}, 'Baixar com som personalizado'), exportBox);
+  if (unavailable) {
+    // Nunca apresentar como reproduzível um vídeo que a arena não consegue entregar agora.
+    playerBox.replaceChildren(h('div', { class: 'card', role: 'status' }, h('p', { class: 'err' }, 'Vídeo indisponível no momento'),
+      h('p', { class: 'muted' }, v.reason || 'A arena está temporariamente offline.'),
+      h('button', { onclick: () => watch(p) }, 'Tentar novamente')));
+    exportBox.replaceChildren(h('p', { class: 'muted' }, 'A exportação com som personalizado volta quando o vídeo estiver disponível.'));
+    return;
+  }
   exportForm(exportBox, p.id, v, opts);
 
   let timer;

@@ -62,7 +62,8 @@ class CentralLink:
                 return sent
             items = [{"localId": r["local_id"], "courtKey": r["court_key"], "capturedAt": r["captured_at"] + "Z",
                       "durationS": r["duration"], "bytes": r["bytes"], "width": r["width"] or 0, "height": r["height"] or 0,
-                      "hasAudio": bool(r["has_audio"]), "videoCodec": r["codec"], "protected": bool(r["protected"])} for r in rows]
+                      "hasAudio": bool(r["has_audio"]), "videoCodec": r["codec"], "protected": bool(r["protected"]),
+                      "fileAvailable": bool(r["file_ok"])} for r in rows]
             res = self.client.call("POST", "/sync/replays", {"replays": items})
             by_id = {x["localId"]: x for x in res["results"]}
             for r in rows:  # só marca o que a central CONFIRMOU; o resto continua pendente
@@ -82,6 +83,7 @@ class CentralLink:
         try:
             if not self.registered:
                 self._register()
+            self.store.reconcile_files()
             hb = self._heartbeat()
             if self.client.epoch_changed:  # failover detectado
                 self.client.epoch_changed = False

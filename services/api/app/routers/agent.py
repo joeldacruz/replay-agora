@@ -6,7 +6,10 @@ servidor reserva da API central; ver docs/ALTA-DISPONIBILIDADE.md).
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import hashlib
+import time
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,6 +20,9 @@ from ..db import get_db, utcnow
 from ..models import ArenaAgent, Arena, Court, CourtRuntime, ReplayEvent, Video
 from ..agent_security import agent_auth_v1 as agent_auth, rotate as rotate_credentials, rotation_hint, issue_credentials
 from .ingest import _code
+from ..delivery import purge_spool, spool_file
+from ..db import SessionLocal
+from ..models import RelayRequest
 
 NODE_RE = r"^[A-Za-z0-9_.\-]{4,64}$"
 KEY_RE = r"^[A-Za-z0-9_\-]{1,60}$"
@@ -154,6 +160,7 @@ class ReplayIn(BaseModel):
     videoCodec: str | None = Field(None, max_length=30)
     protected: bool = False
     deletedLocally: bool = False
+    fileAvailable: bool = True  # o agente confirma que o MP4 existe em disco
 
 
 class SyncIn(BaseModel):
@@ -167,6 +174,7 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
             return {"localId": it.localId, "status": "rejected", "reason": "replay pertence a outra quadra"}
         if v.bytes != it.bytes or abs(v.duration - it.durationS) > 0.01:
             v.bytes, v.duration = it.bytes, it.durationS
+        v.media_state = "ok" if it.fileAvailable else "missing"
         if it.deletedLocally and v.deleted_at is None:
             v.deleted_at = utcnow()
             audit.record(db, None, ag.arena_id, "video.deleted_local", "video", v.id, {"agent": ag.id})
@@ -185,6 +193,7 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
               bytes=it.bytes, duration=it.durationS, width=it.width, height=it.height, video_codec=it.videoCodec,
               has_audio=it.hasAudio, visibility="private", processing_status="ready", captured_at=at,
               storage_location="agent", local_id=it.localId, protected=it.protected,
+              media_state="ok" if it.fileAvailable else "missing",
               deleted_at=utcnow() if it.deletedLocally else None)
     db.add(v)
     db.flush()
@@ -241,6 +250,80 @@ def rotate(request: Request, ag: ArenaAgent = Depends(writer), db: Session = Dep
     db.commit()
     return {"token": token, "signingKey": key, "expiresAt": ag.token_expires_at.isoformat() + "Z" if ag.token_expires_at else None,
             "previousValidUntil": ag.prev_valid_until.isoformat() + "Z" if ag.prev_valid_until else None}
+
+
+# ---------------- relay: entrega de vídeo (o agente busca por conexão de SAÍDA) ----------------
+@router.get("/relay/next")
+def relay_next(wait: int = Query(20, ge=0, le=60), ag: ArenaAgent = Depends(bound)):
+    """Long-poll: devolve o pedido de trecho mais antigo da PRÓPRIA arena (204 se nada surgir)."""
+    deadline = time.monotonic() + min(wait, settings.relay_poll_max_s)
+    first = True
+    while first or time.monotonic() < deadline:
+        first = False
+        with SessionLocal() as s:
+            now = utcnow()
+            cand = (s.query(RelayRequest.id).filter(RelayRequest.arena_id == ag.arena_id, RelayRequest.status == "pending",
+                                                    RelayRequest.expires_at > now)
+                    .order_by(RelayRequest.created_at).limit(3).all())
+            for (rid,) in cand:
+                n = s.query(RelayRequest).filter(RelayRequest.id == rid, RelayRequest.status == "pending").update(
+                    {"status": "claimed", "agent_id": ag.id})
+                s.commit()
+                if n == 1:  # reivindicação atômica
+                    r = s.get(RelayRequest, rid)
+                    return {"requestId": r.id, "kind": r.kind, "ref": r.ref, "start": r.start, "end": r.end}
+            # heartbeat implícito: o agente está vivo e pronto para servir
+            s.query(ArenaAgent).filter_by(id=ag.id).update({"last_used_at": now})
+            s.commit()
+        time.sleep(0.05)
+    return Response(status_code=204)
+
+
+def _claimed(db: Session, ag: ArenaAgent, rid: str) -> RelayRequest:
+    r = db.get(RelayRequest, rid)
+    if not r or r.arena_id != ag.arena_id or r.agent_id != ag.id:  # outro agente/arena => inexistente
+        raise HTTPException(404, "pedido não encontrado")
+    if r.status != "claimed":
+        raise HTTPException(409, "pedido não está aguardando dados")
+    return r
+
+
+@router.post("/relay/{rid}/data")
+async def relay_data(rid: str, request: Request, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    """Corpo binário = bytes do trecho. Validado contra o pedido; guardado em spool TEMPORÁRIO até a entrega."""
+    r = _claimed(db, ag, rid)
+    body = await request.body()
+    want = r.end - r.start + 1
+    total = request.headers.get("x-total-size", "")
+    if not total.isdigit() or not (0 < len(body) <= want) or len(body) > settings.relay_window_bytes:
+        r.status, r.error = "failed", "tamanho inválido"
+        db.commit()
+        raise HTTPException(422, "trecho inválido")
+    if hashlib.sha256(body).hexdigest() != request.headers.get("x-chunk-sha256", ""):
+        r.status, r.error = "failed", "integridade"
+        db.commit()
+        raise HTTPException(422, "hash do trecho não confere")
+    path = spool_file(rid)
+    tmp = path.with_suffix(".part")
+    tmp.write_bytes(body)
+    tmp.replace(path)
+    r.status, r.total_size, r.sha256, r.done_at = "done", int(total), hashlib.sha256(body).hexdigest(), utcnow()
+    db.commit()
+    purge_spool()
+    return {"ok": True}
+
+
+class RelayErr(BaseModel):
+    code: str = Field(pattern=r"^(not_found|io_error|bad_request)$")
+    message: str = Field("", max_length=200)
+
+
+@router.post("/relay/{rid}/error")
+def relay_error(rid: str, body: RelayErr, ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
+    r = _claimed(db, ag, rid)
+    r.status, r.error, r.done_at = "failed", body.code, utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/status")

@@ -227,12 +227,19 @@ def test_legacy_video_upload_can_be_disabled(client, world, media, monkeypatch):
     assert r.status_code == 410
 
 
-def test_agent_hosted_video_has_no_central_file_and_never_500s(client, world, H):
+def test_agent_hosted_video_is_not_offered_as_playable_while_arena_is_unreachable(client, world, H):
     reg(client, world)
     vid = sync(client, world, [item("sim-A-host000001")]).json()["results"][0]["videoId"]
-    url = client.get(f"/api/arena/{world.A.id}/videos/{vid}/play", headers=H("a_admin_arena")).json()["url"]
-    assert client.get(url).status_code == 409
-    client.patch(f"/api/arena/{world.A.id}/videos/{vid}", headers=H("a_admin_arena"), json={"visibility": "arena"})
-    assert client.get(f"/api/videos/{vid}/download", headers=H("a_user")).status_code == 409
-    assert client.post(f"/api/videos/{vid}/exports", headers=H("a_user"), json={"audioMode": "mute"}).status_code == 409
-    assert client.post(f"/api/videos/{vid}/preview", headers=H("a_user")).status_code == 409
+    db = SessionLocal()
+    for ag in db.query(ArenaAgent).filter_by(arena_id=world.A.id):
+        ag.last_used_at = ag.last_heartbeat_at = utcnow() - timedelta(hours=1)  # arena offline
+    db.commit()
+    db.close()
+    ha = H("a_admin_arena")
+    lst = client.get(f"/api/arena/{world.A.id}/videos", headers=ha).json()
+    v = next(x for x in lst if x["id"] == vid)
+    assert v["playable"] is False and v["availability"] == "arena_offline"
+    assert client.get(f"/api/arena/{world.A.id}/videos/{vid}/play", headers=ha).status_code == 503  # sem link para vídeo inacessível
+    client.patch(f"/api/arena/{world.A.id}/videos/{vid}", headers=ha, json={"visibility": "arena"})
+    assert client.get(f"/api/videos/{vid}", headers=H("a_user")).json()["playable"] is False
+    assert client.post(f"/api/videos/{vid}/download-link", headers=H("a_user")).status_code in (409, 503)  # patrocinado ou offline

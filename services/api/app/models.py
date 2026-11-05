@@ -134,6 +134,27 @@ class AgentNonce(Base):
     ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class RelayRequest(Base):
+    """Pedido de um trecho (janela de bytes) ao agente da arena. O agente busca por conexão de SAÍDA e devolve os bytes,
+    que ficam num spool temporário e são apagados ao serem entregues ao jogador. Nunca vira armazenamento permanente."""
+    __tablename__ = "relay_requests"
+    __table_args__ = (Index("ix_relay_arena_status", "arena_id", "status", "created_at"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"))
+    agent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(10))  # video|render
+    ref: Mapped[str] = mapped_column(String(120))  # local_id do replay ou id do job de renderização
+    start: Mapped[int] = mapped_column(BigInteger)
+    end: Mapped[int] = mapped_column(BigInteger)  # inclusivo
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending|claimed|done|failed|expired|consumed
+    error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    total_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class CourtRuntime(Base):
     """Última telemetria reportada pelo motor local para UMA quadra (sem caminhos nem segredos)."""
     __tablename__ = "court_runtime"
@@ -210,6 +231,7 @@ class Video(Base):
     storage_location: Mapped[str] = mapped_column(String(10), default="central")
     local_id: Mapped[str | None] = mapped_column(String(120), nullable=True)  # id estável gerado pelo motor local (idempotência)
     protected: Mapped[bool] = mapped_column(Boolean, default=False)  # protegido contra qualquer exclusão/retenção
+    media_state: Mapped[str] = mapped_column(String(12), default="ok")  # ok|missing (o agente não achou o arquivo)
 
 
 class VideoAccess(Base):

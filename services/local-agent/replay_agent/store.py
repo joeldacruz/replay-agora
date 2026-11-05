@@ -48,6 +48,9 @@ class LocalStore:
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
+            cols = {r["name"] for r in self._db.execute("PRAGMA table_info(replays)")}
+            if "file_ok" not in cols:  # bancos criados por versões anteriores
+                self._db.execute("ALTER TABLE replays ADD COLUMN file_ok INTEGER NOT NULL DEFAULT 1")
 
     def _x(self, sql: str, args: tuple = ()) -> "_Res":
         """Executa E lê o resultado dentro do lock: a conexão é compartilhada entre os workers das quadras."""
@@ -79,6 +82,23 @@ class LocalStore:
         """Após troca de primário (epoch): reenvia o que foi confirmado recentemente — seguro porque a central é idempotente."""
         cut = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)).isoformat()
         return self._x("UPDATE replays SET sync_state='pending' WHERE sync_state='synced' AND synced_at>=?", (cut,)).rowcount
+
+    def set_file_ok(self, local_id: str, ok: bool) -> None:
+        self._x("UPDATE replays SET file_ok=?, sync_state=CASE WHEN sync_state='rejected' THEN sync_state ELSE 'pending' END "
+                "WHERE local_id=? AND file_ok<>?", (int(ok), local_id, int(ok)))
+
+    def reconcile_files(self, limit: int = 2000) -> int:
+        """Confere se os MP4 ainda existem. Muda `file_ok` e recoloca na fila de sincronização o que mudou,
+        para a central parar de oferecer (ou voltar a oferecer) o vídeo. Não apaga nada."""
+        import os
+        changed = 0
+        for r in self._x("SELECT local_id, path, file_ok FROM replays WHERE deleted=0 ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall():
+            ok = int(os.path.isfile(r["path"]))
+            if ok != r["file_ok"]:
+                self._x("UPDATE replays SET file_ok=?, sync_state=CASE WHEN sync_state='rejected' THEN sync_state ELSE 'pending' END WHERE local_id=?",
+                        (ok, r["local_id"]))
+                changed += 1
+        return changed
 
     def usage(self, court_key: str | None = None) -> int:
         if court_key:
@@ -173,6 +193,9 @@ class LocalStore:
 
     def job_events(self, job_id: str) -> list:
         return self._x("SELECT ts,event,detail FROM job_events WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
+
+    def render(self, job_id: str):
+        return None  # preenchido na etapa de renderização local
 
     # ----- kv -----
     def kv_get(self, k: str, default: str | None = None) -> str | None:

@@ -1,6 +1,7 @@
 """Configuração por variáveis de ambiente. Nenhum segredo real fica no repositório."""
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]  # services/api
@@ -50,6 +51,12 @@ class Settings:
         self.storage_sample_min_interval_s = _env_int("STORAGE_SAMPLE_MIN_INTERVAL_S", 60)
         # Legado: o agente enviava o MP4 à API. O novo contrato mantém o vídeo na arena; desligar em produção.
         self.allow_agent_video_upload = os.environ.get("ALLOW_AGENT_VIDEO_UPLOAD", "true").lower() in ("1", "true", "yes")
+        # Entrega de vídeo por relay (o agente conecta de SAÍDA; nada de vídeo fica na central)
+        self.relay_window_bytes = _env_int("RELAY_WINDOW_BYTES", 4 * 1024 * 1024)
+        self.relay_timeout_s = _env_int("RELAY_TIMEOUT_S", 20)
+        self.relay_poll_max_s = _env_int("RELAY_POLL_MAX_S", 25)
+        self.relay_spool_dir = Path(os.environ.get("RELAY_SPOOL_DIR", str(Path(tempfile.gettempdir()) / "replay-agora-relay"))).resolve()
+        self.agent_reachable_s = _env_int("AGENT_REACHABLE_S", 90)  # arena "acessível" se o agente falou nos últimos N s
         # Credenciais do agente: rotação, assinatura de requisições e mTLS (preparação)
         self.agent_token_ttl_days = _env_int("AGENT_TOKEN_TTL_DAYS", 90)
         self.agent_rotate_before_days = _env_int("AGENT_ROTATE_BEFORE_DAYS", 7)

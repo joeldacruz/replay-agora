@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, capacity, policy, storage
+from .. import audit, capacity, delivery, policy, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..deps import ArenaCtx, ArenaGate
@@ -202,7 +202,8 @@ def list_videos(courtId: str | None = None, visibility: str | None = Query(None,
     if visibility:
         q = q.filter(Video.visibility == visibility)
     rows = q.order_by(Video.captured_at.desc(), Video.id.desc()).offset(offset).limit(limit).all()
-    return [video_out(v, ct, c.user.id, admin=True) for v, ct in rows]
+    cache: dict = {}
+    return [video_out(v, ct, c.user.id, admin=True, avail=delivery.availability(db, v, cache)) for v, ct in rows]
 
 
 class VideoPatch(BaseModel):
@@ -227,12 +228,15 @@ def patch_video(video_id: str, body: VideoPatch, c: ArenaCtx = Depends(staff), d
         v.title = ch["title"] or ""
     audit.record(db, c.user.id, c.arena.id, "video.publish" if ch.get("visibility") == "arena" else "video.update", "video", v.id, ch)
     db.commit()
-    return video_out(v, db.get(Court, v.court_id), c.user.id, admin=True)
+    return video_out(v, db.get(Court, v.court_id), c.user.id, admin=True, avail=delivery.availability(db, v))
 
 
 @router.get("/videos/{video_id}/play")
 def staff_play(video_id: str, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
     v = _video(db, c, video_id)
+    av = delivery.availability(db, v)
+    if not av["playable"]:
+        raise HTTPException(404 if av["availability"] in ("missing", "deleted") else 503, av["reason"])
     return {"url": sign("video", v.id, c.user.id), "expiresIn": settings.signed_url_ttl_s}
 
 
