@@ -158,17 +158,26 @@ def test_unplug_and_replug_reconnects_automatically(tmp_path):
 
 
 def test_exclusive_open_is_enabled_so_a_second_reader_cannot_share_the_port(rig):
-    """TIOCEXCL: processos sem CAP_SYS_ADMIN (ex.: o leitor.py rodando como usuário comum) recebem EBUSY. Como root o kernel
-    ignora o bloqueio, então o teste confere o estado do tty (TIOCGEXCL) em vez de depender de privilégio."""
+    """TIOCEXCL: sem CAP_SYS_ADMIN (ex.: o leitor.py como usuário comum) o segundo open recebe EBUSY — comportamento real verificado no CI
+    (não-root). Como root o kernel ignora o bloqueio, então ali o teste confere o estado do tty (TIOCGEXCL)."""
+    import errno
     import fcntl
+    if os.geteuid() != 0:
+        with pytest.raises(OSError) as e:
+            os.open(rig.path, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+        assert e.value.errno == errno.EBUSY
+        other = SerialTrigger("intruso", rig.path, reopen_s=0.05)
+        other.start(lambda *a: None)
+        try:
+            assert wait(lambda: other.state == "busy", 3) and other.diagnostics()["lastError"]        # estado "porta ocupada" no painel
+        finally:
+            other.stop()
+        return
     fd = os.open(rig.path, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
     try:
         assert int.from_bytes(fcntl.ioctl(fd, 0x80045440, b"\0\0\0\0"), "little") == 1       # TIOCGEXCL
     finally:
         os.close(fd)
-    if os.geteuid() != 0:
-        with pytest.raises(OSError):
-            os.open(rig.path, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
 
 
 def test_manual_test_trigger_goes_through_the_same_path_and_is_labeled(rig):
