@@ -18,6 +18,7 @@ def test_cache_cleanup_dry_run_and_apply_preserves_original(client, world, H):
     preview = storage.path_for(job.output_key)
     assert source.exists() and preview.exists()
     job.created_at = utcnow() - timedelta(days=10)
+    job.finished_at = utcnow() - timedelta(days=10)
     db.commit()
 
     dry = prune_previews(db, days=7)
