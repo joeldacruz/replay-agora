@@ -114,18 +114,43 @@ def test_unknown_noise_partial_and_binary_lines_never_break_the_reader(rig):
     assert rig.store.recent_triggers(5)[0]["button"] == "REPLAY_01"
 
 
-def test_lines_in_the_same_read_get_distinct_arrival_times(rig):
+def test_lines_in_the_same_read_get_distinct_arrival_times():
+    m, sl = pty.openpty()                                                  # pty próprio: não mexe no leitor da fixture
     stamps = []
-    rig.ser.stop()
-    ser = SerialTrigger("ts", rig.path, reopen_s=0.05)
-    ser.start(lambda m, src, ts: stamps.append((m, ts)))
-    assert wait(lambda: ser.state == "connected")
-    time.sleep(0.2)
-    send(rig, b"REPLAY_01\nREPLAY_02\nREPLAY_01\n")                   # chegam juntas
-    assert wait(lambda: len(stamps) == 3)
-    t = [x[1] for x in stamps]
-    assert t[0] < t[1] < t[2] and abs((t[1] - t[0]) - 10 * 10 / 9600) < 0.004      # 10 bytes/linha a 9600 baud ≈ 10,4 ms
-    ser.stop()
+    ser = SerialTrigger("ts", os.ttyname(sl), reopen_s=0.05)
+    ser.start(lambda msg, src, ts: stamps.append((msg, ts)))
+    try:
+        assert wait(lambda: ser.state == "connected")
+        time.sleep(0.2)
+        os.write(m, b"REPLAY_01\nREPLAY_02\nREPLAY_01\n")               # chegam juntas
+        assert wait(lambda: len(stamps) == 3)
+        t = [x[1] for x in stamps]
+        assert t[0] < t[1] < t[2] and abs((t[1] - t[0]) - 10 * 10 / 9600) < 0.004      # 10 bytes/linha a 9600 baud ≈ 10,4 ms
+    finally:
+        ser.stop()
+        os.close(m); os.close(sl)
+
+
+def test_reader_releases_exclusive_lock_on_close_so_the_port_can_be_reopened():
+    """Sem TIOCNXCL, um reinício do leitor (ou o do legado, em rollback) tomaria EBUSY enquanto o driver mantém a porta aberta."""
+    m, sl = pty.openpty()
+    path = os.ttyname(sl)
+    got = []
+    a = SerialTrigger("a", path, reopen_s=0.05)
+    a.start(lambda *x: None)
+    try:
+        assert wait(lambda: a.state == "connected")
+    finally:
+        a.stop()
+    b = SerialTrigger("b", path, reopen_s=0.05)
+    b.start(lambda msg, src, ts: got.append(msg))
+    try:
+        assert wait(lambda: b.state == "connected", 5)                         # reabre (não-root: falharia com EBUSY sem o TIOCNXCL)
+        os.write(m, b"REPLAY_01\n")
+        assert wait(lambda: got == ["REPLAY_01"])
+    finally:
+        b.stop()
+        os.close(m); os.close(sl)
 
 
 def test_no_event_is_lost_under_a_burst_on_both_courts(rig):
@@ -139,7 +164,7 @@ def test_no_event_is_lost_under_a_burst_on_both_courts(rig):
     assert wait(lambda: sum(rig.router.counts.values()) == 2 * n, 15)
     accepted = rig.router.counts.get("accepted", 0)
     dup = rig.router.counts.get("duplicate", 0)
-    assert accepted + dup == 2 * n and accepted >= 2 * n - 2        # nada some: cada linha tem desfecho; o horário por linha evita colisões de ms
+    assert accepted == 2 * n and dup == 0                          # nada some e nada colide: horário estritamente crescente por linha
     assert rig.engine.wait_idle(30)
     ids = [r["local_id"] for r in rig.store._x("SELECT local_id FROM replays").fetchall()]
     assert len(ids) == len(set(ids)) == accepted

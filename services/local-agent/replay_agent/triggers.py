@@ -23,6 +23,7 @@ from .store import LocalStore
 _BAUD = {1200: termios.B1200, 2400: termios.B2400, 4800: termios.B4800, 9600: termios.B9600, 19200: termios.B19200,
          38400: termios.B38400, 57600: termios.B57600, 115200: termios.B115200}
 TIOCEXCL = getattr(termios, "TIOCEXCL", 0x540C)
+TIOCNXCL = getattr(termios, "TIOCNXCL", 0x540D)
 LINE_OK = re.compile(r"^[A-Za-z0-9_\-]{1,40}$")
 MAX_LINE = 64
 
@@ -38,6 +39,7 @@ class SerialTrigger:
         self.lines = self.garbled = self.overflow = self.reconnects = 0
         self.last_line_at: float | None = None
         self.last_error: str | None = None
+        self._last_ts: float | None = None
 
     def _open(self) -> int:
         fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -78,6 +80,10 @@ class SerialTrigger:
             try:
                 self._read_loop(fd, emit)
             finally:
+                try:
+                    fcntl.ioctl(fd, TIOCNXCL)      # solta o bloqueio exclusivo: o próximo open (nosso ou de outro processo) não toma EBUSY
+                except OSError:
+                    pass
                 os.close(fd)
             if not self.stop_flag.is_set():
                 self.state = "disconnected"
@@ -125,6 +131,9 @@ class SerialTrigger:
                 # Várias linhas no mesmo read(): `ts` é a chegada do ÚLTIMO byte; as anteriores chegaram antes, cada byte leva
                 # 10 bits / baud. Isso dá a cada linha o seu próprio instante (e evita colisão da chave quadra+ms).
                 line_ts = ts - len(buf) * 10.0 / self.baud
+                if self._last_ts is not None and line_ts <= self._last_ts + 0.0011:
+                    line_ts = self._last_ts + 0.0011        # estritamente crescente (>=1 ms): nunca duas linhas na mesma chave quadra+ms
+                self._last_ts = line_ts
                 self.lines += 1
                 self.last_line_at = line_ts
                 emit(text, f"serial:{self.name}", line_ts)
