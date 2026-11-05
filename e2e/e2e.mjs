@@ -41,11 +41,18 @@ await step('usuário: login e catálogo mostra só replays publicados', async ()
   assert.equal(await u.locator('text=Sem áudio original').count(), 0);
   assert.ok(!(await u.content()).includes('Patrocinadores'), 'app do usuário não tem telas de gestão');
 });
-await step('usuário: player reproduz via URL assinada temporária', async () => {
-  await u.locator('a.card').first().click(); await u.waitForSelector('video');
+await step('usuário: aguarda prévia patrocinada processada pelo worker', async () => {
+  await u.locator('a.card').first().click();
+  await u.waitForSelector('video', { timeout: 90000 });
   const src = await u.getAttribute('video', 'src'); assert.match(src, /^\/media\/ey/);
-  await u.waitForFunction(() => document.querySelector('video').readyState >= 2, null, { timeout: 15000 });
+  await u.waitForFunction(() => document.querySelector('video').readyState >= 2, null, { timeout: 20000 });
   assert.ok(await u.evaluate(() => document.querySelector('video').duration > 2));
+  const token = await u.evaluate(() => localStorage.getItem('ra_user_token'));
+  const code = await u.evaluate(async (t) => {
+    const videoId = location.hash.split('/').at(-1);
+    return (await fetch('/api/videos/' + videoId + '/play', { headers: { Authorization: 'Bearer ' + t } })).status;
+  }, token);
+  assert.equal(code, 409, 'a origem patrocinada nao pode ser exibida ao atleta');
 });
 async function exportAndDownload(page, mode, extra) {
   await page.locator(`input[type=radio][value=${mode}]`).check();
