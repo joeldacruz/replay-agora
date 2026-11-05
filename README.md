@@ -62,6 +62,8 @@ Motor local por arena (simulado em `services/local-agent`), API só com metadado
 
 Motor real (RTSP, serial REPLAY, buffer, painel de diagnóstico — **só simulado**): [INTEGRACAO-MOTOR-REAL.md](docs/INTEGRACAO-MOTOR-REAL.md) · [instalação Ubuntu](docs/INSTALACAO-UBUNTU.md) · [plano de homologação do srv01](docs/HOMOLOGACAO-replayagora-srv01.md) · [relatório de recursos](docs/RELATORIO-RECURSOS.md).
 
+Preparação da homologação física: [inventário somente leitura do srv01](docs/INVENTARIO-SRV01.md) · [matriz legado × agente](docs/MATRIZ-COMPATIBILIDADE-LEGADO-AGENTE.md).
+
 Entrega de vídeo por relay, renderização local e segurança do agente: [ENTREGA-E-SEGURANCA-DO-AGENTE.md](docs/ENTREGA-E-SEGURANCA-DO-AGENTE.md).
 
 ## Documentação para Claude

@@ -66,7 +66,8 @@ A central deve usar **https://**; o agente só faz conexões de saída (nenhuma 
 * **Buffer legado somente leitura:** `"camera": {"mode":"external_dir","external_glob":"/srv/.../buffer/*.ts"}` (o agente não grava nem apaga ali).
 * **`replay.py` legado como gerador:** `"clip": {"renderer":"external_command","command":["python3","/srv/.../replay.py","--court","{court}","--t0","{t0}","--pre","{pre}","--post","{post}","--out","{out}"]}` (argumentos a confirmar no inventário).
 
-## 6. Inventário do código legado (somente leitura, sem executar nada)
+## 6. Inventário do servidor e do código legado (somente leitura, sem executar nada do legado)
+**Use primeiro o inventário completo:** [INVENTARIO-SRV01.md](INVENTARIO-SRV01.md) (`scripts/inventario_srv01.py`: serviços, FFmpeg, serial, câmeras sem credenciais, armazenamento, versões, CPU/GPU/rede). O comando abaixo é só a análise estática dos três arquivos.
 ```bash
 python3 /tmp/replay-agora/scripts/inventory_legacy.py /srv/replayagora/botoeira/leitor.py /srv/replayagora/quadra01/app/buffer.py /srv/replayagora/quadra01/app/replay.py --out /tmp/inventario-legado.json
 ```
