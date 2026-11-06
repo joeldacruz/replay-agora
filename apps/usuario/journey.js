@@ -105,16 +105,9 @@ function arenaRow(a) {
     icon('chevronRight', { size: 22 }));
 }
 
-export async function journeyHome(ctx) {
-  if (!(await ctx.ensureMe())) return;
-  const root = ctx.root; shell(root, 'j-app--home');
-  const arenas = await ctx.api.get('/api/arenas');
-  const pending = sessionStorage.getItem('ra_pending_arena');
-  if (pending) {
-    sessionStorage.removeItem('ra_pending_arena');
-    await activateSlug(pending, ctx, root);
-    if (location.hash.startsWith('#/arena/')) return;
-  }
+function arenaAccessScreen(ctx, arenas) {
+  const root = ctx.root;
+  shell(root, 'j-app--home');
   const input = el('input', { type: 'text', class: 'j-input', placeholder: 'Código ou link da arena', 'aria-label': 'Código ou link da arena', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
   const form = el('form', { class: 'j-code-form', hidden: '', id: 'j-code-form' }, input, el('button', { class: 'j-btn j-btn--primary j-btn--sm', type: 'submit' }, 'Acessar'));
   form.addEventListener('submit', (e) => {
@@ -144,11 +137,44 @@ export async function journeyHome(ctx) {
           toggle, form,
           el('p', { class: 'j-hint' }, icon('info', { size: 22 }), el('span', {}, 'O QR Code é fornecido pela arena (quadra, clube ou campeonato).')))),
       waves()),
-    el('section', { class: 'j-sheet', 'aria-labelledby': 'j-my-arenas' },
+    arenas.length ? el('section', { class: 'j-sheet', 'aria-labelledby': 'j-my-arenas' },
       el('h2', { id: 'j-my-arenas' }, 'Minhas Arenas'),
-      arenas.length ? el('div', { class: 'j-stack' }, arenas.map(arenaRow)) : el('p', { class: 'j-empty' }, 'Depois de entrar pelo QR Code, suas arenas aparecerão aqui.'),
+      el('div', { class: 'j-stack' }, arenas.map(arenaRow)), status()) : status(),
+    bottomNav('/')
+  );
+}
+
+export async function journeyHome(ctx) {
+  if (!(await ctx.ensureMe())) return;
+  const arenas = await ctx.api.get('/api/arenas');
+  const pending = sessionStorage.getItem('ra_pending_arena');
+  if (pending) {
+    sessionStorage.removeItem('ra_pending_arena');
+    await activateSlug(pending, ctx, ctx.root);
+    if (location.hash.startsWith('#/arena/')) return;
+  }
+  if (!arenas.length) {
+    arenaAccessScreen(ctx, arenas);
+    return;
+  }
+  const root = ctx.root;
+  shell(root, 'j-app--arenas');
+  root.append(
+    header({ title: 'Minhas Arenas' }),
+    el('section', { class: 'j-sheet j-sheet--lift j-my-arenas', 'aria-labelledby': 'j-my-arenas' },
+      el('h2', { id: 'j-my-arenas' }, 'Arenas cadastradas'),
+      el('div', { class: 'j-stack' }, arenas.map(arenaRow)),
+      el('a', { class: 'j-btn j-btn--primary j-add-arena', href: '#/add-arena' },
+        icon('scan', { size: 24 }), 'Adicionar outra arena'),
       status()),
-    bottomNav('/'));
+    bottomNav('/')
+  );
+}
+
+export async function journeyAddArena(ctx) {
+  if (!(await ctx.ensureMe())) return;
+  const arenas = await ctx.api.get('/api/arenas');
+  arenaAccessScreen(ctx, arenas);
 }
 
 // ------------------------------------------------------------------------------------------ arena: quadras · data · horário · replays
