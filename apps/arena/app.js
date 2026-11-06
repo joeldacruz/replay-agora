@@ -37,6 +37,29 @@ function login() {
   mount(root, f); chrome();
 }
 
+async function showArenaQR() {
+  const response = await fetch(base() + '/access-qr', {
+    headers: { Authorization: 'Bearer ' + api.token() }
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Não foi possível gerar o QR Code.');
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const dlg = h('dialog', {});
+  const close = () => { dlg.close(); dlg.remove(); URL.revokeObjectURL(url); };
+  const img = h('img', {src:url, alt:'QR Code de acesso à arena', style:'display:block;width:min(320px,100%);margin:12px auto'});
+  dlg.append(h('h2', {}, 'QR Code — ' + arena.arenaName),
+    h('p', {class:'muted'}, 'Imprima na quadra. O QR identifica a arena; vídeos privados continuam protegidos.'),
+    img, h('div', {class:'row-actions'},
+      h('a', {href:url,download:'replayagora-arena-qr.png',class:'btn primary'}, 'Baixar QR Code'),
+      h('button', {onclick:close}, 'Fechar')));
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => { dlg.remove(); URL.revokeObjectURL(url); }, {once:true});
+  dlg.showModal();
+}
+
 async function dashboard() {
   if (!(await ensure())) return;
   const d = await api.get(base() + '/dashboard');
@@ -44,6 +67,7 @@ async function dashboard() {
   mount(root, h('h1', {}, arena.arenaName), h('div', { class: 'stats' },
     stat(d.videos, 'replays'), stat(d.published, 'publicados'), stat(d.pendingReview, 'aguardando revisão'), stat(d.downloads, 'downloads'),
     stat(fmt.bytes(d.storageBytes) + (d.storageLimitMb ? ` / ${d.storageLimitMb} MB` : ''), 'armazenamento'), stat(d.exportsActive, 'exportações ativas'), stat(d.exportsFailed, 'exportações com falha'), stat(d.failedEvents, 'eventos com falha')),
+    h('div', { class: 'card' }, h('h2', {}, 'Acesso do jogador por QR Code'), h('p', { class: 'muted' }, 'Gere o código para imprimir na arena e abrir o aplicativo do jogador.'), h('button', { class:'primary', onclick:guard(showArenaQR) }, 'Gerar QR Code da arena')),
     h('div', { class: 'card', style: 'margin-top:1rem' }, h('b', {}, 'Motor local: '), d.agentOnline ? h('span', { class: 'badge ok' }, 'online') : h('span', { class: 'badge warn' }, 'sem sinal'), ' ', h('span', { class: 'muted' }, d.agentLastSeenAt ? 'visto ' + fmt.dt(d.agentLastSeenAt) : 'nunca conectado'),
       h('p', { class: 'muted' }, 'Câmeras RTSP e botoeiras só aparecem como operacionais após integração e homologação reais.')),
     h('h2', {}, 'Quadras'), h('div', { class: 'table-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Quadra', 'Status', 'Eventos (7d)', 'Replays', 'Último evento'].map((x) => h('th', {}, x)))),
