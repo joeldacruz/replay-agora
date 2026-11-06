@@ -1,4 +1,5 @@
 import { h, mount, toast, fmt, badge, createApi, createRouter, field, copy, registerSW } from '/shared/ui.js';
+import { journeyHome, journeyArena, journeyProfile } from './journey.js';
 
 const root = document.getElementById('app');
 const api = createApi('ra_user_token', () => (location.hash = '#/login'));
@@ -21,6 +22,7 @@ async function ensureMe() {
 }
 
 function authForm(mode) {
+  document.body.classList.remove('journey-user');
   const err = h('p', { class: 'err', role: 'alert' });
   const f = h('form', { class: 'card center', onsubmit: async (ev) => {
     ev.preventDefault(); err.textContent = '';
@@ -50,40 +52,13 @@ function card(v) {
       v.playable === false && v.processingStatus === 'ready' ? h('span', { class: 'badge warn', title: v.reason || '' }, 'indisponível agora') : ''));
 }
 
-async function home() {
+async function home() { return journeyHome({api,store,root,ensureMe}); }
+async function arenaJourney(p) { return journeyArena(p,{api,store,root,ensureMe}); }
+async function replaysJourney() {
   if (!(await ensureMe())) return;
-  const [arenas, dir] = await Promise.all([api.get('/api/arenas'), api.get('/api/arenas/directory')]);
-  const list = h('div', { class: 'grid' }); const more = h('div'); const filters = { arenaId: store.get('arena') || '', courtId: '', date: '', q: '' };
-  if (filters.arenaId && !arenas.find((a) => a.id === filters.arenaId)) filters.arenaId = '';
-  const courtSel = h('select', { 'aria-label': 'Quadra', onchange: (e) => { filters.courtId = e.target.value; load(true); } }, h('option', { value: '' }, 'Todas as quadras'));
-  async function loadCourts() {
-    courtSel.replaceChildren(h('option', { value: '' }, 'Todas as quadras')); filters.courtId = '';
-    if (filters.arenaId) (await api.get(`/api/arenas/${filters.arenaId}/courts`)).forEach((c) => courtSel.append(h('option', { value: c.id }, c.label)));
-  }
-  let cursor = null;
-  async function load(reset) {
-    if (reset) { cursor = null; list.replaceChildren(); }
-    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)); if (cursor) qs.set('cursor', cursor);
-    const r = await api.get('/api/videos?' + qs);
-    r.items.forEach((v) => list.append(card(v))); cursor = r.nextCursor;
-    if (reset && !r.items.length) list.append(h('p', { class: 'muted' }, 'Nenhum replay encontrado. Escaneie o QR da quadra ou digite o código abaixo.'));
-    more.replaceChildren(cursor ? h('button', { onclick: () => load(false) }, 'Carregar mais') : '');
-  }
-  const arenaSel = h('select', { 'aria-label': 'Arena', onchange: async (e) => { filters.arenaId = e.target.value; store.set('arena', filters.arenaId); await loadCourts(); load(true); } },
-    h('option', { value: '' }, 'Todas as minhas arenas'), arenas.map((a) => h('option', { value: a.id, selected: a.id === filters.arenaId }, a.name)));
-  const code = h('input', { placeholder: 'Código do replay (ex.: K7M2Q9XA)', maxlength: 12, 'aria-label': 'Código do replay' });
-  const join = dir.filter((a) => !a.joined);
-  mount(root,
-    h('h1', {}, 'Meus replays'),
-    h('div', { class: 'card' }, h('div', { class: 'row', style: 'display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))' },
-      arenaSel, courtSel,
-      h('input', { type: 'date', 'aria-label': 'Data', onchange: (e) => { filters.date = e.target.value; load(true); } }),
-      h('input', { type: 'search', placeholder: 'Buscar', 'aria-label': 'Buscar', oninput: (e) => { filters.q = e.target.value; clearTimeout(home.t); home.t = setTimeout(() => load(true), 300); } }))),
-    h('form', { class: 'card', onsubmit: async (e) => { e.preventDefault(); try { const r = await api.post('/api/videos/claim', { code: code.value.trim() }); location.hash = '#/v/' + r.videoId; } catch (er) { toast(er.message, true); } } },
-      h('label', {}, 'Tenho um código/QR'), h('div', { style: 'display:flex;gap:.5rem' }, code, h('button', { class: 'primary', type: 'submit' }, 'Abrir'))),
-    join.length ? h('div', { class: 'card' }, h('h3', {}, 'Arenas disponíveis'), join.map((a) => h('button', { style: 'margin:.25rem', onclick: async () => { await api.post(`/api/arenas/${a.id}/join`); toast('Você entrou em ' + a.name); me = null; home(); } }, '+ ' + a.name))) : '',
-    list, more);
-  await loadCourts(); await load(true);
+  const arenas=await api.get('/api/arenas');
+  const arena=arenas.find(a=>a.id===store.get('arena')) || arenas[0];
+  location.hash=arena?'#/arena/'+encodeURIComponent(arena.slug):'#/';
 }
 
 async function watch(p) {
@@ -220,6 +195,6 @@ async function redeem(p) {
   catch (e) { mount(root, h('div', { class: 'card' }, h('h1', {}, 'Link indisponível'), h('p', {}, e.message), h('a', { href: '#/' }, 'Ir para meus replays'))); }
 }
 
-const router = createRouter(root, { '/': home, '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': exportsPage, '/s/:token': redeem });
+const router = createRouter(root, { '/': home, '/replays': replaysJourney, '/arena/:slug': arenaJourney, '/profile': () => journeyProfile({root}), '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': exportsPage, '/s/:token': redeem });
 router.go();
 registerSW('/sw.js', '/');
