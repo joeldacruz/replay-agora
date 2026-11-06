@@ -3,7 +3,7 @@ validado no servidor (membership + papel). Nada aqui administra outras arenas ou
 import json
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func
@@ -83,6 +83,28 @@ def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(admin), db: Session = De
     db.commit()
     return _arena_out(a, c.membership.role)
 
+
+# QR identifica a arena, mas nao concede acesso a replays privados.
+@router.get("/access-qr")
+def access_qr(request: Request, c: ArenaCtx = Depends(staff)):
+    import io
+    import os
+    from urllib.parse import quote
+    import qrcode
+
+    # Um dominio HTTPS definitivo deve ser configurado na central para QR fisico.
+    base = os.environ.get("PUBLIC_APP_URL", "").strip().rstrip("/")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    if not (base.startswith("https://") or base.startswith("http://127.0.0.1:")
+            or base.startswith("http://localhost:")):
+        raise HTTPException(503, "configure PUBLIC_APP_URL com dominio HTTPS para gerar o QR")
+    link = base + "/#/arena/" + quote(c.arena.slug, safe="")
+    img = qrcode.make(link)
+    output = io.BytesIO()
+    img.save(output, format="PNG")
+    return Response(content=output.getvalue(), media_type="image/png",
+                    headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="arena-qr.png"'})
 
 # ---------------- dashboard / saúde ----------------
 @router.get("/dashboard")
