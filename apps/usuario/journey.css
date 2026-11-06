@@ -290,6 +290,8 @@ body.j-body {
 .j-add-arena { display: flex; margin-top: 20px; text-decoration: none; }
 .j-replay-actions { display: none; }          /* ações visíveis só no computador (celular/tablet usam o menu ⋮) */
 .j-nav-brand { display: none; }
+.j-badge, .j-header-sub { display: none; }       /* só tablet/computador */
+.j-header-sub { width: min(100%, var(--j-col)); margin: 6px auto 0; padding-inline: var(--j-gutter); }
 /* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
 .j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
 .j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
@@ -320,6 +322,15 @@ body.j-body {
   .j-replay-info strong { font-size: 1.25rem; }
   .j-actions { max-width: 520px; }
   .j-add-arena { display: inline-flex; width: auto; min-width: 280px; }
+  /* Minhas Arenas centralizada */
+  .j-app--arenas .j-header-title { justify-content: center; text-align: center; flex-direction: column; gap: 4px; }
+  .j-header-sub { display: block; color: #cfe0f7; font-size: .98rem; text-align: center; }
+  .j-arena-grid { justify-content: center; }
+  .j-my-arenas { display: flex; flex-direction: column; align-items: center; }
+  .j-my-arenas .j-arena-grid { width: 100%; }
+  .j-my-arenas .j-row { position: relative; }
+  .j-sheet--lift.j-my-arenas { margin-top: 0; padding-top: 36px; }
+  .j-badge { position: absolute; top: -11px; right: 18px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--j-coral); color: #fff; font-size: .75rem; font-weight: 700; box-shadow: 0 4px 10px rgba(255, 94, 80, .35); }
 }
 
 @media (min-width: 1024px) {                       /* computador: barra superior, composição em duas áreas */
@@ -354,15 +365,29 @@ body.j-body {
   .j-lead { font-size: 1.2rem; }
   .j-sheet { padding-top: 16px; }
 
-  /* Minhas Arenas: cartões amplos em grade; botão com largura própria */
-  .j-my-arenas { padding-top: 0; }
-  .j-my-arenas .j-stack { grid-template-columns: repeat(auto-fill, minmax(340px, 440px)); gap: 20px; }
-  .j-my-arenas .j-row { padding: 20px; gap: 18px; }
+  /* Minhas Arenas: composição centralizada, cartões adaptados à quantidade de arenas */
+  .j-app--arenas { display: flex; flex-direction: column; }
+  .j-app--arenas .j-header { padding-bottom: 56px; }
+  .j-app--arenas .j-header-title h1 { font-size: 2.2rem; }
+  .j-header-sub { font-size: 1.05rem; }
+  .j-sheet--lift.j-my-arenas { flex: 1; justify-content: flex-start; margin-top: 0; padding-top: clamp(40px, 11vh, 130px); padding-bottom: 96px; }
+  .j-arena-grid { display: grid; gap: 22px; }
+  .j-arena-grid[data-count="1"] { grid-template-columns: minmax(0, 540px); }
+  .j-arena-grid[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 440px)); }
+  .j-arena-grid[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 330px)); }
+  .j-arena-grid[data-count="4"] { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 330px)); }
+  .j-my-arenas .j-row { padding: 22px; gap: 18px; }
   .j-my-arenas .j-row-icon { width: 64px; height: 64px; border-radius: 18px; }
-  .j-my-arenas .j-row-text strong { font-size: 1.25rem; }
+  .j-my-arenas .j-row-text strong { font-size: 1.2rem; }
   .j-my-arenas .j-row-text small { font-size: .95rem; }
+  /* 3+ arenas: cartão em duas linhas (identificação · ação) para o nome nunca ficar espremido */
+  .j-arena-grid[data-count="3"] .j-row, .j-arena-grid[data-count="4"] .j-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: center; row-gap: 14px; }
+  .j-arena-grid[data-count="3"] .j-row-go, .j-arena-grid[data-count="4"] .j-row-go { grid-column: 1 / -1; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--j-line); }
+  .j-arena-grid[data-count="1"] .j-row { padding: 28px 30px; gap: 24px; }
+  .j-arena-grid[data-count="1"] .j-row-icon { width: 80px; height: 80px; border-radius: 22px; }
+  .j-arena-grid[data-count="1"] .j-row-text strong { font-size: 1.5rem; }
   .j-row-go { font-size: .95rem; }
-  .j-add-arena { margin-top: 28px; min-width: 300px; }
+  .j-add-arena { margin-top: 36px; min-width: 320px; align-self: center; }
 
   /* arena selecionada: coluna lateral (identificação, atalhos, filtros) + coluna de replays */
   .j-arena-body { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); column-gap: 32px; align-items: start; margin-top: -52px; }

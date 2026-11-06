@@ -44,6 +44,7 @@ const ICONS = {
   share: 'M12 15.4V4.2 M7.8 8.2 12 4l4.2 4.2 M6 11.5H5.5A1.5 1.5 0 0 0 4 13v5.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V13a1.5 1.5 0 0 0-1.5-1.5H18',
   logout: 'M9.5 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h3.5 M14 8l4 4-4 4 M18 12H9.5',
   close: 'M6 6l12 12 M18 6 6 18',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
 };
 const FILLED = new Set(['home']); // ícones preenchidos quando "ativos"
 

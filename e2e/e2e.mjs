@@ -151,6 +151,11 @@ await step('usuário (computador): barra superior Arenas/Replays/Perfil, replays
   const nav = await d.locator('nav.j-nav').boundingBox(); assert.ok(nav.y === 0 && nav.height < 100 && nav.width >= 1400, 'navegação no topo');
   assert.deepEqual(await d.locator('nav.j-nav a.j-nav-item').allTextContents(), ['Arenas', 'Replays', 'Perfil']);
   const add = await d.locator('.j-add-arena').boundingBox(); assert.ok(add.width < 400, 'botão Adicionar com largura própria');
+  const card = await d.locator('.j-arena-grid .j-row').first().boundingBox();
+  assert.ok(Math.abs(card.x + card.width / 2 - 720) < 24, 'cartão da arena centralizado'); assert.ok(Math.abs(add.x + add.width / 2 - 720) < 24, 'botão centralizado');
+  assert.ok(card.width >= 480 && card.width <= 560, 'cartão único com 480–560 px: ' + card.width);
+  assert.ok((await d.locator('.j-header-sub').innerText()).includes('Selecione sua arena'), 'texto auxiliar'); assert.ok(await d.locator('.j-badge').isVisible(), 'indicador de arena selecionada');
+  await shot(d, 'usuario-desktop-minhas-arenas');
   await d.goto(BASE + '/#/arena/arena-alfa'); await d.waitForSelector('.j-replay');
   assert.ok(await d.locator('.j-replay-actions').first().isVisible(), 'ações visíveis no computador');
   const r = await d.locator('.j-replay').first().boundingBox(); assert.ok(r.width > 560, 'cartão de replay amplo');

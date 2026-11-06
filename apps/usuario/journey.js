@@ -112,6 +112,7 @@ function arenaRow(a, selectedId) {
   return el('a', { class: 'j-card j-row' + (selected ? ' is-selected' : ''), href: '#/arena/' + encodeURIComponent(a.slug), 'aria-current': selected ? 'true' : null },
     el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, icon('stadium', { size: 28 })),
     el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, place || (selected ? 'Arena selecionada' : 'Ver quadras e replays'))),
+    selected ? el('span', { class: 'j-badge' }, icon('check', { size: 14 }), 'Selecionada') : '',
     el('span', { class: 'j-row-go' }, 'Acessar', icon('chevronRight', { size: 20 })));
 }
 
@@ -168,13 +169,13 @@ export async function journeyHome(ctx) {
     return;
   }
   const root = ctx.root;
-  const selectedId = validSelection(ctx, arenas)?.id;
+  const selectedId = (validSelection(ctx, arenas) || arenas[0]).id;   // mesma regra da aba Replays
   shell(root, 'j-app--arenas');
   root.append(
-    header({ title: 'Minhas Arenas' }),
+    header({ title: 'Minhas Arenas', children: [el('p', { class: 'j-header-sub' }, 'Selecione sua arena para acessar os replays.')] }),
     el('section', { class: 'j-sheet j-sheet--lift j-my-arenas', 'aria-labelledby': 'j-my-arenas' },
       el('h2', { id: 'j-my-arenas', class: 'j-sr' }, 'Arenas cadastradas'),
-      el('div', { class: 'j-stack' }, arenas.map((a) => arenaRow(a, selectedId))),
+      el('div', { class: 'j-stack j-arena-grid', 'data-count': String(Math.min(arenas.length, 4)) }, arenas.map((a) => arenaRow(a, selectedId))),
       el('a', { class: 'j-btn j-btn--primary j-add-arena', href: '#/add-arena' },
         icon('scan', { size: 24 }), 'Adicionar outra arena'),
       status()),
