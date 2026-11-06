@@ -64,28 +64,79 @@ async function replaysJourney() {
 async function watch(p) {
   if (!(await ensureMe())) return;
   const v = await api.get('/api/videos/' + p.id);
-  const opts = await api.get(`/api/videos/${p.id}/export-options`);
-  const exportBox = h('div'), playerBox = h('div');
+  const playerBox = h('div', { class:'journey-player-box' });
+  const actionStatus = h('div', { class:'journey-status', role:'status' });
+  document.body.classList.add('journey-user');
+  document.getElementById('tabs').replaceChildren();
+  if (!document.getElementById('ra-journey-css')) {
+    document.head.append(h('link', {id:'ra-journey-css',rel:'stylesheet',href:'/journey.css'}));
+  }
   const unavailable = v.playable === false && v.processingStatus === 'ready';
-  mount(root, h('p', {}, h('a', { href: '#/' }, '← Voltar')), h('h1', {}, v.title),
-    playerBox,
-    h('p', { class: 'muted' }, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}` +
-      (v.sponsors?.length ? ' · Patrocínio: ' + v.sponsors.join(', ') : '')),
-    h('div', { class: 'row-actions' },
-      v.sponsors?.length
-        ? h('p', { class: 'muted' }, 'O vídeo exibido e as versões para download incluem os patrocinadores da arena.')
-        : h('button', { class: 'primary', disabled: unavailable, onclick: async () => { try { const r = await api.post(`/api/videos/${p.id}/download-link`); location.href = r.url; } catch (e) { toast(e.message, true); } } }, '⬇ Baixar MP4 original'),
-      h('button', { onclick: () => share(p.id, v) }, '↗ Compartilhar')),
-    h('h2', {}, 'Baixar com som personalizado'), exportBox);
+  async function downloadReplay() {
+    actionStatus.replaceChildren('Preparando download conforme as configurações da arena…');
+    try {
+      if (!v.sponsors?.length) {
+        const link = await api.post(`/api/videos/${p.id}/download-link`);
+        location.href = link.url;
+        actionStatus.replaceChildren();
+      } else {
+        const opts = await api.get(`/api/videos/${p.id}/export-options`);
+        if (!opts.modes?.length) {
+          actionStatus.replaceChildren('O download está indisponível para este replay. Consulte a arena.');
+          return;
+        }
+        // Áudio, volume, música e patrocinadores são definidos somente pela gestão da arena.
+        const job = await api.post(`/api/videos/${p.id}/exports`, {
+          audioMode: opts.defaultMode, musicId: opts.defaultMusicId || null,
+          originalVolume: opts.originalVolume, musicVolume: opts.musicVolume
+        });
+        await waitDownload(job.id);
+      }
+    } catch (e) {
+      actionStatus.replaceChildren('Download indisponível: ' + e.message);
+    }
+  }
+  async function waitDownload(jobId) {
+    const hashAtStart = location.hash;
+    for (let i = 0; i < 120 && hashAtStart === location.hash; i++) {
+      try {
+        const job = await api.get('/api/exports/' + jobId);
+        if (job.status === 'ready') {
+          const link = await api.post(`/api/exports/${jobId}/download-link`);
+          actionStatus.replaceChildren('Seu download está pronto.');
+          location.href = link.url;
+          return;
+        }
+        if (job.status === 'failed') {
+          actionStatus.replaceChildren('Não foi possível preparar o download. ' + (job.error || ''));
+          return;
+        }
+        actionStatus.replaceChildren('Preparando vídeo… ' + (job.progress || 0) + '%');
+      } catch (e) { actionStatus.replaceChildren('Não foi possível consultar o download: ' + e.message); return; }
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+  mount(root,
+    h('div', { class:'journey-watch' },
+      h('header', { class:'journey-hero journey-watch-hero' },
+        h('div', { class:'journey-brand' },h('span',{class:'journey-play'},'▷'), h('strong', {}, 'Replay Agora')),
+        h('h1', {}, 'Assistir replay'), h('p', {}, 'Seus lances, sempre com você.')),
+      h('section', { class:'journey-content' },
+        h('a', { href:'#/replays', class:'journey-back'}, '← Voltar aos replays'),
+        h('h2', {}, v.title), playerBox,
+        h('p', {class:'journey-hint'}, `${v.courtLabel} · ${fmt.dt(v.capturedAt)} · ${fmt.dur(v.duration)}`),
+        v.sponsors?.length ? h('p', {class:'journey-hint'}, 'Patrocinadores incluídos conforme as regras da arena.') : '',
+        h('div', {class:'journey-watch-actions'},
+          h('button',{class:'journey-primary',disabled:unavailable,onclick:downloadReplay},'↓ Baixar replay'),
+          h('button',{class:'journey-secondary',onclick:()=>share(p.id,v)},'↗ Compartilhar')),
+        actionStatus)));
   if (unavailable) {
     // Nunca apresentar como reproduzível um vídeo que a arena não consegue entregar agora.
     playerBox.replaceChildren(h('div', { class: 'card', role: 'status' }, h('p', { class: 'err' }, 'Vídeo indisponível no momento'),
       h('p', { class: 'muted' }, v.reason || 'A arena está temporariamente offline.'),
       h('button', { onclick: () => watch(p) }, 'Tentar novamente')));
-    exportBox.replaceChildren(h('p', { class: 'muted' }, 'A exportação com som personalizado volta quando o vídeo estiver disponível.'));
     return;
   }
-  exportForm(exportBox, p.id, v, opts);
 
   let timer;
   const initialHash = location.hash;
@@ -127,48 +178,6 @@ async function watch(p) {
   } catch (e) {
     playerBox.replaceChildren(h('p', { class: 'err' }, e.message || 'Não foi possível abrir o replay.'));
   }
-}
-
-function exportForm(box, vid, v, opts) {
-  if (!opts.modes.length) return mount(box, h('p', { class: 'muted' }, 'A arena não liberou exportação com áudio para este replay.'));
-  const labels = { original: ['Som original', 'mantém o áudio captado na quadra'], music: ['Música', 'troca o som por uma faixa da arena'], mix: ['Mistura', 'som original + música'], mute: ['Mudo', 'sem áudio'] };
-  const state = { mode: opts.defaultMode, musicId: opts.defaultMusicId, ov: opts.originalVolume, mv: opts.musicVolume };
-  const musicSel = h('select', { 'aria-label': 'Música', onchange: (e) => (state.musicId = e.target.value) }, opts.tracks.map((t) => h('option', { value: t.id, selected: t.id === state.musicId }, `${t.title} — ${t.artist}`)));
-  const vols = h('div');
-  const radios = ['original', 'music', 'mix', 'mute'].map((m) => {
-    const on = opts.modes.includes(m);
-    const why = on ? '' : m === 'original' || m === 'mix' ? (!opts.hasOriginalAudio ? ' (este replay não tem áudio original)' : ' (não liberado pela arena)') : ' (indisponível nesta arena)';
-    return h('label', { class: 'inline' }, h('input', { type: 'radio', name: 'mode', value: m, checked: m === state.mode, disabled: !on, onchange: () => { state.mode = m; refresh(); } }), h('span', {}, h('b', {}, labels[m][0]), ' — ' + labels[m][1] + why));
-  });
-  function refresh() {
-    const needMusic = state.mode === 'music' || state.mode === 'mix';
-    musicSel.hidden = !needMusic;
-    vols.replaceChildren(
-      state.mode === 'mix' ? h('div', {}, field(`Volume original: ${Math.round(state.ov * 100)}%`, h('input', { type: 'range', min: 0, max: 1.5, step: 0.05, value: state.ov, oninput: (e) => { state.ov = +e.target.value; refresh(); } })), field(`Volume da música: ${Math.round(state.mv * 100)}%`, h('input', { type: 'range', min: 0, max: 1.5, step: 0.05, value: state.mv, oninput: (e) => { state.mv = +e.target.value; refresh(); } }))) : '');
-  }
-  const status = h('div');
-  const go = h('button', { class: 'primary', onclick: async () => {
-    go.disabled = true;
-    try { const j = await api.post(`/api/videos/${vid}/exports`, { audioMode: state.mode, musicId: (state.mode === 'music' || state.mode === 'mix') ? state.musicId : null, originalVolume: state.ov, musicVolume: state.mv }); track(status, j); }
-    catch (e) { toast(e.message, true); } finally { go.disabled = false; }
-  } }, 'Gerar vídeo');
-  mount(box, h('div', { class: 'card' }, radios, field('Faixa', musicSel), vols,
-    h('p', { class: 'muted' }, 'Patrocinadores da arena são incluídos automaticamente nos vídeos exportados, conforme as campanhas vigentes.'), go), status);
-  refresh();
-}
-
-function track(box, job) {
-  const bar = h('i'); const msg = h('span'); const act = h('div');
-  mount(box, h('div', { class: 'card' }, h('div', {}, msg), h('div', { class: 'progress' }, bar), act));
-  let timer;
-  async function tick() {
-    job = await api.get('/api/exports/' + job.id);
-    bar.style.width = job.progress + '%'; msg.replaceChildren('Exportação: ', badge(job.status), job.error ? ' ' + job.error : '');
-    if (job.status === 'ready') act.replaceChildren(h('button', { class: 'primary', onclick: async () => { const r = await api.post(`/api/exports/${job.id}/download-link`); location.href = r.url; } }, '⬇ Baixar vídeo pronto'));
-    else if (job.status !== 'failed') timer = setTimeout(tick, 1500);
-  }
-  tick().catch((e) => toast(e.message, true));
-  window.addEventListener('hashchange', () => clearTimeout(timer), { once: true });
 }
 
 async function share(id, v) {
