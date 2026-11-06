@@ -38,7 +38,7 @@ function setupShell(root) {
 }
 function bottom(active) {
   return $('nav', {className:'journey-nav', 'aria-label':'Navegacao principal'},
-    [['/', '⌂', 'Início'], ['/replays', '▷', 'Replays'], ['/exports', '⇩', 'Downloads'], ['/profile', '♙', 'Perfil']].map(([url, icon, label]) =>
+    [['/', '⌂', 'Arenas'], ['/replays', '▷', 'Replays'], ['/profile', '♙', 'Perfil']].map(([url, icon, label]) =>
       $('a', {href:'#'+url, className:active===url?'active':''}, $('span', {'aria-hidden':'true',text:icon}), $('small',{text:label}))));
 }
 function header(label) {
