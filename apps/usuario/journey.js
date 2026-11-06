@@ -2,7 +2,9 @@
 // Reutiliza exclusivamente endpoints autorizados do app do usuario.
 let scannerStop = null;
 const $ = (tag, props = {}, ...children) => {
-  const node = document.createElement(tag);
+  const node = ['svg','path','title','circle','rect'].includes(tag)
+    ? document.createElementNS('http://www.w3.org/2000/svg', tag)
+    : document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
     if (value == null) continue;
     if (key === 'className') node.className = value;
@@ -43,7 +45,9 @@ function bottom(active) {
 }
 function brand(compact = false) {
   return $('div',{className:'journey-brand'+(compact?' journey-brand-compact':'')},
-    $('span',{className:'journey-play','aria-hidden':'true'},'▷'),
+    $('span',{className:'journey-play','aria-hidden':'true'},
+      $('svg',{viewBox:'0 0 48 48',width:'48',height:'48',focusable:'false'},
+        $('path',{d:'M11 7 C9 6 7 8 7 11 L7 37 C7 40 10 42 13 40 L39 27 C42 25 42 22 39 20 Z',fill:'none',stroke:'currentColor','stroke-width':'5.5','stroke-linejoin':'round','stroke-linecap':'round'}))),
     $('span',{className:'journey-brand-name',text:'Replay Agora'}));
 }
 function header(label, variant = 'default') {
