@@ -241,9 +241,37 @@ export async function journeyArena(params, ctx) {
     bottom('/replays'));
   await refresh();
 }
-export function journeyProfile(ctx) {
-  const root=ctx.root;setupShell(root);
-  root.append(header('Perfil'),$('section',{className:'journey-content'},
-    $('p',{text:'Acesse as arenas pelo QR Code e encontre seus replays por quadra, dia e horário.'}),
-    $('button',{className:'journey-primary',text:'Minhas Arenas',onclick:()=>navigate('#/')})),bottom('/profile'));
+export async function journeyProfile(ctx) {
+  if (!(await ctx.ensureMe())) return;
+  const root = ctx.root;
+  setupShell(root);
+  let user;
+  try {
+    user = await ctx.api.get('/api/auth/user/me');
+  } catch {
+    navigate('#/login');
+    return;
+  }
+  const logout = () => {
+    ctx.api.setToken(null);
+    ctx.onLogout?.();
+    navigate('#/login');
+  };
+  const initial = (user.name || user.email || 'U').trim().slice(0, 1).toUpperCase();
+  root.append(
+    header('Minha conta'),
+    $('section', {className:'journey-content journey-profile'},
+      $('div', {className:'journey-profile-summary'},
+        $('div', {className:'journey-avatar','aria-hidden':'true',text:initial}),
+        $('div', {},
+          $('strong',{text:user.name || 'Jogador'}),
+          $('small',{text:'Conta do jogador'}))),
+      $('h2', {text:'Dados de acesso'}),
+      $('div', {className:'journey-profile-data'},
+        $('div', {}, $('span',{text:'Nome'}),$('strong',{text:user.name || 'Não informado'})),
+        $('div', {}, $('span',{text:'E-mail de login'}),$('strong',{text:user.email || 'Não informado'}))),
+      $('button', {className:'journey-signout',onclick:logout,text:'Sair da conta'})
+    ),
+    bottom('/profile')
+  );
 }
