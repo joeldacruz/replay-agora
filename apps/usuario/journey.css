@@ -42,3 +42,13 @@ body.journey-user{--navy:#062844;--ocean:#075783;--coral:#ff6a60;--sand:#fbf8f5;
 .journey-scanner video{max-width:540px;max-height:65vh;object-fit:cover;border:3px solid var(--coral)}
 .journey-scanner button{margin-top:16px}
 @media(max-width:520px){.journey-filters{grid-template-columns:1fr 1fr}.journey-filters label:first-child{grid-column:1/-1}.journey-hero{padding:25px 22px 60px}.journey-thumb{min-width:78px}.journey-replay{padding:11px;gap:10px}}
+
+/* Reprodução: controles de atleta, sem editor ou seleção de áudio. */
+.journey-watch{min-height:100vh}
+.journey-watch-hero{padding-bottom:36px}
+.journey-player-box{background:#082b46;border-radius:18px;overflow:hidden;min-height:180px;display:grid;place-items:center;color:white;margin:14px 0 10px}
+.journey-player-box video{width:100%;max-height:72vh;display:block;border-radius:18px}
+.journey-player-box .card{color:#132c41;margin:14px;background:white}
+.journey-watch-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+.journey-watch-actions .journey-primary,.journey-watch-actions .journey-secondary{min-height:52px;font-weight:700;border-radius:16px}
+@media(max-width:440px){.journey-watch-actions{grid-template-columns:1fr}}
