@@ -98,11 +98,20 @@ async function readQr(root, ctx) {
   } catch { stopScan(); say(root, 'Câmera indisponível. Confira a permissão ou insira o código da arena.'); }
 }
 
-function arenaRow(a) {
-  return el('a', { class: 'j-card j-row', href: '#/arena/' + encodeURIComponent(a.slug) },
-    el('span', { class: 'j-row-icon' }, icon('stadium', { size: 28 })),
-    el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, 'Ver quadras e replays')),
-    icon('chevronRight', { size: 22 }));
+// Última arena escolhida, só se ainda estiver vinculada à conta (vínculo revogado → seleção limpa).
+export function validSelection(ctx, arenas) {
+  const id = ctx.store.get('arena');
+  const a = arenas.find((x) => x.id === id);
+  if (id && !a) { ctx.store.set('arena', ''); state.arena = ''; resetFilters(); }
+  return a || null;
+}
+function arenaRow(a, selectedId) {
+  const place = a.location || a.city || '';
+  const selected = a.id === selectedId;
+  return el('a', { class: 'j-card j-row' + (selected ? ' is-selected' : ''), href: '#/arena/' + encodeURIComponent(a.slug), 'aria-current': selected ? 'true' : null },
+    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, icon('stadium', { size: 28 })),
+    el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, place || (selected ? 'Arena selecionada' : 'Ver quadras e replays'))),
+    el('span', { class: 'j-row-go' }, 'Acessar', icon('chevronRight', { size: 20 })));
 }
 
 function arenaAccessScreen(ctx, arenas) {
@@ -139,7 +148,7 @@ function arenaAccessScreen(ctx, arenas) {
       waves()),
     arenas.length ? el('section', { class: 'j-sheet', 'aria-labelledby': 'j-my-arenas' },
       el('h2', { id: 'j-my-arenas' }, 'Minhas Arenas'),
-      el('div', { class: 'j-stack' }, arenas.map(arenaRow)), status()) : status(),
+      el('div', { class: 'j-stack' }, arenas.map((a) => arenaRow(a, ctx.store.get('arena')))), status()) : status(),
     bottomNav('/')
   );
 }
@@ -158,12 +167,13 @@ export async function journeyHome(ctx) {
     return;
   }
   const root = ctx.root;
+  const selectedId = validSelection(ctx, arenas)?.id;
   shell(root, 'j-app--arenas');
   root.append(
     header({ title: 'Minhas Arenas' }),
     el('section', { class: 'j-sheet j-sheet--lift j-my-arenas', 'aria-labelledby': 'j-my-arenas' },
-      el('h2', { id: 'j-my-arenas' }, 'Arenas cadastradas'),
-      el('div', { class: 'j-stack' }, arenas.map(arenaRow)),
+      el('h2', { id: 'j-my-arenas', class: 'j-sr' }, 'Arenas cadastradas'),
+      el('div', { class: 'j-stack' }, arenas.map((a) => arenaRow(a, selectedId))),
       el('a', { class: 'j-btn j-btn--primary j-add-arena', href: '#/add-arena' },
         icon('scan', { size: 24 }), 'Adicionar outra arena'),
       status()),
@@ -216,6 +226,7 @@ export async function journeyArena(params, ctx) {
   if (!(await ctx.ensureMe())) return;
   const root = ctx.root; shell(root, 'j-app--arena');
   const arenas = await ctx.api.get('/api/arenas');
+  validSelection(ctx, arenas);
   const arena = arenas.find((a) => a.slug === params.slug);
   if (!arena) {
     root.append(header({ title: 'Acessar arena', back: ['#/', 'Voltar'] }),

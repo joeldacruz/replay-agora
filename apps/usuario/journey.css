@@ -334,3 +334,10 @@ body.j-body {
 @media(min-width:900px){
   .j-app--arenas .j-my-arenas .j-stack{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
+.j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
+.j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.j-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.j-row.is-selected { box-shadow: 0 0 0 2px var(--j-coral), var(--j-shadow, 0 6px 20px rgba(4, 20, 55, .08)); }
+.j-row-go { display: inline-flex; align-items: center; gap: 2px; font-size: .85rem; font-weight: 700; color: var(--j-coral-dark, #e04a34); }

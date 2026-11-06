@@ -32,17 +32,22 @@ console.log('E2E Replay Agora —', BASE);
 // ---------- App do Usuário (celular) ----------
 const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true });
 const u = await mobile.newPage();
-await step('usuário: login leva à tela "Acesse sua Arena" com QR, código e Minhas Arenas', async () => {
+await step('usuário: com arena vinculada, abre direto em Minhas Arenas (sem tela de QR)', async () => {
   await u.goto(BASE + '/'); await u.waitForURL(/#\/login/);
   await u.fill('input[name=email]', 'atleta.alfa@example.test'); await u.fill('input[name=password]', PASS); await u.click('button[type=submit]');
-  await u.waitForSelector('.j-hero--welcome');
+  await u.waitForSelector('.j-my-arenas');
   const txt = await u.locator('body').innerText();
-  for (const t of ['Acesse sua Arena', 'Ler QR Code', 'Inserir código da Arena', 'Minhas Arenas', 'Arena Alfa']) assert.ok(txt.includes(t), 'faltou: ' + t);
+  for (const t of ['Minhas Arenas', 'Arena Alfa', 'Adicionar outra arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
+  assert.equal(await u.locator('.j-hero--welcome').count(), 0, 'QR não é a página inicial quando há arenas');
   assert.equal(await u.locator('nav.j-nav a').count(), 3, 'navegação Arenas/Replays/Perfil');
   assert.ok(!txt.includes('Downloads'), 'sem menu Downloads');
 });
-await shot(u, 'usuario-home');
-await step('usuário: entra na arena por código (sem permissão administrativa)', async () => {
+await shot(u, 'usuario-minhas-arenas');
+await step('usuário: "Adicionar outra arena" abre QR/código e a entrada por código leva à arena', async () => {
+  await u.click('text=Adicionar outra arena'); await u.waitForSelector('.j-hero--welcome');
+  const txt = await u.locator('body').innerText();
+  for (const t of ['Acesse sua Arena', 'Ler QR Code', 'Inserir código da Arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
+  await shot(u, 'usuario-qr');
   await u.click('text=Inserir código da Arena'); await u.fill('#j-code-form input', 'arena-alfa'); await u.click('#j-code-form button[type=submit]');
   await u.waitForSelector('.j-replay'); assert.match(u.url(), /#\/arena\/arena-alfa/);
   assert.ok((await u.locator('body').innerText()).includes('Arena Alfa'));
@@ -101,6 +106,42 @@ await step('usuário: token do app do usuário é recusado nas APIs de gestão e
   const codes = await u.evaluate(async (t) => Promise.all(['/api/platform/arenas', '/api/platform/users'].map(async (p) => (await fetch(p, { headers: { Authorization: 'Bearer ' + t } })).status)), t);
   assert.deepEqual(codes, [403, 403]);
   assert.equal((await mobile.newPage().then(async (p) => { const r = await p.goto(BASE + '/api/arena/x/dashboard'); return r.status(); })), 401);
+});
+
+await step('usuário novo: 1º acesso mostra QR; arenas ficam em Minhas Arenas; Replays segue a arena selecionada', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const m = await ctx2.newPage();
+  const email = `multi${Date.now()}@example.test`;
+  await m.goto(BASE + '/');
+  await m.evaluate(async ([email, pw]) => {
+    const r = await fetch('/api/auth/user/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Multi Arena (fictício)', email, password: pw }) });
+    localStorage.setItem('ra_user_token', (await r.json()).token);
+  }, [email, PASS + 'x1']);
+  await m.goto(BASE + '/#/'); await m.reload(); await m.waitForSelector('.j-hero--welcome');
+  assert.equal(await m.locator('.j-my-arenas').count(), 0, 'sem arenas: tela de QR');
+  const enter = async (slug) => { await m.click('text=Inserir código da Arena'); await m.fill('#j-code-form input', slug); await m.click('#j-code-form button[type=submit]'); await m.waitForSelector('.j-replay'); };
+  await enter('arena-alfa');
+  await m.click('nav.j-nav >> text=Arenas'); await m.waitForSelector('.j-my-arenas');
+  await m.click('text=Adicionar outra arena'); await enter('arena-beta');
+  const arenaOfShown = async () => { await m.waitForTimeout(800); await m.waitForSelector('.j-replay-link'); return m.evaluate(async () => {
+    const t = localStorage.getItem('ra_user_token'); const H = { Authorization: 'Bearer ' + t };
+    const arenas = await (await fetch('/api/arenas', { headers: H })).json();
+    const ids = [...document.querySelectorAll('.j-replay-link')].map((a) => a.getAttribute('href').split('/').pop());
+    const out = new Set();
+    for (const a of arenas) { const l = (await (await fetch('/api/videos?limit=50&arenaId=' + a.id, { headers: H })).json()).items.map((v) => v.id); if (ids.some((i) => l.includes(i))) out.add(a.name); if (ids.some((i) => !l.includes(i)) && ids.some((i) => l.includes(i))) out.add('MISTURA'); }
+    return [...out];
+  }); };
+  assert.deepEqual(await arenaOfShown(), ['Arena Beta (fictícia)']);
+  await m.click('nav.j-nav >> text=Arenas'); await m.waitForSelector('.j-my-arenas');
+  assert.equal(await m.locator('.j-row').count(), 2);
+  await m.click('.j-row:has-text("Arena Alfa")'); await m.waitForSelector('.j-replay');
+  await m.click('nav.j-nav >> text=Perfil'); await m.waitForSelector('.j-profile-card');
+  await m.click('nav.j-nav >> text=Replays'); await m.waitForSelector('.j-replay');
+  assert.deepEqual(await arenaOfShown(), ['Arena Alfa (fictícia)'], 'Replays abre a arena selecionada, após Perfil');
+  await m.reload(); await m.waitForSelector('.j-replay');
+  await m.click('nav.j-nav >> text=Replays'); await m.waitForSelector('.j-replay');
+  { const got = await arenaOfShown(); assert.deepEqual(got, ['Arena Alfa (fictícia)'], 'seleção persiste após atualizar: ' + JSON.stringify(got) + ' ' + m.url()); }
+  await ctx2.close();
 });
 
 // ---------- App da Arena (desktop) ----------
