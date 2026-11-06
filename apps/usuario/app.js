@@ -197,6 +197,6 @@ async function redeem(p) {
   catch (e) { mount(root, h('div', { class: 'card' }, h('h1', {}, 'Link indisponível'), h('p', {}, e.message), h('a', { href: '#/' }, 'Ir para meus replays'))); }
 }
 
-const router = createRouter(root, { '/': home, '/replays': replaysJourney, '/arena/:slug': arenaJourney, '/profile': () => journeyProfile({root}), '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': () => { location.hash = '#/replays'; }, '/s/:token': redeem });
+const router = createRouter(root, { '/': home, '/replays': replaysJourney, '/arena/:slug': arenaJourney, '/profile': () => journeyProfile({root, api, ensureMe, onLogout: () => { me = null; }}), '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': () => { location.hash = '#/replays'; }, '/s/:token': redeem });
 router.go();
 registerSW('/sw.js', '/');
