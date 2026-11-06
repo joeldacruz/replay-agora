@@ -46,8 +46,8 @@ function bottom(active) {
 function brand(compact = false) {
   return $('div',{className:'journey-brand'+(compact?' journey-brand-compact':'')},
     $('span',{className:'journey-play','aria-hidden':'true'},
-      $('svg',{viewBox:'0 0 48 48',width:'48',height:'48',focusable:'false'},
-        $('path',{d:'M12 3 C9 1 5 4 5 9 L5 39 C5 44 9 47 14 44 L43 28 C48 25 48 22 43 19 Z M17 14 L17 34 L36 24 Z',fill:'currentColor','fill-rule':'evenodd'}))),
+      $('svg',{viewBox:'0 0 72 72',width:'72',height:'72',focusable:'false'},
+        $('path',{d:'M27 1 C19 -2 12 2 8 10 C5 16 2 42 0 57 C-2 67 7 73 17 70 C30 66 58 49 68 42 C75 38 74 29 68 24 C60 18 35 3 27 1 Z M23 15 L54 34 L15 54 Z',fill:'currentColor','fill-rule':'evenodd'}))),
     $('span',{className:'journey-brand-name',text:'Replay Agora'}));
 }
 function header(label, variant = 'default') {
