@@ -11,8 +11,8 @@ function chrome() {
   const lo = document.getElementById('logout');
   lo.hidden = !me;
   lo.onclick = () => { api.setToken(null); me = null; location.hash = '#/login'; };
-  const t = document.getElementById('tabs');
-  t.replaceChildren(...(me ? [h('nav', { class: 'tabs' }, [['/', 'Meus replays'], ['/exports', 'Meus downloads']].map(([p, l]) => h('a', { href: '#' + p, 'aria-current': (location.hash.slice(1) || '/') === p ? 'page' : null }, l)))] : []));
+  // Nenhum menu superior duplicado; a jornada usa somente barra inferior.
+  document.getElementById('tabs').replaceChildren();
 }
 async function ensureMe() {
   if (!api.token()) { location.hash = '#/login'; return false; }
@@ -189,13 +189,6 @@ async function share(id, v) {
   } catch (e) { toast(e.message, true); }
 }
 
-async function exportsPage() {
-  if (!(await ensureMe())) return;
-  const jobs = await api.get('/api/exports');
-  mount(root, h('h1', {}, 'Meus downloads'), jobs.length ? h('div', { class: 'table-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Replay', 'Som', 'Status', 'Quando', ''].map((x) => h('th', {}, x)))),
-    h('tbody', {}, jobs.map((j) => h('tr', {}, h('td', {}, h('a', { href: '#/v/' + j.videoId }, j.videoCode)), h('td', {}, j.audioMode), h('td', {}, badge(j.status), j.status === 'processing' ? ` ${j.progress}%` : '', j.error ? h('div', { class: 'err' }, j.error) : ''),
-      h('td', {}, fmt.dt(j.createdAt)), h('td', {}, j.downloadUrl ? h('button', { class: 'small', onclick: async () => { const r = await api.post(`/api/exports/${j.id}/download-link`); location.href = r.url; } }, 'Baixar') : '')))))) : h('p', { class: 'muted' }, 'Você ainda não gerou vídeos.'));
-}
 
 async function redeem(p) {
   if (!api.token()) { sessionStorage.setItem('ra_pending_share', p.token); location.hash = '#/login'; return; }
@@ -204,6 +197,6 @@ async function redeem(p) {
   catch (e) { mount(root, h('div', { class: 'card' }, h('h1', {}, 'Link indisponível'), h('p', {}, e.message), h('a', { href: '#/' }, 'Ir para meus replays'))); }
 }
 
-const router = createRouter(root, { '/': home, '/replays': replaysJourney, '/arena/:slug': arenaJourney, '/profile': () => journeyProfile({root}), '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': exportsPage, '/s/:token': redeem });
+const router = createRouter(root, { '/': home, '/replays': replaysJourney, '/arena/:slug': arenaJourney, '/profile': () => journeyProfile({root}), '/login': () => authForm('login'), '/register': () => authForm('register'), '/v/:id': watch, '/exports': () => { location.hash = '#/replays'; }, '/s/:token': redeem });
 router.go();
 registerSW('/sw.js', '/');
