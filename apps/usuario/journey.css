@@ -52,3 +52,16 @@ body.journey-user{--navy:#062844;--ocean:#075783;--coral:#ff6a60;--sand:#fbf8f5;
 .journey-watch-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
 .journey-watch-actions .journey-primary,.journey-watch-actions .journey-secondary{min-height:52px;font-weight:700;border-radius:16px}
 @media(max-width:440px){.journey-watch-actions{grid-template-columns:1fr}}
+
+/* Perfil do jogador: somente identificação da conta e encerramento da sessão. */
+.journey-profile-summary{display:flex;align-items:center;gap:16px;background:#fff;padding:18px;border:1px solid #e9eced;border-radius:20px;box-shadow:0 6px 24px #0c355312}
+.journey-avatar{display:grid;place-items:center;background:#083b5f;color:white;width:60px;height:60px;flex-shrink:0;border-radius:50%;font-size:1.7rem;font-weight:800}
+.journey-profile-summary strong,.journey-profile-summary small{display:block}
+.journey-profile-summary strong{font-size:1.12rem;color:#062844}
+.journey-profile-summary small{color:#667987;margin-top:4px}
+.journey-profile-data{background:#fff;border:1px solid #e9eced;border-radius:19px;overflow:hidden}
+.journey-profile-data>div{padding:16px 18px;display:grid;gap:5px}
+.journey-profile-data>div+div{border-top:1px solid #e9eced}
+.journey-profile-data span{font-size:.82rem;color:#657586}
+.journey-profile-data strong{font-size:1rem;color:#102c49;overflow-wrap:anywhere}
+.journey-signout{width:100%;margin-top:22px;min-height:50px;background:#fff;color:#a72e32;border:1px solid #f0c3c3;border-radius:15px;font-weight:700}
