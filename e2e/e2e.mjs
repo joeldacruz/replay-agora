@@ -39,7 +39,7 @@ await step('usuário: com arena vinculada, abre direto em Minhas Arenas (sem tel
   const txt = await u.locator('body').innerText();
   for (const t of ['Minhas Arenas', 'Arena Alfa', 'Adicionar outra arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
   assert.equal(await u.locator('.j-hero--welcome').count(), 0, 'QR não é a página inicial quando há arenas');
-  assert.equal(await u.locator('nav.j-nav a').count(), 3, 'navegação Arenas/Replays/Perfil');
+  assert.equal(await u.locator('nav.j-nav a.j-nav-item').count(), 3, 'navegação Arenas/Replays/Perfil');
   assert.ok(!txt.includes('Downloads'), 'sem menu Downloads');
 });
 await shot(u, 'usuario-minhas-arenas');
@@ -142,6 +142,20 @@ await step('usuário novo: 1º acesso mostra QR; arenas ficam em Minhas Arenas; 
   await m.click('nav.j-nav >> text=Replays'); await m.waitForSelector('.j-replay');
   { const got = await arenaOfShown(); assert.deepEqual(got, ['Arena Alfa (fictícia)'], 'seleção persiste após atualizar: ' + JSON.stringify(got) + ' ' + m.url()); }
   await ctx2.close();
+});
+
+await step('usuário (computador): barra superior Arenas/Replays/Perfil, replays em coluna ampla com ações, sem rolagem horizontal', async () => {
+  const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } }); const d = await dctx.newPage();
+  await d.goto(BASE + '/'); await d.waitForURL(/#\/login/);
+  await d.fill('input[name=email]', 'atleta.alfa@example.test'); await d.fill('input[name=password]', PASS); await d.click('button[type=submit]'); await d.waitForSelector('.j-my-arenas');
+  const nav = await d.locator('nav.j-nav').boundingBox(); assert.ok(nav.y === 0 && nav.height < 100 && nav.width >= 1400, 'navegação no topo');
+  assert.deepEqual(await d.locator('nav.j-nav a.j-nav-item').allTextContents(), ['Arenas', 'Replays', 'Perfil']);
+  const add = await d.locator('.j-add-arena').boundingBox(); assert.ok(add.width < 400, 'botão Adicionar com largura própria');
+  await d.goto(BASE + '/#/arena/arena-alfa'); await d.waitForSelector('.j-replay');
+  assert.ok(await d.locator('.j-replay-actions').first().isVisible(), 'ações visíveis no computador');
+  const r = await d.locator('.j-replay').first().boundingBox(); assert.ok(r.width > 560, 'cartão de replay amplo');
+  assert.ok(await d.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'sem rolagem horizontal');
+  await shot(d, 'usuario-desktop-arena'); await dctx.close();
 });
 
 // ---------- App da Arena (desktop) ----------

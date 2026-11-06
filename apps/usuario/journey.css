@@ -30,6 +30,7 @@ body.j-body {
   --j-gutter: clamp(16px, 5vw, 28px);
   --j-col: 560px;                                   /* largura útil do conteúdo */
   --j-nav-h: calc(76px + env(safe-area-inset-bottom));
+  --j-top-h: 0px;                                   /* altura da barra superior (só no computador) */
   --j-brand-size: 1.4rem;
 }
 
@@ -146,7 +147,9 @@ body.j-body {
 .j-thumb { position: relative; flex: none; display: block; width: clamp(112px, 34vw, 168px); aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: var(--j-navy-800); }
 .j-thumb img, .j-thumb-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .j-thumb-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
-.j-thumb-play .j-icon { fill: #fff; stroke-width: 1.4; }
+.j-thumb-play .j-icon { fill: #fff; stroke-width: 1.4; padding: 0; }
+.j-thumb-play::before { content: ""; position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(255, 255, 255, .16); border: 1.5px solid rgba(255, 255, 255, .55); }
+.j-thumb-play .j-icon { position: relative; }
 .j-thumb-time { position: absolute; right: 6px; bottom: 6px; }
 
 /* 4.7 Ondas (azul · coral · branco) — no fluxo, no fim do hero: nunca cobertas pelo conteúdo nem pela barra inferior */
@@ -281,6 +284,19 @@ body.j-body {
 .j-switch { text-align: center; }
 .j-switch a { color: var(--j-blue-700); font-weight: 700; }
 
+/* 5.6 Minhas Arenas e cartão de arena (identidade, seleção, ação "Acessar") */
+.j-my-arenas { padding-top: 20px; padding-bottom: 24px; }
+.j-my-arenas .j-stack { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 420px)); }
+.j-add-arena { display: flex; margin-top: 20px; text-decoration: none; }
+.j-replay-actions { display: none; }          /* ações visíveis só no computador (celular/tablet usam o menu ⋮) */
+.j-nav-brand { display: none; }
+/* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
+.j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
+.j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.j-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.j-row.is-selected { box-shadow: 0 0 0 2px var(--j-coral), var(--j-shadow, 0 6px 20px rgba(4, 20, 55, .08)); }
+.j-row-go { display: inline-flex; align-items: center; gap: 2px; font-size: .85rem; font-weight: 700; color: var(--j-coral-dark, #e04a34); }
+
 /* ---------------------------------------------------------------- 6. BREAKPOINTS */
 @media (max-width: 360px) {
   .j-actions { grid-template-columns: 1fr; }
@@ -291,53 +307,90 @@ body.j-body {
 @media (min-width: 480px) {
   .j-body { --j-gutter: 24px; }
 }
-@media (min-width: 768px) {                       /* tablet */
-  body.j-body { --j-col: 680px; --j-gutter: 32px; --j-nav-h: 96px; }
+
+@media (min-width: 768px) {                        /* tablet: coluna única mais larga, barra inferior flutuante */
+  body.j-body { --j-col: 720px; --j-gutter: 32px; --j-nav-h: 96px; }
   .j-nav { bottom: 12px; width: min(92%, 520px); border-radius: 28px; }
   .j-hero--welcome .j-hero-inner { gap: 26px; padding-top: 48px; }
   .j-welcome-copy { --j-brand-size: 3.1rem; }
   .j-welcome-copy h1 { font-size: 2.5rem; }
   .j-qr { width: 200px; }
+  .j-header { --j-brand-size: 1.6rem; padding-bottom: 62px; }
   .j-thumb { width: 190px; }
   .j-replay-info strong { font-size: 1.25rem; }
-  .j-header { --j-brand-size: 1.6rem; padding-bottom: 62px; }
   .j-actions { max-width: 520px; }
+  .j-add-arena { display: inline-flex; width: auto; min-width: 280px; }
 }
-@media (min-width: 1100px) {                      /* computador */
-  body.j-body { --j-col: 1040px; --j-gutter: 40px; }
-  .j-hero--welcome .j-hero-inner { display: grid; grid-template-columns: 1fr 440px; align-items: center; justify-items: stretch; gap: 72px; text-align: left; padding-top: 56px; }
+
+@media (min-width: 1024px) {                       /* computador: barra superior, composição em duas áreas */
+  body.j-body { --j-col: 1120px; --j-gutter: 40px; --j-nav-h: 0px; --j-top-h: 68px; }
+
+  /* navegação: barra fixa no topo (marca à esquerda, Arenas · Replays · Perfil à direita) */
+  .j-nav {
+    inset: 0 0 auto 0; width: auto; height: var(--j-top-h); min-height: 0; transform: none; border-radius: 0;
+    display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+    padding: 0 max(var(--j-gutter), calc((100vw - var(--j-col)) / 2 + var(--j-gutter)));
+    background: rgba(3, 16, 44, .78); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 0 rgba(255, 255, 255, .08);
+  }
+  .j-nav-brand { display: flex; align-items: center; margin-right: auto; --j-brand-size: 1.5rem; text-decoration: none; }
+  .j-app--home .j-nav-brand { visibility: hidden; }
+  .j-nav-item { flex-direction: row; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; font-size: 1rem; }
+  .j-nav-item:hover { background: rgba(255, 255, 255, .1); }
+  .j-nav-item.is-active { background: rgba(255, 107, 87, .16); }
+  .j-nav-item.is-active::after { display: none; }
+  .j-nav-item .j-icon { width: 22px; height: 22px; }
+  .toast { bottom: 24px; }
+
+  /* cabeçalho das telas internas: a marca fica na barra */
+  .j-header { padding-top: calc(var(--j-top-h) + 26px); padding-bottom: 76px; }
+  .j-header--arena { padding-top: calc(var(--j-top-h) + 8px); padding-bottom: 76px; }
+  .j-header-row { display: none; }
+  .j-header-title h1 { font-size: 1.9rem; }
+
+  /* acesso por QR (sem arenas) */
+  .j-hero--welcome .j-hero-inner { display: grid; grid-template-columns: 1fr 440px; align-items: center; justify-items: stretch; gap: 72px; text-align: left; padding-top: calc(var(--j-top-h) + 24px); }
   .j-welcome-copy { align-items: flex-start; --j-brand-size: 3.6rem; }
   .j-welcome-copy h1 { font-size: 2.9rem; margin-top: .2rem; }
   .j-lead { font-size: 1.2rem; }
   .j-sheet { padding-top: 16px; }
-  .j-sheet .j-stack { grid-template-columns: repeat(2, 1fr); }
-  .j-arena-body { display: grid; grid-template-columns: 340px 1fr; column-gap: 32px; align-items: start; }
+
+  /* Minhas Arenas: cartões amplos em grade; botão com largura própria */
+  .j-my-arenas { padding-top: 0; }
+  .j-my-arenas .j-stack { grid-template-columns: repeat(auto-fill, minmax(340px, 440px)); gap: 20px; }
+  .j-my-arenas .j-row { padding: 20px; gap: 18px; }
+  .j-my-arenas .j-row-icon { width: 64px; height: 64px; border-radius: 18px; }
+  .j-my-arenas .j-row-text strong { font-size: 1.25rem; }
+  .j-my-arenas .j-row-text small { font-size: .95rem; }
+  .j-row-go { font-size: .95rem; }
+  .j-add-arena { margin-top: 28px; min-width: 300px; }
+
+  /* arena selecionada: coluna lateral (identificação, atalhos, filtros) + coluna de replays */
+  .j-arena-body { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); column-gap: 32px; align-items: start; margin-top: -52px; }
   .j-arena-card, .j-tiles, .j-filters { grid-column: 1; }
-  .j-replays { grid-column: 2; grid-row: 1 / span 4; }
-  .j-tiles { margin-top: 0; }
-  .j-replays .j-stack { grid-template-columns: 1fr 1fr; }
-  .j-replay { flex-direction: row; }
-  .j-thumb { width: 150px; }
-  .j-watch-body { --j-col: 840px; }
+  .j-tiles { margin: 16px 0; }
+  .j-filters-row { grid-template-columns: 1fr; }
+  .j-filters .j-chips { flex-wrap: wrap; overflow: visible; }
+  .j-replays { grid-column: 2; grid-row: 1 / span 4; padding-top: 68px; min-width: 0; }
+  .j-replays .j-stack { grid-template-columns: 1fr; gap: 14px; }
+  .j-replay { padding: 14px 16px 14px 14px; gap: 12px; }
+  .j-replay-link { gap: 20px; }
+  .j-thumb { width: 176px; }
+  .j-replay-info { gap: 6px; }
+  .j-replay-info strong { font-size: 1.25rem; white-space: normal; }
+  .j-more { display: none; }
+  .j-replay-actions { display: flex; flex: none; flex-direction: column; gap: 8px; width: 150px; }
+  .j-replay-actions .j-btn { min-height: 42px; padding: 0 1rem; font-size: .95rem; }
+
+  /* assistir e perfil */
+  .j-watch-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; row-gap: 16px; align-items: start; grid-auto-flow: row; }
+  .j-watch-body > .j-player { grid-column: 1; grid-row: 1 / span 3; }
+  .j-watch-body > :not(.j-player) { grid-column: 2; }
+  .j-watch-body .j-actions { grid-template-columns: 1fr; max-width: none; }
+  .j-profile-body { --j-col: 560px; }
   .j-form { max-width: 460px; margin-inline: auto; }
 }
 
-
-/* Minhas Arenas — tela principal após o primeiro vínculo. */
-.j-app--arenas .j-my-arenas{padding-top:20px;padding-bottom:calc(var(--j-nav-h) + 32px)}
-.j-app--arenas .j-my-arenas .j-stack{grid-template-columns:1fr}
-.j-app--arenas .j-add-arena{
-  display:flex;align-items:center;justify-content:center;gap:10px;
-  margin-top:20px;width:100%;min-height:54px;text-align:center;
-  text-decoration:none;
+@media (min-width: 1600px) {
+  body.j-body { --j-col: 1240px; }
+  .j-thumb { width: 200px; }
 }
-@media(min-width:900px){
-  .j-app--arenas .j-my-arenas .j-stack{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-
-/* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
-.j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
-.j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-.j-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.j-row.is-selected { box-shadow: 0 0 0 2px var(--j-coral), var(--j-shadow, 0 6px 20px rgba(4, 20, 55, .08)); }
-.j-row-go { display: inline-flex; align-items: center; gap: 2px; font-size: .85rem; font-weight: 700; color: var(--j-coral-dark, #e04a34); }

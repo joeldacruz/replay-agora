@@ -22,6 +22,7 @@ const status = () => el('p', { class: 'j-status', 'data-status': '', role: 'stat
 const NAV = [['/', 'home', 'Arenas'], ['/replays', 'playCircle', 'Replays'], ['/profile', 'user', 'Perfil']];
 function bottomNav(active) {
   return el('nav', { class: 'j-nav', 'aria-label': 'Navegação principal' },
+    el('a', { class: 'j-nav-brand', href: '#/', 'aria-label': 'Replay Agora — Minhas Arenas' }, brand()),
     NAV.map(([url, ic, label]) => el('a', { href: '#' + url, class: 'j-nav-item' + (active === url ? ' is-active' : ''), 'aria-current': active === url ? 'page' : null },
       icon(ic, { size: 26, filled: active === url }), el('span', {}, label))));
 }
@@ -218,8 +219,14 @@ function replayCard(ctx, v) {
         el('strong', {}, v.courtLabel || 'Quadra'),
         el('span', { class: 'j-meta' }, icon('calendar', { size: 18 }), valid ? fmt.shortDateTime(d) : 'Sem data'),
         code ? el('span', { class: 'j-meta' }, icon('ticket', { size: 18 }), code) : '')),
+    el('div', { class: 'j-replay-actions' },
+      el('a', { class: 'j-btn j-btn--outline-dark', href: '#/v/' + encodeURIComponent(v.id) }, icon('playCircle', { size: 20 }), 'Assistir'),
+      el('button', { class: 'j-btn j-btn--outline-dark', type: 'button', onclick: shareReplay(ctx, v) }, icon('share', { size: 20 }), 'Compartilhar')),
     more, menu);
 }
+// menus ⋮ fecham ao tocar fora ou com Esc
+document.addEventListener('click', () => document.querySelectorAll('.j-menu:not([hidden])').forEach((m) => m.setAttribute('hidden', '')));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.j-menu:not([hidden])').forEach((m) => m.setAttribute('hidden', '')); });
 
 export async function journeyArena(params, ctx) {
   if (!ctx.api.token()) { sessionStorage.setItem('ra_pending_arena', params.slug); go('#/login'); return; }

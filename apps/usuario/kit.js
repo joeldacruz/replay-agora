@@ -94,14 +94,19 @@ export function qrArt() {
     el('span', { class: 'j-qr-scan' }));
 }
 
-// ---------------------------------------------------------------- miniatura (vetor, sem fotografia)
+// ---------------------------------------------------------------- miniatura (usa a da API; sem ela, placeholder padrão azul + símbolo de reprodução)
+function thumbArt() {
+  return el('svg', { class: 'j-thumb-art', viewBox: '0 0 160 100', preserveAspectRatio: 'xMidYMid slice', 'aria-hidden': 'true', focusable: 'false' },
+    el('defs', {}, el('linearGradient', { id: 'jt-g', x1: '0', y1: '0', x2: '1', y2: '1' }, el('stop', { offset: '0', 'stop-color': '#0a5fae' }), el('stop', { offset: '1', 'stop-color': '#04235f' }))),
+    el('rect', { width: '160', height: '100', fill: 'url(#jt-g)' }));
+}
 export function thumb({ url, duration, unavailable }) {
   const box = el('span', { class: 'j-thumb' });
-  if (url) box.append(el('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }));
-  else box.append(el('svg', { class: 'j-thumb-art', viewBox: '0 0 160 100', preserveAspectRatio: 'xMidYMid slice', 'aria-hidden': 'true', focusable: 'false' },
-    el('defs', {}, el('linearGradient', { id: 'jt-g', x1: '0', y1: '0', x2: '1', y2: '1' }, el('stop', { offset: '0', 'stop-color': '#0a5fae' }), el('stop', { offset: '1', 'stop-color': '#04235f' }))),
-    el('rect', { width: '160', height: '100', fill: 'url(#jt-g)' }),
-    el('path', { d: 'M8 92 36 36h88l28 56z M22 64h116 M80 36v56 M58 36 46 92 M102 36l12 56', fill: 'none', stroke: '#7fc4ff', 'stroke-opacity': '.45', 'stroke-width': '1.6', 'stroke-linejoin': 'round' })));
+  if (url) {
+    const img = el('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' });
+    img.addEventListener('error', () => img.replaceWith(thumbArt()), { once: true });   // miniatura inválida → placeholder padrão
+    box.append(img);
+  } else box.append(thumbArt());
   if (!unavailable) box.append(el('span', { class: 'j-thumb-play' }, icon('play', { size: 18, filled: false })));
   if (duration) box.append(el('span', { class: 'j-pill j-thumb-time' }, duration));
   if (unavailable) box.append(el('span', { class: 'j-pill j-pill--warn j-thumb-time' }, 'Indisponível'));
