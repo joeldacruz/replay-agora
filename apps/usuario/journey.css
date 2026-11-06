@@ -1,315 +1,323 @@
-/* Jornada Replay Agora — identidade aprovada sem fotografias. */
-body.journey-user{--navy:#062844;--ocean:#075783;--coral:#ff6a60;--sand:#fbf8f5;background:#f8f7f4;color:#102c49}
-.journey-user header.top{display:none}
-.journey-user main{max-width:760px;padding:0 0 105px;min-height:100vh;background:var(--sand);box-shadow:0 0 36px #082c4a10}
-.journey-hero{background:linear-gradient(145deg,#05213e,#0874a0);color:white;padding:23px 24px 56px;border-radius:0 0 36px 36px;position:relative;overflow:hidden}
-.journey-hero:before,.journey-hero:after{content:'';position:absolute;width:115%;height:95px;left:-10%;bottom:-64px;border-radius:50%;background:#12a5b3;opacity:.25;transform:rotate(-8deg)}
-.journey-hero:after{bottom:-78px;left:26%;background:var(--coral);opacity:.92;transform:rotate(-9deg)}
-.journey-brand{display:flex;gap:12px;align-items:center;font-size:1.25rem;margin-bottom:34px}
-.journey-play{color:var(--coral);font-size:2.8rem;line-height:.5}
-.journey-hero h1{font-size:clamp(1.7rem,5vw,2.5rem);color:white;position:relative;z-index:1}
-.journey-hero p{color:#e1f5ff;position:relative;z-index:1;margin:0}
-.journey-content{padding:22px clamp(16px,4vw,32px)}
-.journey-content h2{font-size:1.17rem;margin:20px 0 12px;color:var(--navy)}
-.journey-stack{display:grid;gap:11px}
-.journey-arena,.journey-replay{display:flex;align-items:center;gap:15px;width:100%;text-align:left;background:#fff;border:1px solid #e9eced;box-shadow:0 6px 24px #0c355312;padding:16px;border-radius:20px;min-height:92px;text-decoration:none;color:var(--navy)}
-.journey-arena>span:nth-child(2),.journey-replay>span:nth-child(2){flex:1;min-width:0}
-.journey-arena strong,.journey-replay strong{display:block;font-size:1rem}
-.journey-arena small,.journey-replay small{display:block;color:#657586;margin-top:5px}
-.journey-arena-icon,.journey-thumb{display:grid;place-items:center;background:linear-gradient(140deg,#07527e,#033759);color:white;border-radius:14px;min-width:70px;height:64px;font-size:2.2rem}
-.journey-thumb{min-width:100px}
-.journey-actions{margin:2px 0 22px}
-.journey-primary{width:100%;background:var(--coral);color:#fff;border:0;border-radius:17px;font-weight:750;min-height:54px;box-shadow:0 8px 22px #ff6a603a}
-.journey-secondary{border:1px solid #bccfdb;background:white;color:var(--navy)}
-.journey-code{display:flex;gap:10px;flex-wrap:wrap}
-.journey-code input{flex:2;min-width:180px}
-.journey-code button{flex:1;min-width:130px;background:#083b5f;color:white}
-.journey-hint,.journey-status{color:#63788a;font-size:.85rem;line-height:1.5}
-.journey-status:not(:empty){padding:10px;background:#fff1e9;border-radius:10px;color:#8a3c25}
-.journey-nav{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(760px,100%);display:flex;justify-content:space-around;gap:4px;background:#062d4b;color:#fff;padding:9px 12px max(12px,env(safe-area-inset-bottom));z-index:20;border-radius:20px 20px 0 0;box-shadow:0 -5px 25px #06263b26}
-.journey-nav a{min-width:62px;flex:1;display:flex;align-items:center;flex-direction:column;text-decoration:none;color:#fff;gap:3px;border-radius:12px;padding:7px 2px}
-.journey-nav a.active{color:var(--coral)}
-.journey-nav span{font-size:1.5rem;line-height:1.15}
-.journey-nav small{font-size:.78rem}
-.journey-back{display:inline-block;text-decoration:none;color:#095a81;font-weight:700;margin-bottom:8px}
-.journey-section-title{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px}
-.journey-section-title>span{font-size:.75rem;color:#58758a}
-.journey-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;background:#fff;padding:16px;border-radius:18px;box-shadow:0 5px 21px #0c355310}
-.journey-filters label{font-size:.82rem}
-.journey-filters input,.journey-filters select{margin-top:6px;width:100%;min-width:0;padding:8px;font-size:.88rem}
-.journey-day{font-size:.92rem;color:#547184;margin:18px 0 0}
-.journey-scanner{position:fixed;inset:0;background:#061e31f2;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:22px;color:#fff}
-.journey-scanner video{max-width:540px;max-height:65vh;object-fit:cover;border:3px solid var(--coral)}
-.journey-scanner button{margin-top:16px}
-@media(max-width:520px){.journey-filters{grid-template-columns:1fr 1fr}.journey-filters label:first-child{grid-column:1/-1}.journey-hero{padding:25px 22px 60px}.journey-thumb{min-width:78px}.journey-replay{padding:11px;gap:10px}}
+/* ==========================================================================================
+   App do Jogador — Replay Agora
+   Folha única e organizada. Ordem: 1 tokens · 2 base · 3 layout · 4 componentes · 5 telas · 6 breakpoints.
+   Convenções: prefixo `j-`; blocos `.j-bloco`, elementos `.j-bloco-elemento`, modificadores `.j-bloco--mod` / `.is-estado`.
+   Mobile-first (320 px+). Breakpoints: 480 · 768 (tablet) · 1100 (computador).
+   ========================================================================================== */
 
-/* Reprodução: controles de atleta, sem editor ou seleção de áudio. */
-.journey-watch{min-height:100vh}
-.journey-watch-hero{padding-bottom:36px}
-.journey-player-box{background:#082b46;border-radius:18px;overflow:hidden;min-height:180px;display:grid;place-items:center;color:white;margin:14px 0 10px}
-.journey-player-box video{width:100%;max-height:72vh;display:block;border-radius:18px}
-.journey-player-box .card{color:#132c41;margin:14px;background:white}
-.journey-watch-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
-.journey-watch-actions .journey-primary,.journey-watch-actions .journey-secondary{min-height:52px;font-weight:700;border-radius:16px}
-@media(max-width:440px){.journey-watch-actions{grid-template-columns:1fr}}
+/* ---------------------------------------------------------------- 1. TOKENS */
+body.j-body {
+  --j-navy-950: #020c26;
+  --j-navy-900: #041437;
+  --j-navy-800: #06235f;
+  --j-blue-700: #0a4f9c;
+  --j-blue-500: #0a78d4;
+  --j-cyan: #1ec8ff;
+  --j-coral: #ff6b57;
+  --j-coral-light: #ff8a73;
+  --j-coral-dark: #f2523f;
+  --j-paper: #f3f6fb;
+  --j-card: #fff;
+  --j-ink: #07204a;
+  --j-muted: #566a89;
+  --j-line: #dfe7f2;
 
-/* Perfil do jogador: somente identificação da conta e encerramento da sessão. */
-.journey-profile-summary{display:flex;align-items:center;gap:16px;background:#fff;padding:18px;border:1px solid #e9eced;border-radius:20px;box-shadow:0 6px 24px #0c355312}
-.journey-avatar{display:grid;place-items:center;background:#083b5f;color:white;width:60px;height:60px;flex-shrink:0;border-radius:50%;font-size:1.7rem;font-weight:800}
-.journey-profile-summary strong,.journey-profile-summary small{display:block}
-.journey-profile-summary strong{font-size:1.12rem;color:#062844}
-.journey-profile-summary small{color:#667987;margin-top:4px}
-.journey-profile-data{background:#fff;border:1px solid #e9eced;border-radius:19px;overflow:hidden}
-.journey-profile-data>div{padding:16px 18px;display:grid;gap:5px}
-.journey-profile-data>div+div{border-top:1px solid #e9eced}
-.journey-profile-data span{font-size:.82rem;color:#657586}
-.journey-profile-data strong{font-size:1rem;color:#102c49;overflow-wrap:anywhere}
-.journey-signout{width:100%;margin-top:22px;min-height:50px;background:#fff;color:#a72e32;border:1px solid #f0c3c3;border-radius:15px;font-weight:700}
+  --j-radius-lg: 24px;
+  --j-radius-md: 18px;
+  --j-radius-sm: 12px;
+  --j-shadow-card: 0 10px 28px rgba(4, 20, 55, .10), 0 2px 6px rgba(4, 20, 55, .06);
 
-/* ===== Tema oficial aprovado: azul premium + luz ciano + coral ===== */
-body.journey-user{
-  --navy:#051838;--deep:#061e49;--ocean:#07538e;--cyan:#02aeec;
-  --coral:#ff6e62;--sand:#f9fafc;
-  background:#ecf2f8;color:#071c3e;
-  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --j-gutter: clamp(16px, 5vw, 28px);
+  --j-col: 560px;                                   /* largura útil do conteúdo */
+  --j-nav-h: calc(76px + env(safe-area-inset-bottom));
+  --j-brand-size: 1.4rem;
 }
-.journey-user main{
-  max-width:760px;background:#f9fbff;
-  box-shadow:0 6px 48px #071d3a20;
+
+/* ---------------------------------------------------------------- 2. BASE */
+body.j-body {
+  margin: 0;
+  background: var(--j-paper);
+  color: var(--j-ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
-.journey-user .journey-content{padding:22px clamp(18px,4vw,30px)}
-.journey-user .journey-brand{gap:14px;margin:0;align-items:center}
-.journey-user .journey-play{
-  display:grid;place-items:center;
-  color:var(--coral);font-size:3.5rem;font-weight:900;line-height:1;
-  width:52px;height:56px;transform:translateY(-2px);
-  filter:drop-shadow(0 3px 8px #ff716437);
+/* resets com especificidade ZERO (:where): nunca sobrescrevem os componentes abaixo */
+:where(.j-body) *, :where(.j-body) *::before, :where(.j-body) *::after { box-sizing: border-box; }
+:where(.j-body) :is(h1, h2, h3, p, dl, dd) { margin: 0; }
+:where(.j-body) :is(h1, h2, h3) { letter-spacing: -.02em; }
+:where(.j-body) a { color: inherit; }
+:where(.j-body) :is(button, input, select) { font: inherit; }
+.j-body :focus-visible { outline: 3px solid var(--j-cyan); outline-offset: 2px; }
+.j-icon { flex: none; display: block; }
+.j-loading { padding: 2rem; text-align: center; color: var(--j-muted); }
+@media (prefers-reduced-motion: reduce) { .j-body * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------------------------------------------------------------- 3. LAYOUT */
+.j-app { min-height: 100svh; padding-bottom: var(--j-nav-h); }
+.j-hero-inner, .j-header-row, .j-header-title, .j-sheet, .j-arena-body, .j-watch-body, .j-profile-body {
+  width: min(100%, var(--j-col));
+  margin-inline: auto;
+  padding-inline: var(--j-gutter);
 }
-.journey-user .journey-brand-name{
-  font-size:clamp(1.45rem,4.8vw,2.3rem);font-weight:850;letter-spacing:-.045em;
-  color:#fff;line-height:1.08;
+.j-stack { display: grid; gap: 12px; }
+
+/* ---------------------------------------------------------------- 4. COMPONENTES */
+
+/* 4.1 Logotipo — tudo em `em`: o símbolo escala junto com o texto e nunca o sobrepõe */
+.j-brand {
+  display: inline-flex; align-items: center; gap: .3em;
+  font-size: var(--j-brand-size); font-weight: 800; letter-spacing: -.04em; line-height: 1; color: #fff;
+  white-space: nowrap;
 }
-.journey-user .journey-tagline{
-  margin:20px 0 34px 64px;
-  padding-left:17px;border-left:3px solid var(--coral);
-  font-size:.83rem;font-weight:500;letter-spacing:.29em;line-height:1.7;color:#f0f8ff;
-  max-width:230px;
-}
-.journey-user .journey-welcome{
-  overflow:hidden;position:relative;isolation:isolate;
+.j-brand-mark { flex: none; width: 1.5em; height: 1.5em; display: block; }
+.j-brand--stacked .j-brand-mark { width: 1.95em; height: 1.95em; }
+.j-brand--stacked .j-brand-name { display: grid; line-height: .98; letter-spacing: -.05em; }
+
+/* 4.2 Fundo azul premium com luz ciano (hero e cabeçalhos) */
+.j-hero, .j-header {
+  position: relative; isolation: isolate; overflow: hidden; color: #fff;
   background:
-    radial-gradient(ellipse at 105% 44%,#02c7ff70,transparent 39%),
-    radial-gradient(ellipse at 0% 90%,#006dbb85,transparent 42%),
-    linear-gradient(155deg,#04142e 4%,#051c42 48%,#075991 100%);
-  min-height:min(910px,calc(100svh - 64px));
-  color:white;padding:34px clamp(22px,7vw,56px) 74px;
-  text-align:center;
+    radial-gradient(ellipse 70% 42% at 108% 52%, rgba(30, 200, 255, .42), transparent 70%),
+    radial-gradient(ellipse 80% 55% at -12% 105%, rgba(10, 120, 212, .42), transparent 70%),
+    linear-gradient(165deg, var(--j-navy-950) 0%, var(--j-navy-900) 42%, var(--j-navy-800) 100%);
 }
-.journey-welcome .journey-brand{text-align:left;justify-content:center}
-.journey-welcome .journey-tagline{margin:15px auto 34px;max-width:224px;text-align:left}
-.journey-welcome h1{
-  color:white;font-size:clamp(1.75rem,6vw,2.25rem);font-weight:800;
-  letter-spacing:-.035em;margin:12px 0 8px;
+.j-hero::before, .j-header::before {              /* feixe diagonal de luz */
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  width: 150%; height: 34%; right: -35%; top: 36%;
+  background: linear-gradient(90deg, transparent, rgba(80, 205, 255, .5) 55%, transparent);
+  transform: rotate(-30deg); filter: blur(12px); opacity: .5;
 }
-.journey-welcome-lead{margin:0 auto 14px;color:#edf8ff;max-width:340px;line-height:1.5}
-.journey-qr-art{
-  width:190px;height:190px;position:relative;margin:12px auto 24px;
-  display:grid;place-items:center;color:#f8ffff;
-}
-.journey-qr-frame{display:grid;place-items:center;position:relative;z-index:1}
-.journey-qr-frame svg{filter:drop-shadow(0 0 14px #59d7ff65)}
-.journey-qr-beam{
-  display:block;position:absolute;left:0;right:0;top:50%;height:3px;
-  border-radius:50%;background:#ff766a;box-shadow:0 0 8px 3px #ff6e62b5,0 0 25px 8px #ff6e6280;
-}
-.journey-welcome .journey-primary{
-  position:relative;z-index:1;background:linear-gradient(110deg,#ff876d,#ff655b);
-  border:0;border-radius:19px;font-size:1.04rem;font-weight:750;max-width:450px;
-  box-shadow:0 12px 32px #001d4480,0 7px 25px #fa705452;
-}
-.journey-scan-button>span{font-size:1.4rem;margin-right:10px}
-.journey-or{
-  margin:18px auto 14px;max-width:450px;display:flex;align-items:center;gap:14px;
-  color:#e4f3ff;
-}
-.journey-or:before,.journey-or:after{content:'';height:1px;background:#b9d7e688;flex:1}
-.journey-code-details{position:relative;z-index:1;max-width:450px;margin:auto}
-.journey-code-details summary{
-  min-height:53px;display:flex;align-items:center;justify-content:center;
-  border:2px solid #ffffffd9;border-radius:17px;
-  color:white;background:#00234d38;cursor:pointer;font-weight:650;list-style:none;
-}
-.journey-code-details summary::-webkit-details-marker{display:none}
-.journey-code-details[open] summary{margin-bottom:11px}
-.journey-code-details .journey-code{
-  padding:13px;border-radius:14px;background:#ffffff;
-}
-.journey-code-details .journey-code input{background:#fff;color:#092348}
-.journey-code-details .journey-code button{background:#073764;color:#fff;border:0}
-.journey-welcome-hint{
-  margin:22px auto 0;color:#e0ecfa;max-width:340px;font-size:.85rem;line-height:1.45;
-  position:relative;z-index:1;
-}
-.journey-wave{
-  position:absolute;bottom:-58px;left:-8%;width:120%;height:132px;
-  background:linear-gradient(15deg,#03a4dd,#0169b3 40%,#ff7971 41%,#ff7971 69%,#fff 70%);
-  border-radius:45% 56% 0 0;transform:rotate(-5deg);opacity:.98;z-index:-1;
-}
-.journey-after-welcome{background:#fff;padding-bottom:24px!important}
-.journey-user .journey-hero{
-  background:
-    radial-gradient(ellipse at 90% 10%,#02acfa8a,transparent 43%),
-    linear-gradient(140deg,#041630,#052453 55%,#036a9f);
-  border-radius:0 0 30px 30px;padding:26px 25px 48px;
-}
-.journey-user .journey-hero:after{background:var(--coral)}
-.journey-hero .journey-brand{margin-bottom:28px}
-.journey-hero .journey-brand-name{font-size:1.5rem}
-.journey-hero .journey-play{font-size:2.6rem;width:40px;height:38px}
-.journey-hero .journey-tagline{display:none}
-.journey-hero h1{font-size:clamp(1.55rem,5vw,2rem);font-weight:800}
-.journey-user .journey-arena,.journey-user .journey-replay{
-  border:1px solid #e9eef3;background:#fff;
-  border-radius:20px;box-shadow:0 7px 24px #061a3920;
-}
-.journey-user .journey-thumb,.journey-user .journey-arena-icon{
-  background:linear-gradient(145deg,#032750,#0474a9);
-}
-.journey-user .journey-nav{
-  background:linear-gradient(115deg,#032443,#064875 55%,#041f45);
-  box-shadow:0 -5px 26px #02132c36;border-radius:22px 22px 0 0;
-  max-width:760px;min-height:79px;
-}
-.journey-user .journey-nav a.active{color:#ff7868}
-.journey-user .journey-nav a.active:after{
-  content:'';height:4px;min-width:44px;border-radius:99px;background:#ff7968;
-}
-.journey-user .journey-nav small{font-size:.82rem;font-weight:650}
-.journey-user .journey-profile-summary,.journey-user .journey-profile-data{
-  border:1px solid #e9edf3;box-shadow:0 7px 25px #061a3912;
-}
-.journey-user .journey-player-box{background:#041b3b}
-@media (max-width:520px){
- .journey-user .journey-welcome{padding:26px 22px 80px;min-height:calc(100svh - 60px)}
- .journey-user .journey-tagline{margin-bottom:24px}
- .journey-qr-art{height:165px;width:165px;margin:4px auto 15px}
- .journey-qr-frame svg{width:110px;height:110px}
- .journey-welcome-lead{font-size:.95rem}
- .journey-user .journey-nav{padding:8px 8px max(10px,env(safe-area-inset-bottom))}
-}
-@media (prefers-reduced-motion:reduce){.journey-user *{scroll-behavior:auto}}
 
-/* Visual fidelity v3 — referência aprovada: atmosfera, escala, curvas. */
-.journey-user .journey-welcome {
-  background:
-    radial-gradient(ellipse 77% 55% at 111% 51%,rgba(0,200,255,.48) 0%,rgba(0,149,228,.19) 46%,transparent 76%),
-    radial-gradient(ellipse 72% 32% at 5% 97%,rgba(0,183,255,.36),transparent 76%),
-    radial-gradient(ellipse 65% 60% at 73% 76%,rgba(0,92,172,.4),transparent 75%),
-    linear-gradient(154deg,#030f2b 0%,#06183c 42%,#063e7b 100%);
-  padding-top:clamp(34px,5svh,58px);
-  padding-bottom:108px;
-  min-height:calc(100svh - 76px);
+/* 4.3 Botões */
+.j-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .6rem;
+  width: 100%; min-height: 56px; padding: 0 1.25rem;
+  border: 2px solid transparent; border-radius: var(--j-radius-md);
+  font-weight: 700; font-size: 1.05rem; line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer;
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
 }
-.journey-welcome .journey-brand{
-  max-width:340px;
-  margin:0 auto;
-  justify-content:flex-start;
-  gap:18px;
-  text-align:left;
+.j-btn:active { transform: scale(.985); }
+.j-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.j-btn--primary { color: #fff; background: linear-gradient(100deg, var(--j-coral-light), var(--j-coral) 55%, #ff5d57); box-shadow: 0 10px 26px rgba(255, 94, 80, .38); }
+.j-btn--outline { color: #fff; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .88); }
+.j-btn--outline-dark { color: var(--j-ink); background: #fff; border-color: #cbd7e8; }
+.j-btn--danger { color: #b3261e; background: #fff; border-color: #f0c4c0; }
+.j-btn--sm { width: auto; min-height: 46px; padding: 0 1.3rem; font-size: 1rem; }
+.j-link { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; padding: 0; border: 0; background: none; color: var(--j-coral-dark); font-weight: 700; cursor: pointer; }
+.j-link[hidden] { display: none; }
+.j-icon-btn { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: #eef3fb; color: var(--j-ink); text-decoration: none; box-shadow: 0 2px 6px rgba(4, 20, 55, .08); }
+
+/* 4.4 Campos e filtros */
+.j-field { display: grid; gap: 6px; min-width: 0; }
+.j-label { font-size: .84rem; font-weight: 700; color: var(--j-muted); }
+.j-input {
+  width: 100%; min-width: 0; min-height: 50px; padding: 0 .95rem;
+  border: 1.5px solid #cbd7e8; border-radius: 14px; background: #fff; color: var(--j-ink); font: inherit;
 }
-.journey-welcome .journey-brand-name{
-  max-width:210px;
-  font-size:clamp(2rem,5.8vw,2.9rem);
-  line-height:.97;
-  letter-spacing:-.052em;
+.j-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.j-chips::-webkit-scrollbar { display: none; }
+.j-chip {
+  flex: none; min-height: 44px; padding: 0 1.1rem; border: 1.5px solid #cbd7e8; border-radius: 999px;
+  background: #fff; color: var(--j-ink); font-weight: 600; cursor: pointer;
 }
-.journey-welcome .journey-play{
-  width:74px;height:74px;
-  flex:0 0 74px;
+.j-chip.is-on { background: var(--j-navy-800); border-color: var(--j-navy-800); color: #fff; }
+
+/* 4.5 Cartões, linhas e rótulos */
+.j-card { background: var(--j-card); border-radius: var(--j-radius-lg); box-shadow: var(--j-shadow-card); }
+.j-pad { padding: 18px; }
+.j-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-decoration: none; }
+.j-row-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; }
+.j-row-text { flex: 1; min-width: 0; display: grid; }
+.j-row-text strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-row-text small { color: var(--j-muted); }
+.j-meta { display: flex; align-items: center; gap: 8px; color: var(--j-muted); font-size: .93rem; min-width: 0; }
+.j-meta .j-icon { color: var(--j-ink); }
+.j-pill { padding: 2px 8px; border-radius: 9px; background: rgba(3, 14, 40, .8); color: #fff; font-size: .78rem; font-weight: 700; line-height: 1.4; }
+.j-pill--warn { background: #8a4b00; }
+.j-empty { padding: 18px 4px; color: var(--j-muted); }
+.j-status { color: var(--j-muted); font-size: .9rem; }
+.j-status:not(:empty) { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fff3ea; color: #8a3c25; }
+.j-status--err:not(:empty) { background: #fdecec; color: #a3201a; }
+.j-hint { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: .9rem; line-height: 1.4; color: #cfdcf1; }
+.j-hint--dark { color: var(--j-muted); }
+
+/* 4.6 Miniatura de replay (vetor; usa a miniatura real quando existir) */
+.j-thumb { position: relative; flex: none; display: block; width: clamp(112px, 34vw, 168px); aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: var(--j-navy-800); }
+.j-thumb img, .j-thumb-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.j-thumb-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.j-thumb-play .j-icon { fill: #fff; stroke-width: 1.4; }
+.j-thumb-time { position: absolute; right: 6px; bottom: 6px; }
+
+/* 4.7 Ondas (azul · coral · branco) — no fluxo, no fim do hero: nunca cobertas pelo conteúdo nem pela barra inferior */
+.j-waves { display: block; width: 100%; height: clamp(96px, min(40vw, 19svh), 200px); flex: none; margin-top: auto; }
+
+/* 4.8 Barra de navegação inferior */
+.j-nav {
+  position: fixed; left: 50%; bottom: 0; z-index: 40; transform: translateX(-50%);
+  width: min(100%, 560px); min-height: var(--j-nav-h);
+  display: grid; grid-template-columns: repeat(3, 1fr); padding: 10px 12px calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(110deg, #031230, #052b63 55%, #041a45);
+  border-radius: 28px 28px 0 0; box-shadow: 0 -10px 30px rgba(2, 12, 38, .28);
 }
-.journey-welcome .journey-play svg{width:72px;height:72px}
-.journey-welcome .journey-tagline{
-  margin:19px auto 31px;
-  max-width:265px;
-  font-size:.95rem;
-  letter-spacing:.29em;
-  line-height:1.6;
-  border-left-width:4px;
-  padding-left:20px;
+.j-nav-item { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; color: #fff; text-decoration: none; font-size: .86rem; font-weight: 600; }
+.j-nav-item.is-active { color: #ff7a66; }
+.j-nav-item.is-active::after { content: ""; position: absolute; bottom: 0; width: 44px; height: 4px; border-radius: 99px; background: #ff7a66; }
+
+/* 4.9 Menu ⋮ do replay, leitor de QR e aviso (toast) */
+.j-more { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); cursor: pointer; }
+.j-menu { position: absolute; right: 10px; top: 56px; z-index: 5; min-width: 190px; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 14px 40px rgba(4, 20, 55, .25); }
+.j-menu[hidden] { display: none; }
+.j-menu a, .j-menu button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); font-weight: 600; text-decoration: none; cursor: pointer; }
+.j-menu a:hover, .j-menu button:hover { background: #eef3fb; }
+.j-scanner { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 22px; background: rgba(2, 12, 38, .95); color: #fff; text-align: center; }
+.j-scanner-box { position: relative; width: min(86vw, 420px); aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: #000; }
+.j-scanner-box video { width: 100%; height: 100%; object-fit: cover; }
+.j-scanner-frame { position: absolute; inset: 14%; border: 3px solid var(--j-coral); border-radius: 18px; box-shadow: 0 0 0 999px rgba(2, 12, 38, .35); }
+.j-scanner .j-btn { max-width: 320px; }
+.toast { position: fixed; left: 50%; bottom: calc(var(--j-nav-h) + 12px); transform: translateX(-50%); z-index: 90; max-width: 90vw; padding: .7rem 1rem; border-radius: 12px; background: var(--j-ink); color: #fff; }
+.toast.bad { background: #b3261e; }
+
+/* ---------------------------------------------------------------- 5. TELAS */
+
+/* 5.1 Acesso à arena (tela inicial) */
+.j-hero--welcome { display: flex; flex-direction: column; min-height: calc(100svh - var(--j-nav-h)); }
+.j-hero--welcome .j-hero-inner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 1.6svh, 16px); padding-top: calc(clamp(12px, 2.6svh, 44px) + env(safe-area-inset-top)); padding-bottom: 0; text-align: center; }
+.j-welcome-copy, .j-welcome-actions { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.j-welcome-copy { --j-brand-size: clamp(1.7rem, min(10vw, 5.2svh), 2.8rem); gap: 0; }
+.j-welcome-actions { max-width: 440px; }
+.j-tagline {
+  display: inline-grid; margin: clamp(.5rem, 1.3svh, 1.15rem) 0 clamp(8px, 2svh, 28px); padding-left: .9rem; text-align: left;
+  border-left: 3px solid var(--j-coral); font-size: .78rem; font-weight: 500; letter-spacing: .34em; line-height: 1.75; color: #cfe0f7;
 }
-.journey-welcome h1{
-  font-size:clamp(2rem,6.1vw,2.65rem);
-  letter-spacing:-.042em;
-  margin:12px 0 9px;
+.j-welcome-copy h1 { font-size: clamp(1.45rem, min(7.4vw, 4.2svh), 2.3rem); font-weight: 800; }
+.j-lead { margin-top: .4rem; font-size: clamp(.88rem, min(3.9vw, 2.2svh), 1.08rem); line-height: 1.4; color: #dbe8fb; }
+.j-qr { position: relative; width: clamp(96px, min(42vw, 16.5svh), 190px); aspect-ratio: 1; margin: 2px auto clamp(6px, 1.4svh, 12px); }
+.j-qr-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0 0 16px rgba(80, 200, 255, .35)); }
+.j-qr-scan {
+  position: absolute; left: -14%; right: -14%; top: 50%; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--j-coral) 16%, #ffa08e 50%, var(--j-coral) 84%, transparent);
+  box-shadow: 0 0 14px 4px rgba(255, 107, 87, .65), 0 0 40px 10px rgba(255, 107, 87, .32);
+  animation: j-scan 3.4s ease-in-out infinite alternate;
 }
-.journey-welcome-lead{max-width:360px;font-size:1.08rem;line-height:1.5}
-.journey-qr-art{
-  width:235px;height:218px;
-  margin:18px auto 23px;
-  filter:drop-shadow(0 10px 30px rgba(0,174,255,.18));
+@keyframes j-scan { from { transform: translateY(-26%); } to { transform: translateY(26%); } }
+.j-or { display: flex; align-items: center; gap: 14px; width: 100%; margin: clamp(6px, 1.5svh, 14px) 0; color: #dbe8fb; }
+.j-or::before, .j-or::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, .35); }
+.j-code-form { display: flex; gap: 10px; width: 100%; margin-top: 12px; padding: 10px; border-radius: 16px; background: #fff; }
+.j-code-form[hidden] { display: none; }
+.j-welcome-actions .j-hint { margin-top: clamp(8px, 1.8svh, 16px); max-width: 340px; font-size: clamp(.8rem, 1.9svh, .9rem); }
+.j-welcome-actions .j-btn { min-height: clamp(48px, 6svh, 58px); }
+.j-sheet { padding-top: 8px; padding-bottom: 24px; }
+.j-sheet h2 { margin: 6px 0 14px; font-size: 1.35rem; font-weight: 800; }
+.j-sheet--lift { margin-top: -34px; position: relative; }
+
+@media (max-height: 700px) and (max-width: 767px) {
+  .j-hero--welcome .j-lead, .j-welcome-actions .j-hint { display: none; }
+  .j-qr { width: 84px; }
+  .j-tagline { margin: .4rem 0 6px; }
 }
-.journey-qr-frame svg{width:174px;height:174px}
-.journey-qr-beam{left:-4%;right:-4%;height:4px;box-shadow:0 0 11px 5px #ff7469ba,0 0 35px 10px #ff6e6260}
-.journey-welcome .journey-primary{
-  width:100%;min-height:64px;
-  font-size:1.14rem;
-  border-radius:20px;
-  background:linear-gradient(108deg,#ff8975 0%,#ff6e62 55%,#ff625c 100%);
+
+/* 5.2 Arena selecionada */
+.j-header { padding: calc(16px + env(safe-area-inset-top)) 0 54px; --j-brand-size: 1.4rem; }
+.j-header-row { display: flex; align-items: center; justify-content: space-between; }
+.j-header-title { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.j-header-title h1 { font-size: 1.45rem; font-weight: 800; }
+.j-back { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; text-decoration: none; }
+.j-header--arena { padding-bottom: 62px; }
+.j-arena-body { position: relative; margin-top: -42px; }
+.j-arena-card { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; color: var(--j-ink); }
+.j-arena-id { flex: 1; min-width: 0; display: grid; padding-left: 14px; border-left: 1.5px solid var(--j-line); }
+.j-arena-id strong { font-size: 1.3rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.j-arena-id small { color: var(--j-muted); font-size: .95rem; }
+.j-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.j-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px;
+  border: 0; border-radius: 20px; background: #fff; color: var(--j-ink); font-weight: 700; font-size: 1rem; box-shadow: var(--j-shadow-card); cursor: pointer;
 }
-.journey-code-details summary{min-height:60px;font-size:1.04rem;border-width:2px}
-.journey-or{margin:21px auto 16px;font-size:1.02rem}
-.journey-welcome-hint{margin-top:23px;font-size:.96rem;max-width:390px}
-.journey-wave{
-  left:-12%;bottom:-74px;width:125%;height:175px;transform:none;
-  border-radius:53% 47% 0 0 / 42% 58% 0 0;
-  background:linear-gradient(115deg,#00a9ed 0%,#0a73c0 40%,#0759a2 65%,#09519a 100%);
-  z-index:-1;
+.j-tile--primary { color: #fff; background: linear-gradient(135deg, var(--j-coral-light), #ff5d57); box-shadow: 0 10px 24px rgba(255, 94, 80, .35); }
+.j-tile[aria-expanded="true"] { outline: 2px solid var(--j-blue-500); }
+.j-tile--primary .j-icon { fill: none; }
+.j-filters { margin-bottom: 16px; padding: 16px; display: grid; gap: 14px; }
+.j-filters[hidden] { display: none; }
+.j-filters-path { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--j-muted); }
+.j-filters-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.j-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 6px; }
+.j-section-head h2 { font-size: 1.35rem; font-weight: 800; }
+.j-replays { padding-bottom: 20px; }
+.j-day { margin: 14px 2px 0; font-size: .95rem; font-weight: 700; color: var(--j-muted); text-transform: capitalize; }
+.j-replay { position: relative; display: flex; align-items: center; padding: 10px 6px 10px 10px; border-radius: 20px; }
+.j-replay-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; }
+.j-replay-info { min-width: 0; display: grid; gap: 4px; }
+.j-replay-info strong { font-size: 1.15rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-replay-info .j-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.j-replay.is-unavailable { opacity: .72; }
+
+/* 5.3 Assistir */
+.j-watch-body { position: relative; margin-top: -34px; display: grid; gap: 14px; }
+.j-player { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden; background: var(--j-navy-950); box-shadow: var(--j-shadow-card); color: #fff; }
+.j-player video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.j-player-msg { display: grid; justify-items: center; gap: 10px; padding: 16px; text-align: center; }
+.j-info h2 { font-size: 1.3rem; font-weight: 800; }
+.j-info-grid { display: grid; gap: 8px; margin-top: 10px; }
+.j-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* 5.4 Perfil */
+.j-profile-body { position: relative; margin-top: -34px; display: grid; gap: 16px; }
+.j-profile-card { display: grid; justify-items: center; gap: 14px; padding: 22px 18px; }
+.j-avatar { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; font-size: 1.9rem; font-weight: 800; }
+.j-data { display: grid; gap: 0; width: 100%; }
+.j-data > div { padding: 14px 2px; border-top: 1px solid var(--j-line); }
+.j-data dt { font-size: .82rem; font-weight: 700; color: var(--j-muted); }
+.j-data dd { margin-top: 2px; font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+
+/* 5.5 Entrar / criar conta */
+.j-app--auth { padding-bottom: 24px; }
+.j-hero--auth { display: flex; flex-direction: column; }
+.j-hero--auth .j-hero-inner { display: flex; flex-direction: column; align-items: center; padding-top: calc(32px + env(safe-area-inset-top)); --j-brand-size: clamp(2rem, 10vw, 2.6rem); }
+.j-hero--auth .j-tagline { margin-bottom: 8px; }
+.j-form { display: grid; gap: 14px; }
+.j-form h2 { margin: 0; font-size: 1.4rem; font-weight: 800; }
+.j-switch { text-align: center; }
+.j-switch a { color: var(--j-blue-700); font-weight: 700; }
+
+/* ---------------------------------------------------------------- 6. BREAKPOINTS */
+@media (max-width: 360px) {
+  .j-actions { grid-template-columns: 1fr; }
+  .j-filters-row { grid-template-columns: 1fr; }
+  .j-thumb { width: 104px; }
+  .j-replay-info strong { font-size: 1.05rem; }
 }
-.journey-welcome:after{
-  content:"";
-  pointer-events:none;
-  position:absolute;z-index:-1;
-  height:165px;width:122%;
-  left:30%;bottom:-109px;
-  border-radius:50% 54% 0 0 / 65% 90% 0 0;
-  transform:rotate(-8deg);
-  background:linear-gradient(95deg,#ff8576,#ff6f68);
-  box-shadow:0 -5px 18px #ff7b7145;
+@media (min-width: 480px) {
+  .j-body { --j-gutter: 24px; }
 }
-.journey-welcome:before{
-  content:"";
-  pointer-events:none;
-  position:absolute;
-  width:72%;height:130px;bottom:-98px;right:-15%;z-index:0;
-  transform:rotate(-9deg);
-  background:#fff;
-  border-radius:70% 15% 0 0;
+@media (min-width: 768px) {                       /* tablet */
+  body.j-body { --j-col: 680px; --j-gutter: 32px; --j-nav-h: 96px; }
+  .j-nav { bottom: 12px; width: min(92%, 520px); border-radius: 28px; }
+  .j-hero--welcome .j-hero-inner { gap: 26px; padding-top: 48px; }
+  .j-welcome-copy { --j-brand-size: 3.1rem; }
+  .j-welcome-copy h1 { font-size: 2.5rem; }
+  .j-qr { width: 200px; }
+  .j-thumb { width: 190px; }
+  .j-replay-info strong { font-size: 1.25rem; }
+  .j-header { --j-brand-size: 1.6rem; padding-bottom: 62px; }
+  .j-actions { max-width: 520px; }
 }
-.journey-user .journey-nav{
-  background:linear-gradient(108deg,#041b3c,#052b58 55%,#04203e);
-  border-top:1px solid rgba(48,194,252,.15);
-  padding-top:11px;
-}
-.journey-user .journey-nav a.active{color:#ff806e}
-.journey-user .journey-nav span{font-size:1.7rem}
-@media(max-width:520px){
-  .journey-user .journey-welcome{padding-top:24px;padding-bottom:100px;min-height:calc(100svh - 70px)}
-  .journey-welcome .journey-brand{max-width:272px}
-  .journey-welcome .journey-brand-name{font-size:2.18rem;max-width:154px}
-  .journey-welcome .journey-play{width:66px;height:66px;flex-basis:66px}
-  .journey-welcome .journey-play svg{width:63px;height:63px}
-  .journey-welcome .journey-tagline{margin:14px auto 20px;max-width:220px;font-size:.8rem}
-  .journey-welcome h1{font-size:1.9rem}
-  .journey-welcome-lead{font-size:.95rem}
-  .journey-qr-art{width:192px;height:184px;margin:9px auto 15px}
-  .journey-qr-frame svg{width:144px;height:144px}
-  .journey-welcome .journey-primary{min-height:57px}
-  .journey-code-details summary{min-height:55px;font-size:.92rem}
-  .journey-welcome-hint{font-size:.82rem}
-}
-@media(max-width:370px){
- .journey-welcome .journey-brand-name{font-size:1.9rem}
- .journey-welcome .journey-tagline{margin-bottom:14px}
- .journey-qr-art{height:150px;width:164px}
- .journey-qr-frame svg{width:122px;height:122px}
+@media (min-width: 1100px) {                      /* computador */
+  body.j-body { --j-col: 1040px; --j-gutter: 40px; }
+  .j-hero--welcome .j-hero-inner { display: grid; grid-template-columns: 1fr 440px; align-items: center; justify-items: stretch; gap: 72px; text-align: left; padding-top: 56px; }
+  .j-welcome-copy { align-items: flex-start; --j-brand-size: 3.6rem; }
+  .j-welcome-copy h1 { font-size: 2.9rem; margin-top: .2rem; }
+  .j-lead { font-size: 1.2rem; }
+  .j-sheet { padding-top: 16px; }
+  .j-sheet .j-stack { grid-template-columns: repeat(2, 1fr); }
+  .j-arena-body { display: grid; grid-template-columns: 340px 1fr; column-gap: 32px; align-items: start; }
+  .j-arena-card, .j-tiles, .j-filters { grid-column: 1; }
+  .j-replays { grid-column: 2; grid-row: 1 / span 4; }
+  .j-tiles { margin-top: 0; }
+  .j-replays .j-stack { grid-template-columns: 1fr 1fr; }
+  .j-replay { flex-direction: row; }
+  .j-thumb { width: 150px; }
+  .j-watch-body { --j-col: 840px; }
+  .j-form { max-width: 460px; margin-inline: auto; }
 }
