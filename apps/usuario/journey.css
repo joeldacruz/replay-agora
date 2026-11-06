@@ -1,0 +1,343 @@
+/* ==========================================================================================
+   App do Jogador — Replay Agora
+   Folha única e organizada. Ordem: 1 tokens · 2 base · 3 layout · 4 componentes · 5 telas · 6 breakpoints.
+   Convenções: prefixo `j-`; blocos `.j-bloco`, elementos `.j-bloco-elemento`, modificadores `.j-bloco--mod` / `.is-estado`.
+   Mobile-first (320 px+). Breakpoints: 480 · 768 (tablet) · 1100 (computador).
+   ========================================================================================== */
+
+/* ---------------------------------------------------------------- 1. TOKENS */
+body.j-body {
+  --j-navy-950: #020c26;
+  --j-navy-900: #041437;
+  --j-navy-800: #06235f;
+  --j-blue-700: #0a4f9c;
+  --j-blue-500: #0a78d4;
+  --j-cyan: #1ec8ff;
+  --j-coral: #ff6b57;
+  --j-coral-light: #ff8a73;
+  --j-coral-dark: #f2523f;
+  --j-paper: #f3f6fb;
+  --j-card: #fff;
+  --j-ink: #07204a;
+  --j-muted: #566a89;
+  --j-line: #dfe7f2;
+
+  --j-radius-lg: 24px;
+  --j-radius-md: 18px;
+  --j-radius-sm: 12px;
+  --j-shadow-card: 0 10px 28px rgba(4, 20, 55, .10), 0 2px 6px rgba(4, 20, 55, .06);
+
+  --j-gutter: clamp(16px, 5vw, 28px);
+  --j-col: 560px;                                   /* largura útil do conteúdo */
+  --j-nav-h: calc(76px + env(safe-area-inset-bottom));
+  --j-brand-size: 1.4rem;
+}
+
+/* ---------------------------------------------------------------- 2. BASE */
+body.j-body {
+  margin: 0;
+  background: var(--j-paper);
+  color: var(--j-ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+/* resets com especificidade ZERO (:where): nunca sobrescrevem os componentes abaixo */
+:where(.j-body) *, :where(.j-body) *::before, :where(.j-body) *::after { box-sizing: border-box; }
+:where(.j-body) :is(h1, h2, h3, p, dl, dd) { margin: 0; }
+:where(.j-body) :is(h1, h2, h3) { letter-spacing: -.02em; }
+:where(.j-body) a { color: inherit; }
+:where(.j-body) :is(button, input, select) { font: inherit; }
+.j-body :focus-visible { outline: 3px solid var(--j-cyan); outline-offset: 2px; }
+.j-icon { flex: none; display: block; }
+.j-loading { padding: 2rem; text-align: center; color: var(--j-muted); }
+@media (prefers-reduced-motion: reduce) { .j-body * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------------------------------------------------------------- 3. LAYOUT */
+.j-app { min-height: 100svh; padding-bottom: var(--j-nav-h); }
+.j-hero-inner, .j-header-row, .j-header-title, .j-sheet, .j-arena-body, .j-watch-body, .j-profile-body {
+  width: min(100%, var(--j-col));
+  margin-inline: auto;
+  padding-inline: var(--j-gutter);
+}
+.j-stack { display: grid; gap: 12px; }
+
+/* ---------------------------------------------------------------- 4. COMPONENTES */
+
+/* 4.1 Logotipo — tudo em `em`: o símbolo escala junto com o texto e nunca o sobrepõe */
+.j-brand {
+  display: inline-flex; align-items: center; gap: .3em;
+  font-size: var(--j-brand-size); font-weight: 800; letter-spacing: -.04em; line-height: 1; color: #fff;
+  white-space: nowrap;
+}
+.j-brand-mark { flex: none; width: 1.5em; height: 1.5em; display: block; }
+.j-brand--stacked .j-brand-mark { width: 1.95em; height: 1.95em; }
+.j-brand--stacked .j-brand-name { display: grid; line-height: .98; letter-spacing: -.05em; }
+
+/* 4.2 Fundo azul premium com luz ciano (hero e cabeçalhos) */
+.j-hero, .j-header {
+  position: relative; isolation: isolate; overflow: hidden; color: #fff;
+  background:
+    radial-gradient(ellipse 70% 42% at 108% 52%, rgba(30, 200, 255, .42), transparent 70%),
+    radial-gradient(ellipse 80% 55% at -12% 105%, rgba(10, 120, 212, .42), transparent 70%),
+    linear-gradient(165deg, var(--j-navy-950) 0%, var(--j-navy-900) 42%, var(--j-navy-800) 100%);
+}
+.j-hero::before, .j-header::before {              /* feixe diagonal de luz */
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  width: 150%; height: 34%; right: -35%; top: 36%;
+  background: linear-gradient(90deg, transparent, rgba(80, 205, 255, .5) 55%, transparent);
+  transform: rotate(-30deg); filter: blur(12px); opacity: .5;
+}
+
+/* 4.3 Botões */
+.j-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .6rem;
+  width: 100%; min-height: 56px; padding: 0 1.25rem;
+  border: 2px solid transparent; border-radius: var(--j-radius-md);
+  font-weight: 700; font-size: 1.05rem; line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer;
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+}
+.j-btn:active { transform: scale(.985); }
+.j-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.j-btn--primary { color: #fff; background: linear-gradient(100deg, var(--j-coral-light), var(--j-coral) 55%, #ff5d57); box-shadow: 0 10px 26px rgba(255, 94, 80, .38); }
+.j-btn--outline { color: #fff; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .88); }
+.j-btn--outline-dark { color: var(--j-ink); background: #fff; border-color: #cbd7e8; }
+.j-btn--danger { color: #b3261e; background: #fff; border-color: #f0c4c0; }
+.j-btn--sm { width: auto; min-height: 46px; padding: 0 1.3rem; font-size: 1rem; }
+.j-link { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; padding: 0; border: 0; background: none; color: var(--j-coral-dark); font-weight: 700; cursor: pointer; }
+.j-link[hidden] { display: none; }
+.j-icon-btn { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: #eef3fb; color: var(--j-ink); text-decoration: none; box-shadow: 0 2px 6px rgba(4, 20, 55, .08); }
+
+/* 4.4 Campos e filtros */
+.j-field { display: grid; gap: 6px; min-width: 0; }
+.j-label { font-size: .84rem; font-weight: 700; color: var(--j-muted); }
+.j-input {
+  width: 100%; min-width: 0; min-height: 50px; padding: 0 .95rem;
+  border: 1.5px solid #cbd7e8; border-radius: 14px; background: #fff; color: var(--j-ink); font: inherit;
+}
+.j-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.j-chips::-webkit-scrollbar { display: none; }
+.j-chip {
+  flex: none; min-height: 44px; padding: 0 1.1rem; border: 1.5px solid #cbd7e8; border-radius: 999px;
+  background: #fff; color: var(--j-ink); font-weight: 600; cursor: pointer;
+}
+.j-chip.is-on { background: var(--j-navy-800); border-color: var(--j-navy-800); color: #fff; }
+
+/* 4.5 Cartões, linhas e rótulos */
+.j-card { background: var(--j-card); border-radius: var(--j-radius-lg); box-shadow: var(--j-shadow-card); }
+.j-pad { padding: 18px; }
+.j-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-decoration: none; }
+.j-row-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; }
+.j-row-text { flex: 1; min-width: 0; display: grid; }
+.j-row-text strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-row-text small { color: var(--j-muted); }
+.j-meta { display: flex; align-items: center; gap: 8px; color: var(--j-muted); font-size: .93rem; min-width: 0; }
+.j-meta .j-icon { color: var(--j-ink); }
+.j-pill { padding: 2px 8px; border-radius: 9px; background: rgba(3, 14, 40, .8); color: #fff; font-size: .78rem; font-weight: 700; line-height: 1.4; }
+.j-pill--warn { background: #8a4b00; }
+.j-empty { padding: 18px 4px; color: var(--j-muted); }
+.j-status { color: var(--j-muted); font-size: .9rem; }
+.j-status:not(:empty) { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fff3ea; color: #8a3c25; }
+.j-status--err:not(:empty) { background: #fdecec; color: #a3201a; }
+.j-hint { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: .9rem; line-height: 1.4; color: #cfdcf1; }
+.j-hint--dark { color: var(--j-muted); }
+
+/* 4.6 Miniatura de replay (vetor; usa a miniatura real quando existir) */
+.j-thumb { position: relative; flex: none; display: block; width: clamp(112px, 34vw, 168px); aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: var(--j-navy-800); }
+.j-thumb img, .j-thumb-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.j-thumb-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.j-thumb-play .j-icon { fill: #fff; stroke-width: 1.4; }
+.j-thumb-time { position: absolute; right: 6px; bottom: 6px; }
+
+/* 4.7 Ondas (azul · coral · branco) — no fluxo, no fim do hero: nunca cobertas pelo conteúdo nem pela barra inferior */
+.j-waves { display: block; width: 100%; height: clamp(96px, min(40vw, 19svh), 200px); flex: none; margin-top: auto; }
+
+/* 4.8 Barra de navegação inferior */
+.j-nav {
+  position: fixed; left: 50%; bottom: 0; z-index: 40; transform: translateX(-50%);
+  width: min(100%, 560px); min-height: var(--j-nav-h);
+  display: grid; grid-template-columns: repeat(3, 1fr); padding: 10px 12px calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(110deg, #031230, #052b63 55%, #041a45);
+  border-radius: 28px 28px 0 0; box-shadow: 0 -10px 30px rgba(2, 12, 38, .28);
+}
+.j-nav-item { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; color: #fff; text-decoration: none; font-size: .86rem; font-weight: 600; }
+.j-nav-item.is-active { color: #ff7a66; }
+.j-nav-item.is-active::after { content: ""; position: absolute; bottom: 0; width: 44px; height: 4px; border-radius: 99px; background: #ff7a66; }
+
+/* 4.9 Menu ⋮ do replay, leitor de QR e aviso (toast) */
+.j-more { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); cursor: pointer; }
+.j-menu { position: absolute; right: 10px; top: 56px; z-index: 5; min-width: 190px; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 14px 40px rgba(4, 20, 55, .25); }
+.j-menu[hidden] { display: none; }
+.j-menu a, .j-menu button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); font-weight: 600; text-decoration: none; cursor: pointer; }
+.j-menu a:hover, .j-menu button:hover { background: #eef3fb; }
+.j-scanner { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 22px; background: rgba(2, 12, 38, .95); color: #fff; text-align: center; }
+.j-scanner-box { position: relative; width: min(86vw, 420px); aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: #000; }
+.j-scanner-box video { width: 100%; height: 100%; object-fit: cover; }
+.j-scanner-frame { position: absolute; inset: 14%; border: 3px solid var(--j-coral); border-radius: 18px; box-shadow: 0 0 0 999px rgba(2, 12, 38, .35); }
+.j-scanner .j-btn { max-width: 320px; }
+.toast { position: fixed; left: 50%; bottom: calc(var(--j-nav-h) + 12px); transform: translateX(-50%); z-index: 90; max-width: 90vw; padding: .7rem 1rem; border-radius: 12px; background: var(--j-ink); color: #fff; }
+.toast.bad { background: #b3261e; }
+
+/* ---------------------------------------------------------------- 5. TELAS */
+
+/* 5.1 Acesso à arena (tela inicial) */
+.j-hero--welcome { display: flex; flex-direction: column; min-height: calc(100svh - var(--j-nav-h)); }
+.j-hero--welcome .j-hero-inner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 1.6svh, 16px); padding-top: calc(clamp(12px, 2.6svh, 44px) + env(safe-area-inset-top)); padding-bottom: 0; text-align: center; }
+.j-welcome-copy, .j-welcome-actions { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.j-welcome-copy { --j-brand-size: clamp(1.7rem, min(10vw, 5.2svh), 2.8rem); gap: 0; }
+.j-welcome-actions { max-width: 440px; }
+.j-tagline {
+  display: inline-grid; margin: clamp(.5rem, 1.3svh, 1.15rem) 0 clamp(8px, 2svh, 28px); padding-left: .9rem; text-align: left;
+  border-left: 3px solid var(--j-coral); font-size: .78rem; font-weight: 500; letter-spacing: .34em; line-height: 1.75; color: #cfe0f7;
+}
+.j-welcome-copy h1 { font-size: clamp(1.45rem, min(7.4vw, 4.2svh), 2.3rem); font-weight: 800; }
+.j-lead { margin-top: .4rem; font-size: clamp(.88rem, min(3.9vw, 2.2svh), 1.08rem); line-height: 1.4; color: #dbe8fb; }
+.j-qr { position: relative; width: clamp(96px, min(42vw, 16.5svh), 190px); aspect-ratio: 1; margin: 2px auto clamp(6px, 1.4svh, 12px); }
+.j-qr-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0 0 16px rgba(80, 200, 255, .35)); }
+.j-qr-scan {
+  position: absolute; left: -14%; right: -14%; top: 50%; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--j-coral) 16%, #ffa08e 50%, var(--j-coral) 84%, transparent);
+  box-shadow: 0 0 14px 4px rgba(255, 107, 87, .65), 0 0 40px 10px rgba(255, 107, 87, .32);
+  animation: j-scan 3.4s ease-in-out infinite alternate;
+}
+@keyframes j-scan { from { transform: translateY(-26%); } to { transform: translateY(26%); } }
+.j-or { display: flex; align-items: center; gap: 14px; width: 100%; margin: clamp(6px, 1.5svh, 14px) 0; color: #dbe8fb; }
+.j-or::before, .j-or::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, .35); }
+.j-code-form { display: flex; gap: 10px; width: 100%; margin-top: 12px; padding: 10px; border-radius: 16px; background: #fff; }
+.j-code-form[hidden] { display: none; }
+.j-welcome-actions .j-hint { margin-top: clamp(8px, 1.8svh, 16px); max-width: 340px; font-size: clamp(.8rem, 1.9svh, .9rem); }
+.j-welcome-actions .j-btn { min-height: clamp(48px, 6svh, 58px); }
+.j-sheet { padding-top: 8px; padding-bottom: 24px; }
+.j-sheet h2 { margin: 6px 0 14px; font-size: 1.35rem; font-weight: 800; }
+.j-sheet--lift { margin-top: -34px; position: relative; }
+
+@media (max-height: 700px) and (max-width: 767px) {
+  .j-hero--welcome .j-lead, .j-welcome-actions .j-hint { display: none; }
+  .j-qr { width: 84px; }
+  .j-tagline { margin: .4rem 0 6px; }
+}
+
+/* 5.2 Arena selecionada */
+.j-header { padding: calc(16px + env(safe-area-inset-top)) 0 54px; --j-brand-size: 1.4rem; }
+.j-header-row { display: flex; align-items: center; justify-content: space-between; }
+.j-header-title { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.j-header-title h1 { font-size: 1.45rem; font-weight: 800; }
+.j-back { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; text-decoration: none; }
+.j-header--arena { padding-bottom: 62px; }
+.j-arena-body { position: relative; margin-top: -42px; }
+.j-arena-card { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; color: var(--j-ink); }
+.j-arena-id { flex: 1; min-width: 0; display: grid; padding-left: 14px; border-left: 1.5px solid var(--j-line); }
+.j-arena-id strong { font-size: 1.3rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.j-arena-id small { color: var(--j-muted); font-size: .95rem; }
+.j-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.j-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px;
+  border: 0; border-radius: 20px; background: #fff; color: var(--j-ink); font-weight: 700; font-size: 1rem; box-shadow: var(--j-shadow-card); cursor: pointer;
+}
+.j-tile--primary { color: #fff; background: linear-gradient(135deg, var(--j-coral-light), #ff5d57); box-shadow: 0 10px 24px rgba(255, 94, 80, .35); }
+.j-tile[aria-expanded="true"] { outline: 2px solid var(--j-blue-500); }
+.j-tile--primary .j-icon { fill: none; }
+.j-filters { margin-bottom: 16px; padding: 16px; display: grid; gap: 14px; }
+.j-filters[hidden] { display: none; }
+.j-filters-path { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--j-muted); }
+.j-filters-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.j-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 6px; }
+.j-section-head h2 { font-size: 1.35rem; font-weight: 800; }
+.j-replays { padding-bottom: 20px; }
+.j-day { margin: 14px 2px 0; font-size: .95rem; font-weight: 700; color: var(--j-muted); text-transform: capitalize; }
+.j-replay { position: relative; display: flex; align-items: center; padding: 10px 6px 10px 10px; border-radius: 20px; }
+.j-replay-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; }
+.j-replay-info { min-width: 0; display: grid; gap: 4px; }
+.j-replay-info strong { font-size: 1.15rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-replay-info .j-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.j-replay.is-unavailable { opacity: .72; }
+
+/* 5.3 Assistir */
+.j-watch-body { position: relative; margin-top: -34px; display: grid; gap: 14px; }
+.j-player { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden; background: var(--j-navy-950); box-shadow: var(--j-shadow-card); color: #fff; }
+.j-player video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.j-player-msg { display: grid; justify-items: center; gap: 10px; padding: 16px; text-align: center; }
+.j-info h2 { font-size: 1.3rem; font-weight: 800; }
+.j-info-grid { display: grid; gap: 8px; margin-top: 10px; }
+.j-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* 5.4 Perfil */
+.j-profile-body { position: relative; margin-top: -34px; display: grid; gap: 16px; }
+.j-profile-card { display: grid; justify-items: center; gap: 14px; padding: 22px 18px; }
+.j-avatar { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; font-size: 1.9rem; font-weight: 800; }
+.j-data { display: grid; gap: 0; width: 100%; }
+.j-data > div { padding: 14px 2px; border-top: 1px solid var(--j-line); }
+.j-data dt { font-size: .82rem; font-weight: 700; color: var(--j-muted); }
+.j-data dd { margin-top: 2px; font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+
+/* 5.5 Entrar / criar conta */
+.j-app--auth { padding-bottom: 24px; }
+.j-hero--auth { display: flex; flex-direction: column; }
+.j-hero--auth .j-hero-inner { display: flex; flex-direction: column; align-items: center; padding-top: calc(32px + env(safe-area-inset-top)); --j-brand-size: clamp(2rem, 10vw, 2.6rem); }
+.j-hero--auth .j-tagline { margin-bottom: 8px; }
+.j-form { display: grid; gap: 14px; }
+.j-form h2 { margin: 0; font-size: 1.4rem; font-weight: 800; }
+.j-switch { text-align: center; }
+.j-switch a { color: var(--j-blue-700); font-weight: 700; }
+
+/* ---------------------------------------------------------------- 6. BREAKPOINTS */
+@media (max-width: 360px) {
+  .j-actions { grid-template-columns: 1fr; }
+  .j-filters-row { grid-template-columns: 1fr; }
+  .j-thumb { width: 104px; }
+  .j-replay-info strong { font-size: 1.05rem; }
+}
+@media (min-width: 480px) {
+  .j-body { --j-gutter: 24px; }
+}
+@media (min-width: 768px) {                       /* tablet */
+  body.j-body { --j-col: 680px; --j-gutter: 32px; --j-nav-h: 96px; }
+  .j-nav { bottom: 12px; width: min(92%, 520px); border-radius: 28px; }
+  .j-hero--welcome .j-hero-inner { gap: 26px; padding-top: 48px; }
+  .j-welcome-copy { --j-brand-size: 3.1rem; }
+  .j-welcome-copy h1 { font-size: 2.5rem; }
+  .j-qr { width: 200px; }
+  .j-thumb { width: 190px; }
+  .j-replay-info strong { font-size: 1.25rem; }
+  .j-header { --j-brand-size: 1.6rem; padding-bottom: 62px; }
+  .j-actions { max-width: 520px; }
+}
+@media (min-width: 1100px) {                      /* computador */
+  body.j-body { --j-col: 1040px; --j-gutter: 40px; }
+  .j-hero--welcome .j-hero-inner { display: grid; grid-template-columns: 1fr 440px; align-items: center; justify-items: stretch; gap: 72px; text-align: left; padding-top: 56px; }
+  .j-welcome-copy { align-items: flex-start; --j-brand-size: 3.6rem; }
+  .j-welcome-copy h1 { font-size: 2.9rem; margin-top: .2rem; }
+  .j-lead { font-size: 1.2rem; }
+  .j-sheet { padding-top: 16px; }
+  .j-sheet .j-stack { grid-template-columns: repeat(2, 1fr); }
+  .j-arena-body { display: grid; grid-template-columns: 340px 1fr; column-gap: 32px; align-items: start; }
+  .j-arena-card, .j-tiles, .j-filters { grid-column: 1; }
+  .j-replays { grid-column: 2; grid-row: 1 / span 4; }
+  .j-tiles { margin-top: 0; }
+  .j-replays .j-stack { grid-template-columns: 1fr 1fr; }
+  .j-replay { flex-direction: row; }
+  .j-thumb { width: 150px; }
+  .j-watch-body { --j-col: 840px; }
+  .j-form { max-width: 460px; margin-inline: auto; }
+}
+
+
+/* Minhas Arenas — tela principal após o primeiro vínculo. */
+.j-app--arenas .j-my-arenas{padding-top:20px;padding-bottom:calc(var(--j-nav-h) + 32px)}
+.j-app--arenas .j-my-arenas .j-stack{grid-template-columns:1fr}
+.j-app--arenas .j-add-arena{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-top:20px;width:100%;min-height:54px;text-align:center;
+  text-decoration:none;
+}
+@media(min-width:900px){
+  .j-app--arenas .j-my-arenas .j-stack{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
+.j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
+.j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.j-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.j-row.is-selected { box-shadow: 0 0 0 2px var(--j-coral), var(--j-shadow, 0 6px 20px rgba(4, 20, 55, .08)); }
+.j-row-go { display: inline-flex; align-items: center; gap: 2px; font-size: .85rem; font-weight: 700; color: var(--j-coral-dark, #e04a34); }

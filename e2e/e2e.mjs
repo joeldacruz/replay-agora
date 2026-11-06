@@ -32,50 +32,70 @@ console.log('E2E Replay Agora —', BASE);
 // ---------- App do Usuário (celular) ----------
 const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true });
 const u = await mobile.newPage();
-await step('usuário: login e catálogo mostra só replays publicados', async () => {
+await step('usuário: com arena vinculada, abre direto em Minhas Arenas (sem tela de QR)', async () => {
   await u.goto(BASE + '/'); await u.waitForURL(/#\/login/);
-  await u.fill('input[name=email]', 'atleta.alfa@example.test'); await u.fill('input[name=password]', PASS); await u.click('button.primary');
-  await u.waitForSelector('a.card');
-  const n = await u.locator('a.card').count();
-  assert.equal(n, 2, 'esperava 2 publicados (privados ocultos)');
-  assert.equal(await u.locator('text=Sem áudio original').count(), 0);
-  assert.ok(!(await u.content()).includes('Patrocinadores'), 'app do usuário não tem telas de gestão');
+  await u.fill('input[name=email]', 'atleta.alfa@example.test'); await u.fill('input[name=password]', PASS); await u.click('button[type=submit]');
+  await u.waitForSelector('.j-my-arenas');
+  const txt = await u.locator('body').innerText();
+  for (const t of ['Minhas Arenas', 'Arena Alfa', 'Adicionar outra arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
+  assert.equal(await u.locator('.j-hero--welcome').count(), 0, 'QR não é a página inicial quando há arenas');
+  assert.equal(await u.locator('nav.j-nav a').count(), 3, 'navegação Arenas/Replays/Perfil');
+  assert.ok(!txt.includes('Downloads'), 'sem menu Downloads');
 });
-await step('usuário: aguarda prévia patrocinada processada pelo worker', async () => {
-  await u.locator('a.card').first().click();
+await shot(u, 'usuario-minhas-arenas');
+await step('usuário: "Adicionar outra arena" abre QR/código e a entrada por código leva à arena', async () => {
+  await u.click('text=Adicionar outra arena'); await u.waitForSelector('.j-hero--welcome');
+  const txt = await u.locator('body').innerText();
+  for (const t of ['Acesse sua Arena', 'Ler QR Code', 'Inserir código da Arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
+  await shot(u, 'usuario-qr');
+  await u.click('text=Inserir código da Arena'); await u.fill('#j-code-form input', 'arena-alfa'); await u.click('#j-code-form button[type=submit]');
+  await u.waitForSelector('.j-replay'); assert.match(u.url(), /#\/arena\/arena-alfa/);
+  assert.ok((await u.locator('body').innerText()).includes('Arena Alfa'));
+});
+await step('usuário: lista só os replays publicados e filtra por quadra', async () => {
+  assert.equal(await u.locator('.j-replay').count(), 2, 'esperava 2 publicados (privados ocultos)');
+  assert.equal(await u.locator('text=Sem áudio original').count(), 0);
+  await u.click('.j-tile:has-text("Quadras")');
+  await u.click('.j-chip:has-text("Quadra 02")'); await u.waitForFunction(() => document.querySelectorAll('.j-replay').length === 1);
+  await shot(u, 'usuario-filtros');
+  await u.click('text=Limpar filtros'); await u.waitForFunction(() => document.querySelectorAll('.j-replay').length === 2);
+});
+await shot(u, 'usuario-arena');
+await step('usuário: player mostra só vídeo, dados básicos, Baixar e Compartilhar', async () => {
+  await u.locator('.j-replay-link').first().click();
   await u.waitForSelector('video', { timeout: 90000 });
   const src = await u.getAttribute('video', 'src'); assert.match(src, /^\/media\/ey/);
   await u.waitForFunction(() => document.querySelector('video').readyState >= 2, null, { timeout: 20000 });
   assert.ok(await u.evaluate(() => document.querySelector('video').duration > 2));
+  const txt = await u.locator('body').innerText();
+  assert.ok(txt.includes('Baixar') && txt.includes('Compartilhar'));
+  for (const bad of ['Patrocinador', 'Música', 'Volume', 'Mixagem', 'Mudo']) assert.ok(!txt.includes(bad), 'não deve aparecer: ' + bad);
+  assert.equal(await u.locator('input[type=radio], input[type=range], select').count(), 0, 'sem controles de áudio/edição');
   const token = await u.evaluate(() => localStorage.getItem('ra_user_token'));
-  const code = await u.evaluate(async (t) => {
-    const videoId = location.hash.split('/').at(-1);
-    return (await fetch('/api/videos/' + videoId + '/play', { headers: { Authorization: 'Bearer ' + t } })).status;
-  }, token);
+  const code = await u.evaluate(async (t) => (await fetch('/api/videos/' + location.hash.split('/').at(-1) + '/play', { headers: { Authorization: 'Bearer ' + t } })).status, token);
   assert.equal(code, 409, 'a origem patrocinada nao pode ser exibida ao atleta');
 });
-async function exportAndDownload(page, mode, extra) {
-  await page.locator(`input[type=radio][value=${mode}]`).check();
-  if (extra) await extra();
-  await page.click('button:has-text("Gerar vídeo")');
-  await page.waitForSelector('button:has-text("Baixar vídeo pronto")', { timeout: 60000 });
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Baixar vídeo pronto")')]);
-  assert.match(dl.suggestedFilename(), /^replay-[A-Z0-9]+-[a-z]+\.mp4$/);
-  const f = join(tmp, dl.suggestedFilename() + Math.random()); await dl.saveAs(f); return probe(f);
-}
 await shot(u, 'usuario-player');
-await step('usuário: exporta MÚDO (sem faixa de áudio) e baixa MP4', async () => { const s = await exportAndDownload(u, 'mute'); assert.ok(s.includes('video') && !s.includes('audio')); });
-await step('usuário: exporta MÚSICA e baixa MP4 com áudio', async () => { const s = await exportAndDownload(u, 'music'); assert.ok(s.includes('audio')); });
-await step('usuário: exporta MISTURA com volumes e baixa MP4', async () => { const s = await exportAndDownload(u, 'mix'); assert.ok(s.includes('audio') && s.includes('video')); });
-await step('usuário: exporta ORIGINAL e baixa MP4', async () => { const s = await exportAndDownload(u, 'original'); assert.ok(s.includes('audio')); });
-await step('usuário: só pode exportar replays com patrocinadores', async () => {
-  assert.equal(await u.locator('button:has-text("Baixar MP4 original")').count(), 0);
-  assert.ok((await u.locator('body').innerText()).includes('Patrocinadores da arena'));
+await step('usuário: Baixar entrega um MP4 com vídeo e áudio', async () => {
+  const [dl] = await Promise.all([u.waitForEvent('download', { timeout: 90000 }), u.click('button:has-text("Baixar")')]);
+  assert.match(dl.suggestedFilename(), /^replay-[A-Z0-9]+-[a-z]+\.mp4$/);
+  const f = join(tmp, dl.suggestedFilename() + Math.random()); await dl.saveAs(f); const s = probe(f);
+  assert.ok(s.includes('video') && s.includes('audio'));
 });
-await shot(u, 'usuario-exports-antes');
-await step('usuário: "Meus downloads" lista as exportações prontas', async () => {
-  await u.goto(BASE + '/#/exports'); await u.waitForSelector('table'); assert.ok((await u.locator('tbody tr').count()) >= 4);
+await step('usuário: Compartilhar gera link de acesso ao replay', async () => {
+  await u.evaluate(() => { window.__shared = null; navigator.share = async (d) => { window.__shared = d; }; });
+  await u.click('button:has-text("Compartilhar")');
+  await u.waitForFunction(() => window.__shared && window.__shared.url, null, { timeout: 15000 });
+  assert.match(await u.evaluate(() => window.__shared.url), /\/s\//);
 });
+await step('usuário: perfil só tem nome, e-mail e Sair', async () => {
+  await u.click('nav.j-nav >> text=Perfil'); await u.waitForSelector('.j-profile-card');
+  const txt = await u.locator('body').innerText();
+  assert.ok(txt.includes('atleta.alfa@example.test') && txt.includes('Sair da conta'));
+  assert.ok(!txt.includes('Downloads'), 'sem menu Downloads');
+  assert.equal(await u.locator('.j-profile-body a, .j-profile-body button').count(), 1, 'perfil: apenas o botão Sair');
+});
+await shot(u, 'usuario-perfil');
 await step('usuário: API do catálogo não lista replays privados', async () => {
   const token = await u.evaluate(() => localStorage.getItem('ra_user_token'));
   const list = await u.evaluate(async (t) => (await (await fetch('/api/videos?limit=50', { headers: { Authorization: 'Bearer ' + t } })).json()).items.length, token);
@@ -86,6 +106,42 @@ await step('usuário: token do app do usuário é recusado nas APIs de gestão e
   const codes = await u.evaluate(async (t) => Promise.all(['/api/platform/arenas', '/api/platform/users'].map(async (p) => (await fetch(p, { headers: { Authorization: 'Bearer ' + t } })).status)), t);
   assert.deepEqual(codes, [403, 403]);
   assert.equal((await mobile.newPage().then(async (p) => { const r = await p.goto(BASE + '/api/arena/x/dashboard'); return r.status(); })), 401);
+});
+
+await step('usuário novo: 1º acesso mostra QR; arenas ficam em Minhas Arenas; Replays segue a arena selecionada', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const m = await ctx2.newPage();
+  const email = `multi${Date.now()}@example.test`;
+  await m.goto(BASE + '/');
+  await m.evaluate(async ([email, pw]) => {
+    const r = await fetch('/api/auth/user/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Multi Arena (fictício)', email, password: pw }) });
+    localStorage.setItem('ra_user_token', (await r.json()).token);
+  }, [email, PASS + 'x1']);
+  await m.goto(BASE + '/#/'); await m.reload(); await m.waitForSelector('.j-hero--welcome');
+  assert.equal(await m.locator('.j-my-arenas').count(), 0, 'sem arenas: tela de QR');
+  const enter = async (slug) => { await m.click('text=Inserir código da Arena'); await m.fill('#j-code-form input', slug); await m.click('#j-code-form button[type=submit]'); await m.waitForSelector('.j-replay'); };
+  await enter('arena-alfa');
+  await m.click('nav.j-nav >> text=Arenas'); await m.waitForSelector('.j-my-arenas');
+  await m.click('text=Adicionar outra arena'); await enter('arena-beta');
+  const arenaOfShown = async () => { await m.waitForTimeout(800); await m.waitForSelector('.j-replay-link'); return m.evaluate(async () => {
+    const t = localStorage.getItem('ra_user_token'); const H = { Authorization: 'Bearer ' + t };
+    const arenas = await (await fetch('/api/arenas', { headers: H })).json();
+    const ids = [...document.querySelectorAll('.j-replay-link')].map((a) => a.getAttribute('href').split('/').pop());
+    const out = new Set();
+    for (const a of arenas) { const l = (await (await fetch('/api/videos?limit=50&arenaId=' + a.id, { headers: H })).json()).items.map((v) => v.id); if (ids.some((i) => l.includes(i))) out.add(a.name); if (ids.some((i) => !l.includes(i)) && ids.some((i) => l.includes(i))) out.add('MISTURA'); }
+    return [...out];
+  }); };
+  assert.deepEqual(await arenaOfShown(), ['Arena Beta (fictícia)']);
+  await m.click('nav.j-nav >> text=Arenas'); await m.waitForSelector('.j-my-arenas');
+  assert.equal(await m.locator('.j-row').count(), 2);
+  await m.click('.j-row:has-text("Arena Alfa")'); await m.waitForSelector('.j-replay');
+  await m.click('nav.j-nav >> text=Perfil'); await m.waitForSelector('.j-profile-card');
+  await m.click('nav.j-nav >> text=Replays'); await m.waitForSelector('.j-replay');
+  assert.deepEqual(await arenaOfShown(), ['Arena Alfa (fictícia)'], 'Replays abre a arena selecionada, após Perfil');
+  await m.reload(); await m.waitForSelector('.j-replay');
+  await m.click('nav.j-nav >> text=Replays'); await m.waitForSelector('.j-replay');
+  { const got = await arenaOfShown(); assert.deepEqual(got, ['Arena Alfa (fictícia)'], 'seleção persiste após atualizar: ' + JSON.stringify(got) + ' ' + m.url()); }
+  await ctx2.close();
 });
 
 // ---------- App da Arena (desktop) ----------
