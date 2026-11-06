@@ -41,12 +41,30 @@ function bottom(active) {
     [['/', '⌂', 'Arenas'], ['/replays', '▷', 'Replays'], ['/profile', '♙', 'Perfil']].map(([url, icon, label]) =>
       $('a', {href:'#'+url, className:active===url?'active':''}, $('span', {'aria-hidden':'true',text:icon}), $('small',{text:label}))));
 }
-function header(label) {
-  return $('header',{className:'journey-hero'},
-    $('div',{className:'journey-brand'},$('span',{className:'journey-play',text:'▷'}),$('strong',{text:'Replay Agora'})),
-    $('h1',{text:label}),
-    $('p',{text:'Seus lances, sempre com você.'}));
+function brand(compact = false) {
+  return $('div',{className:'journey-brand'+(compact?' journey-brand-compact':'')},
+    $('span',{className:'journey-play','aria-hidden':'true'},'▷'),
+    $('span',{className:'journey-brand-name',text:'Replay Agora'}));
 }
+function header(label, variant = 'default') {
+  const compact = variant === 'arena';
+  return $('header',{className:'journey-hero journey-hero-'+variant},
+    brand(compact),
+    compact ? '' : $('div',{className:'journey-tagline',text:'SEU REPLAY DA ARENA'}),
+    $('h1',{text:label}),
+    compact ? '' : $('p',{className:'journey-subtitle',text:'Seus lances, sempre com você.'}));
+}
+function qrArt() {
+  return $('div',{className:'journey-qr-art','aria-hidden':'true'},
+    $('span',{className:'journey-qr-frame'},
+      $('svg',{viewBox:'0 0 120 120',width:'120',height:'120'},
+        $('title',{text:'Símbolo ilustrativo de QR Code'}),
+        $('path',{d:'M10 42V10H42 M78 10H110V42 M10 78V110H42 M78 110H110V78',fill:'none',stroke:'currentColor','stroke-width':'5','stroke-linecap':'round'}),
+        $('path',{d:'M24 24H48V48H24Z M72 24H96V48H72Z M24 72H48V96H24Z',fill:'none',stroke:'currentColor','stroke-width':'7'}),
+        $('path',{d:'M61 61H73V73H61Z M83 61H95V73H83Z M61 83H73V95H61Z M83 83H95V95H83Z',fill:'currentColor'}))),
+    $('span',{className:'journey-qr-beam'}));
+}
+
 async function secureUser(ctx) { return ctx.ensureMe(); }
 function arenaButton(a) {
   return $('button',{className:'journey-arena',onclick:()=>navigate('#/arena/'+encodeURIComponent(a.slug))},
@@ -147,16 +165,28 @@ export async function journeyHome(ctx) {
     if(!slug){setMessage(root,'Informe um código ou link válido da arena.');return;}
     activateSlug(slug,ctx,root).catch(err=>setMessage(root,err.message));
   });
-  root.append(header('Minhas Arenas'),
-    $('section',{className:'journey-content'},
-      $('div',{className:'journey-actions'},
-        $('button',{className:'journey-primary',text:'▣  Ler QR Code da arena',onclick:()=>readQr(root,ctx)})),
-      $('h2',{text:'Arenas que você acessa'}),
-      data.length?$('div',{className:'journey-stack'},data.map(arenaButton)):$('p',{text:'Você ainda não acessou nenhuma arena. Leia o QR Code disponível na quadra.'}),
-      $('h2',{text:'Entrar com código'}),form,
-      $('p',{className:'journey-hint',text:'O QR da arena identifica o local. Replays privados continuam protegidos.'}),
+  root.append(
+    $('section',{className:'journey-welcome'},
+      brand(),
+      $('div',{className:'journey-tagline',text:'SEU REPLAY DA ARENA'}),
+      $('h1',{text:'Acesse sua Arena'}),
+      $('p',{className:'journey-welcome-lead',text:'Escaneie o QR Code da arena para visualizar seus replays.'}),
+      qrArt(),
+      $('button',{className:'journey-primary journey-scan-button',onclick:()=>readQr(root,ctx)},
+        $('span',{'aria-hidden':'true',text:'▣'}),' Ler QR Code'),
+      $('div',{className:'journey-or',text:'ou'}),
+      $('details',{className:'journey-code-details'},
+        $('summary',{className:'journey-secondary',text:'Inserir código da Arena'}),
+        form),
+      $('p',{className:'journey-welcome-hint',text:'O QR Code é fornecido pela arena (quadra, clube ou campeonato).'}),
+      $('div',{className:'journey-wave','aria-hidden':'true'})),
+    $('section',{className:'journey-content journey-after-welcome'},
+      $('h2',{text:'Minhas Arenas'}),
+      data.length?$('div',{className:'journey-stack'},data.map(arenaButton)):
+        $('p',{className:'journey-hint',text:'Depois de entrar pelo QR Code, suas arenas aparecerão aqui.'}),
       $('p',{'data-status':'',role:'status',className:'journey-status'})),
-    bottom('/'));
+    bottom('/')
+  );
 }
 export async function journeyArena(params, ctx) {
   if(!ctx.api.token()){
@@ -227,7 +257,7 @@ export async function journeyArena(params, ctx) {
   court.addEventListener('change',()=>{state.court=court.value;refresh();});
   date.addEventListener('change',()=>{state.date=date.value;refresh();});
   hour.addEventListener('change',()=>{state.hour=hour.value;refresh();});
-  root.append(header(arena.name),
+  root.append(header(arena.name, 'arena'),
     $('section',{className:'journey-content'},
       $('a',{href:'#/',className:'journey-back',text:'← Minhas Arenas'}),
       $('div',{className:'journey-section-title'},$('h2',{text:'Encontre seu replay'}),$('span',{text:'Arena → Quadra → Data → Horário'})),
