@@ -1,5 +1,5 @@
 import { h, mount, toast, fmt, badge, createApi, createRouter, field, copy, registerSW } from '/shared/ui.js';
-import { journeyHome, journeyArena, journeyProfile } from './journey.js?v=ux-premium-2';
+import { journeyHome, journeyArena, journeyProfile } from './journey.js?v=ux-premium-logo-1';
 
 const root = document.getElementById('app');
 const api = createApi('ra_user_token', () => (location.hash = '#/login'));
