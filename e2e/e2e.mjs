@@ -15,7 +15,8 @@ const tmp = mkdtempSync(join(tmpdir(), 'e2e-'));
 const results = [];
 const SHOTS = process.env.SHOTS_DIR;
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, name + '.png') }); };
-const step = async (name, fn) => { try { await fn(); results.push(['ok', name]); console.log('  ✓', name); } catch (e) { results.push(['FALHA', name]); console.error('  ✗', name, '\n    ', e.message.split('\n')[0]); process.exitCode = 1; } };
+let failPage = null;   // página a fotografar quando um passo falha (diagnóstico)
+const step = async (name, fn) => { try { await fn(); results.push(['ok', name]); console.log('  ✓', name); } catch (e) { results.push(['FALHA', name]); console.error('  ✗', name, '\n    ', e.message.split('\n').filter((l) => l.trim()).slice(0, 4).join(' | ')); process.exitCode = 1; if (failPage && SHOTS) { try { await failPage.screenshot({ path: join(SHOTS, 'FALHA-' + name.slice(0, 40).replace(/\W+/g, '_') + '.png') }); } catch { /* sem captura */ } } } };
 
 const totp = (secret) => {
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = ''; for (const c of secret.replace(/=+$/, '')) bits += A.indexOf(c).toString(2).padStart(5, '0');
@@ -277,36 +278,200 @@ await step('arena: gestor com 2 arenas usa seletor; Início e Replays mostram s�
 });
 
 // ---------- Portal do Desenvolvedor ----------
-const p = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
-await step('portal: login exige MFA (cadastro TOTP no 1º acesso) e lista todas as arenas', async () => {
+import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+const ROOT = new URL('..', import.meta.url).pathname;
+const VIBE_H = join(ROOT, 'services/api/tests/data/Moldura_Arena_Vibe_Horizontal.png'), VIBE_V = join(ROOT, 'services/api/tests/data/Moldura_Arena_Vibe_Vertical.png');
+let agentProc = null;
+const startAgent = (cred) => { agentProc = spawn(PY, [join(ROOT, 'scripts/simulate_remote_agent.py'), '--base-url', BASE, '--credentials', cred, '--data-dir', join(tmp, 'agente'), '--courts', 'REPLAY_01', 'REPLAY_02'], { stdio: 'ignore' }); };
+const stopAgent = () => { if (agentProc) { agentProc.kill('SIGTERM'); agentProc = null; } };
+const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+const p = await pctx.newPage(); failPage = p;
+const nav = (label) => p.click(`nav.p-nav a:has-text("${label}")`);
+const waitFor = async (fn, ms = 60000, every = 1500) => { const t0 = Date.now(); for (;;) { if (await fn()) return; if (Date.now() - t0 > ms) throw new Error('tempo esgotado aguardando condição'); await p.waitForTimeout(every); } };
+await step('portal: login exige MFA (cadastro TOTP no 1º acesso) e abre o Painel Geral com a marca oficial', async () => {
   await p.goto(BASE + '/portal/'); await p.waitForURL(/#\/login/);
-  await p.fill('input[name=email]', 'dev@replayagora.example'); await p.fill('input[name=password]', PASS); await p.click('button.primary');
+  await p.fill('input[name=email]', 'dev@replayagora.example'); await p.fill('input[name=password]', PASS); await p.click('button[type=submit]');
   await p.waitForSelector('code'); const secret = await p.locator('code').first().textContent();
-  await p.fill('input[name=code]', totp(secret)); await p.click('button.primary');
-  await p.waitForSelector('h1:has-text("Painel global")');
-  await p.click('nav.tabs a:has-text("Arenas")'); await p.waitForSelector('td:has-text("Arena Beta")');
-  assert.ok((await p.locator('tbody tr').count()) >= 2);
+  await p.fill('input[name=code]', totp(secret)); await p.click('button[type=submit]');
+  await p.waitForSelector('h1:has-text("Painel Geral")');
+  assert.ok(await p.locator('aside img[alt="Replay Agora"]').isVisible(), 'logomarca oficial');
+  const items = await p.locator('nav.p-nav a').allTextContents();
+  for (const t of ['Painel Geral', 'Arenas', 'Servidores Locais', 'Quadras', 'Câmeras', 'Botoeiras e Controladores', 'Replay e Captura', 'Molduras e Identidade Visual', 'Serviços', 'Monitoramento', 'Usuários e Permissões', 'Planos e Cotas', 'Auditoria e Histórico']) assert.ok(items.includes(t), 'menu: ' + t);
+  assert.ok((await p.locator('.p-kpi').count()) >= 12, 'indicadores do painel');
 });
-await step('portal: suspende a arena Beta e o gestor da Beta é bloqueado; reativa depois', async () => {
+await shot(p, 'portal-painel');
+await step('portal: Arenas lista todas; suspende a Beta (gestor bloqueado) e reativa', async () => {
+  await nav('Arenas'); await p.waitForSelector('td:has-text("Arena Beta")');
+  assert.ok((await p.locator('tbody tr').count()) >= 2);
   const row = p.locator('tr', { hasText: 'Arena Beta' });
   const beta = await desk.newPage(); await beta.goto(BASE + '/arena/#/login');
   await beta.fill('input[name=email]', 'gestor.beta@example.test'); await beta.fill('input[name=password]', PASS); await beta.click('button[type=submit]'); await beta.waitForSelector('.g-kpis');
   const tk = await beta.evaluate(() => localStorage.getItem('ra_arena_token'));
-  p.once('dialog', (d) => d.accept());
-  await row.locator('button:has-text("Suspender")').click(); await row.locator('.badge.bad:has-text("suspensa")').waitFor();
+  await row.locator('button:has-text("Suspender")').click(); await p.click('dialog button[type=submit]'); await row.locator('.p-pill:has-text("Suspensa")').waitFor();
   const st = await beta.evaluate(async (t) => (await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).json().then((j) => j.memberships.length), tk);
   assert.equal(st, 0);
-  await row.locator('button:has-text("Reativar")').click(); await row.locator('.badge.ok:has-text("ativa")').waitFor();
+  await row.locator('button:has-text("Reativar")').click(); await row.locator('.p-pill:has-text("Ativa")').waitFor();
 });
 await shot(p, 'portal-arenas');
-await step('portal: auditoria registra as ações globais', async () => {
-  await p.click('nav.tabs a:has-text("Auditoria")'); await p.waitForSelector('code:has-text("platform.arena_suspend")');
+await step('portal: seleção de arena persiste ao navegar e ao recarregar', async () => {
+  const alfa = await p.locator('select[aria-label=Arena] option', { hasText: 'Alfa' }).getAttribute('value');
+  await p.selectOption('select[aria-label=Arena]', alfa);
+  await nav('Quadras'); await p.waitForSelector('h1:has-text("Quadras")');
+  await p.reload(); await p.waitForSelector('select[aria-label=Arena]');
+  assert.ok((await p.locator('select[aria-label=Arena] option:checked').textContent()).includes('Alfa'));
+  assert.ok((await p.locator('.p-ctxbar').first().innerText()).includes('Alfa'), 'a arena aparece em todas as telas operacionais');
+});
+await step('portal: cadastra servidor local, baixa credenciais (mostradas uma única vez) e o agente se conecta', async () => {
+  await nav('Servidores Locais'); await p.click('button:has-text("Cadastrar servidor")');
+  await p.fill('dialog input[name=name]', 'srv-e2e'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector('dialog a[download]');
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('dialog a[download]')]);
+  const cred = join(tmp, 'credenciais.json'); await dl.saveAs(cred);
+  assert.ok(Object.keys(JSON.parse(readFileSync(cred, 'utf8'))).includes('token'));
+  await p.click('dialog button:has-text("Concluir")');
+  const card = p.locator('.p-card', { hasText: 'srv-e2e' });
+  await card.waitFor(); assert.ok((await card.innerText()).includes('Nunca conectou'), 'cadastro não é conexão');
+  startAgent(cred);
+  await waitFor(async () => { await p.reload(); await p.waitForSelector('.p-card:has-text("srv-e2e")'); return (await p.locator('.p-card:has-text("srv-e2e")').innerText()).includes('Conectado'); });
+  await p.click('.p-card:has-text("srv-e2e")'); await p.waitForSelector('h1:has-text("srv-e2e")');
+  assert.ok(!(await p.content()).includes(JSON.parse(readFileSync(cred, 'utf8')).token), 'token nunca reaparece');
+});
+await step('portal: vincula quadras ao servidor', async () => {
+  await nav('Quadras'); await p.waitForSelector('.p-card:has-text("Quadra 01")');
+  for (const q of ['Quadra 01', 'Quadra 02']) {
+    await p.click(`.p-card:has-text("${q}") button:has-text("Editar")`); await p.selectOption('dialog select[name=serverId]', { label: 'srv-e2e' }); await p.click('dialog button[type=submit]');
+    await p.waitForFunction((t) => [...document.querySelectorAll('.p-card')].some((c) => c.innerText.includes(t) && c.innerText.includes('srv-e2e')), q);
+  }
+});
+await step('portal: cadastra câmeras por formulário (perfil Intelbras), senha protegida; testes pelo agente com mensagens compreensíveis', async () => {
+  await nav('Câmeras');
+  for (const [court, host, name] of [['Quadra 01', '192.168.1.19', 'Câmera Q1'], ['Quadra 02', '192.168.1.18', 'Câmera Q2']]) {
+    await p.click('button:has-text("Nova câmera")'); await p.waitForSelector('dialog');
+    await p.selectOption('dialog select[aria-label="Perfil conhecido"]', { label: 'Intelbras (cam/realmonitor)' });
+    assert.equal(await p.inputValue('dialog input[name=rtspPath]'), '/cam/realmonitor?channel=1&subtype=0');
+    await p.fill('dialog input[name=name]', name); await p.selectOption('dialog select[name=courtId]', { label: court }); await p.selectOption('dialog select[name=serverId]', { label: 'srv-e2e' });
+    await p.fill('dialog input[name=host]', host); await p.fill('dialog input[name=username]', 'admin'); await p.fill('dialog input[name=password]', 'Senha-E2E-Camera-123'); await p.click('dialog button[type=submit]');
+    await p.waitForSelector(`.p-card:has-text("${name}")`);
+  }
+  const q1 = p.locator('.p-card', { hasText: 'Câmera Q1' });
+  assert.ok((await q1.innerText()).includes('configurada (oculta)') && !(await p.content()).includes('Senha-E2E-Camera-123'), 'senha oculta');
+  await q1.locator('button:has-text("Teste completo")').click();
+  await p.waitForSelector('dialog:has-text("Câmera conectada e transmitindo")', { timeout: 40000 });
+  await p.waitForSelector('dialog img[alt="Imagem de teste da câmera"]');
+  await p.click('dialog button:has-text("Fechar")');
+  await p.locator('.p-card', { hasText: 'Câmera Q2' }).locator('button:has-text("Autenticação")').click();
+  await p.waitForSelector('dialog:has-text("Falha de autenticação")', { timeout: 40000 });
+  assert.ok(!(await p.locator('dialog').innerText()).includes('Senha-E2E-Camera-123'));
+  await p.click('dialog button:has-text("Fechar")');
+});
+await shot(p, 'portal-cameras');
+await step('portal: configura Arduino por menu (porta detectada), respeita a capacidade do firmware e associa entradas às quadras', async () => {
+  await nav('Botoeiras e Controladores'); await p.waitForSelector('h1:has-text("Botoeiras e Controladores")');
+  const mk = async (name, portSuffix, ref, court) => {
+    await p.click('button:has-text("Novo controlador")'); await p.waitForSelector('dialog select[name=portId]');
+    await p.fill('dialog input[name=name]', name);
+    const opt = await p.locator(`dialog select[name=portId] option[value$="${portSuffix}"]`).getAttribute('value'); await p.selectOption('dialog select[name=portId]', opt);
+    await p.fill('dialog input[name=inputsCapacity]', '1'); await p.click('dialog button[type=submit]');
+    const sec = p.locator('section', { hasText: name }); await sec.waitFor();
+    await sec.locator('button:has-text("Associar entrada")').click(); await p.fill('dialog input[name=inputRef]', ref); await p.selectOption('dialog select[name=courtId]', { label: court }); await p.click('dialog button[type=submit]');
+    await waitFor(async () => (await p.locator('section', { hasText: name }).innerText()).includes(ref), 15000, 500);
+    return sec;
+  };
+  await mk('Arduino-A', 'port0', 'REPLAY_01', 'Quadra 01');
+  assert.ok(await p.locator('section:has-text("Arduino-A") button:has-text("Associar entrada")').isDisabled(), 'capacidade do firmware atingida');
+  await mk('Arduino-B', 'port1', 'REPLAY_02', 'Quadra 02');
+});
+await step('portal: parâmetros de replay por menu; impacto da captura é informado e a alteração fica pendente', async () => {
+  await nav('Replay e Captura'); await p.waitForSelector('h1:has-text("Replay e Captura")');
+  await p.fill('input[name=preS]', '4'); await p.fill('input[name=bufferS]', '40');
+  assert.ok((await p.locator('.p-banner:visible').first().innerText()).includes('será reiniciada'), 'impacto informado');
+  await p.check('input[name=fmt_vertical]');
+  await p.click('button:has-text("Salvar configuração")'); await p.waitForSelector('.p-banner:has-text("pendentes de aplicação")');
+});
+await step('portal: importa as molduras Vibe Beach (PNG), edita a composição com prévia fiel e salva versão', async () => {
+  await nav('Molduras e Identidade Visual'); await p.waitForSelector('h1:has-text("Molduras")');
+  for (const [file, name] of [[VIBE_H, 'Vibe Beach Horizontal'], [VIBE_V, 'Vibe Beach Vertical']]) {
+    await p.click('button:has-text("Importar moldura")'); await p.setInputFiles('dialog input[name=file]', file); await p.fill('dialog input[name=name]', name); await p.click('dialog button[type=submit]');
+    await p.waitForSelector(`.p-card:has-text("${name}")`);
+  }
+  await p.waitForSelector('.p-frame-thumb img');
+  await p.click('.p-card:has-text("Vibe Beach Horizontal") a:has-text("Editar composição")'); await p.waitForSelector('#frame-canvas');
+  assert.deepEqual(await p.evaluate(() => [document.getElementById('frame-canvas').width, document.getElementById('frame-canvas').height]), [1920, 1080]);
+  const px = await p.evaluate(() => { const c = document.getElementById('frame-canvas').getContext('2d'); return Array.from(c.getImageData(960, 400, 1, 1).data); });
+  assert.ok(px[3] === 255 && !(px[0] === 0 && px[1] === 0 && px[2] === 0), 'o vídeo de teste aparece na janela da moldura');
+  await p.click('button:has-text("Prévia real")'); await p.waitForSelector('img[alt="Prévia real gerada pelo FFmpeg"]', { timeout: 40000 });
+  await p.waitForFunction(() => document.querySelector('img[alt^="Prévia real"]').naturalWidth === 1920);
+  await shot(p, 'portal-molduras-editor');
+  await p.click('button:has-text("Salvar composição")'); await p.waitForSelector('text=versão 2');
+});
+await step('portal: associa molduras à Quadra 01 (horizontal e vertical)', async () => {
+  await nav('Replay e Captura'); await p.waitForSelector('select[name=frameHId]');
+  await p.selectOption('select[name=frameHId]', { label: 'Vibe Beach Horizontal' }); await p.selectOption('select[name=frameVId]', { label: 'Vibe Beach Vertical' });
+  await p.click('button:has-text("Salvar configuração")'); await p.waitForSelector('.p-banner:has-text("pendentes de aplicação")');
+});
+await step('portal: salva e aplica — o agente confirma a versão ativa (salvo ≠ aplicado)', async () => {
+  await nav('Servidores Locais'); await p.click('.p-card:has-text("srv-e2e")'); await p.click('a.p-tab:has-text("Configuração")');
+  await p.waitForSelector('text=Alterações ainda não aplicadas');
+  assert.ok((await p.locator('.p-diff').innerText()).includes('Quadra'), 'diferenças listadas');
+  await p.click('button:has-text("Salvar e aplicar")'); await p.click('dialog button[type=submit]');
+  await waitFor(async () => { await p.reload(); await p.waitForSelector('h1'); return (await p.locator('body').innerText()).includes('Versão aplicada e confirmada pelo agente: v1'); }, 60000, 2000);
+  await shot(p, 'portal-configuracao-aplicada');
+});
+await step('portal: controlador e quadra aparecem como aplicados; teste de comunicação do Arduino e simulação sem publicar', async () => {
+  await nav('Botoeiras e Controladores'); await p.waitForSelector('section:has-text("Arduino-A")');
+  await p.locator('section:has-text("Arduino-A") button:has-text("Testar comunicação")').click(); await p.waitForSelector('dialog .p-banner', { timeout: 40000 }); await p.click('dialog button:has-text("Fechar")');
+  await p.locator('button:has-text("Testar Quadra 01")').click(); await p.waitForSelector('.p-toast', { timeout: 40000 });
+  assert.ok(/nenhum vídeo foi publicado|sem captura|aceito/i.test(await p.locator('.p-toast').innerText()));
+});
+await step('portal: servidor desconectado — alteração fica pendente (não finge aplicada) e é entregue na reconexão', async () => {
+  stopAgent();
+  await nav('Replay e Captura'); await p.waitForSelector('input[name=preS]'); await p.fill('input[name=preS]', '5'); await p.click('button:has-text("Salvar configuração")'); await p.waitForSelector('.p-banner:has-text("pendentes de aplicação")');
+  await nav('Servidores Locais'); await p.click('.p-card:has-text("srv-e2e")'); await p.click('a.p-tab:has-text("Configuração")');
+  await p.click('button:has-text("Salvar e aplicar")'); await p.click('dialog button[type=submit]'); await p.waitForSelector('text=Aguardando');
+  await p.reload(); await p.waitForSelector('.p-banner:has-text("Pendente de aplicação")', { timeout: 15000 }).catch(() => {});
+  assert.ok(!(await p.locator('body').innerText()).includes('Versão aplicada e confirmada pelo agente: v2'), 'não pode parecer aplicada');
+  startAgent(join(tmp, 'credenciais.json'));
+  await waitFor(async () => { await p.reload(); await p.waitForSelector('h1'); return (await p.locator('body').innerText()).includes('Versão aplicada e confirmada pelo agente: v2'); }, 80000, 2000);
+});
+await step('portal: reverte para a versão anterior e o agente confirma', async () => {
+  const item = p.locator('.p-item', { hasText: 'v1' }).filter({ has: p.locator('button:has-text("Reverter")') });
+  await item.locator('button:has-text("Reverter")').click(); await p.click('dialog button[type=submit]');
+  await waitFor(async () => { await p.reload(); await p.waitForSelector('h1'); return (await p.locator('body').innerText()).includes('Versão aplicada e confirmada pelo agente: v3'); }, 80000, 2000);
+  assert.ok((await p.locator('body').innerText()).includes('reversão da v1'));
+});
+await step('portal: monitoramento e serviços mostram dados reais do agente (nada de cadastro como conectado)', async () => {
+  await nav('Monitoramento'); await p.waitForSelector('section:has-text("srv-e2e")');
+  const txt = await p.locator('main').innerText();
+  assert.ok(txt.includes('Quadra 01') && /Operacional|Atenção|Falha|Desconhecido/.test(txt));
+  await nav('Serviços'); await p.waitForSelector('td:has-text("capture:REPLAY_01")');
+  await p.locator('tr:has-text("Agente local") button:has-text("Verificar")').click(); await p.waitForSelector('.p-toast', { timeout: 40000 });
+  await p.locator('tr:has-text("quadra REPLAY_01") button:has-text("Reiniciar captura")').click(); await p.waitForSelector('dialog:has-text("Operação com impacto")');
+  assert.ok((await p.locator('dialog').innerText()).includes('as outras quadras não são afetadas'));
+  await p.click('dialog button:has-text("Cancelar")');
+});
+await step('portal: auditoria registra as ações globais e de configuração (sem segredos)', async () => {
+  await nav('Auditoria e Histórico'); await p.waitForSelector('code:has-text("platform.camera_create")');
+  const txt = await p.locator('main').innerText();
+  assert.ok(txt.includes('platform.config_apply') && !txt.includes('Senha-E2E-Camera-123'));
+  await p.selectOption('select[name=escopo]', 'todas'); await p.waitForSelector('code:has-text("platform.arena_suspend")');
+});
+await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
+  const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
+  const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await mctx.addInitScript((t) => { try { localStorage.setItem('ra_portal_token', t); } catch {} }, token);
+  const m = await mctx.newPage(); await m.goto(BASE + '/portal/#/'); await m.waitForSelector('h1:has-text("Painel Geral")');
+  assert.equal(await m.locator('aside.p-side').evaluate((e) => e.getBoundingClientRect().right <= 0), true, 'menu oculto no celular');
+  await m.click('button[aria-label="Abrir menu"]'); await m.click('nav.p-nav a:has-text("Câmeras")'); await m.waitForSelector('h1:has-text("Câmeras")');
+  for (const h of ['#/', '#/servidores', '#/cameras', '#/molduras', '#/monitoramento']) { await m.goto(BASE + '/portal/' + h); await m.waitForSelector('h1'); await m.waitForTimeout(400); assert.ok(await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), 'rolagem horizontal em ' + h); }
+  await shot(m, 'portal-celular'); await mctx.close();
 });
 await step('portal: sessão do portal não vale no app da arena (isolamento entre apps)', async () => {
   const t = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
   const c = await p.evaluate(async (t) => (await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).status, t);
   assert.equal(c, 403);
 });
+stopAgent();
 
 await browser.close();
 const bad = results.filter((r) => r[0] !== 'ok');

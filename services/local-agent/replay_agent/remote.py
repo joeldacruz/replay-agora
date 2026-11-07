@@ -321,7 +321,7 @@ class RemoteManager:
             n += 1
             try:
                 res = self.handle_task(t["kind"], t.get("params") or {})
-                body = {"ok": bool(res.pop("ok", True)), "result": res, "error": res.get("error")}
+                body = {"ok": bool(res.get("ok", True)), "result": res, "error": res.get("error")}
                 if "snapshotJpegB64" in res:
                     body["snapshotJpegB64"] = res.pop("snapshotJpegB64")
             except Exception as e:  # noqa: BLE001

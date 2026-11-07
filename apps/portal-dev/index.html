@@ -2,25 +2,19 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Replay Agora · Portal do Desenvolvedor</title>
-<meta name="theme-color" content="#3b2a8f">
+<meta name="theme-color" content="#041437">
 <meta name="robots" content="noindex,nofollow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/brand/favicon-64.png" sizes="64x64" type="image/png">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
-<link rel="stylesheet" href="/shared/base.css">
-<style>:root{--brand:#4b3aa8}
-.brand-block{display:inline-flex;align-items:center;gap:.75rem;padding:.35rem .9rem .35rem .7rem;border-radius:12px;background:#011941;color:#fff;font-weight:700;text-decoration:none}
-.brand-block img{display:block;height:36px;width:auto}
-.brand-block span{font-size:.95rem;white-space:nowrap}</style>
+<link rel="stylesheet" href="portal.css?v=2026-11-config">
 </head>
-<body>
-<header class="top"><a class="brand-block" href="#/" aria-label="Replay Agora — Portal do Desenvolvedor"><img src="/brand/logo-horizontal-480.webp" srcset="/brand/logo-horizontal-480.webp 480w, /brand/logo-horizontal-960.webp 960w" sizes="110px" width="1296" height="460" alt="Replay Agora"><span>Portal do Desenvolvedor</span></a><span class="badge warn">uso restrito · ações auditadas</span><span class="grow"></span><span id="who" class="muted"></span><button id="logout" class="small" hidden>Sair</button></header>
-<div id="tabs"></div>
-<main id="app"><p class="muted">Carregando…</p></main>
+<body class="p-body">
+<div id="app"><p class="p-loading">Carregando…</p></div>
 <noscript>Este portal requer JavaScript.</noscript>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=2026-11-config"></script>
 </body>
 </html>
