@@ -116,6 +116,7 @@ def record_state(db: Session, server: LocalServer, now=None) -> str:
         if server.last_state is not None or norm == "online":
             db.add(ServerEvent(server_id=server.id, arena_id=server.arena_id, kind={"online": "connected", "offline": "disconnected", "revoked": "revoked"}[norm],
                                detail=f"estado: {norm}"))
+        db.flush()
         server.last_state = norm
     return st
 
