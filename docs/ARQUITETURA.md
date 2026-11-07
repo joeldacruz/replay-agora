@@ -73,3 +73,6 @@ O MP4 e as saídas renderizadas permanecem na arena; a central valida o link ass
 ## Motor real: captura, acionamento e diagnóstico (etapa posterior)
 
 `replay_agent` ganhou captura RTSP por segmentos (`capture.py`), corte a partir do instante do acionamento (`clipper.py`), leitura serial REPLAY (`triggers.py`), configuração por quadra (`config.py`), governança de recursos (`resources.py`), diagnóstico (`diagnostics.py`) e serviço único (`service.py`). Migrações `0008` (recursos por arena) e `0009` (diagnóstico por quadra e comandos do painel). Painel **Diagnóstico** no App da Arena. Detalhes em [INTEGRACAO-MOTOR-REAL.md](INTEGRACAO-MOTOR-REAL.md); medições em [RELATORIO-RECURSOS.md](RELATORIO-RECURSOS.md).
+
+## Configuração remota
+Portal → API central → agente local (conexão iniciada pelo agente), com revisões versionadas, cofre cifrado de credenciais e composição de molduras no servidor local. Detalhes e contratos em [CONFIGURACAO-REMOTA.md](CONFIGURACAO-REMOTA.md).

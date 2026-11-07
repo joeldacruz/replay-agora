@@ -89,3 +89,10 @@ Com o GitHub conectado ao Claude/Claude Code, selecione `joeldacruz/replay-agora
 > Leia CLAUDE.md e docs/ESPECIFICACAO-APP.md. Entregue três interfaces **separadas**: App do Usuário, App de Gestão da Arena e Portal do Desenvolvedor. Não misture permissões. Faça o MVP com testes em branch de feature e abra um pull request; não realize deploy de produção.
 
 Nunca publicar `.env`, credenciais RTSP, chaves, vídeos privados nem backups do Arduino.
+
+## Configuração remota (Portal do Desenvolvedor)
+O Portal (`/portal/`) configura servidores locais, câmeras (senha cifrada), controladores/botoeiras, replay/captura e **molduras** por menus; a API entrega ao
+agente (conexão iniciada pelo agente), que valida, aplica por quadra, confirma a versão e permite reverter. Veja
+[docs/CONFIGURACAO-REMOTA.md](docs/CONFIGURACAO-REMOTA.md), [docs/MANUAL-PORTAL-DEV.md](docs/MANUAL-PORTAL-DEV.md) e o plano de homologação
+[docs/HOMOLOGACAO-CONFIG-REMOTA.md](docs/HOMOLOGACAO-CONFIG-REMOTA.md). Simulador para homologação sem hardware: `scripts/simulate_remote_agent.py`.
+**Não homologado em câmeras, Arduino ou FFmpeg reais.** Variável nova: `CREDENTIAL_KEY` (chave de cifra das senhas de câmera; recomendada em produção).
