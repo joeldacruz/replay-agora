@@ -379,6 +379,7 @@ class ExportReq(BaseModel):
     musicId: str | None = Field(None, max_length=32)
     originalVolume: float | None = Field(None, ge=0, le=1.5)
     musicVolume: float | None = Field(None, ge=0, le=1.5)
+    orientation: str | None = Field(None, pattern=r"^(horizontal|vertical)$")   # moldura aplicada pelo servidor da arena
 
 
 @router.post("/videos/{video_id}/exports")
@@ -409,6 +410,9 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
     # Patrocinadores sao politica da arena; o atleta nao pode remove-los no JSON.
     spec = policy.select_overlays(db, v)
     ph = policy.params_hash(v.id, mode, music_id, ov, mv, spec)
+    orient = body.orientation or "horizontal"
+    if orient != "horizontal":
+        ph = hashlib.sha256((ph + "|" + orient).encode()).hexdigest()
 
     same = db.query(ExportJob).filter(ExportJob.user_id == a.user.id, ExportJob.params_hash == ph,
                                       ExportJob.status.in_(("queued", "processing", "ready"))).first()
@@ -430,7 +434,7 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
 
     job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, render_location=_where(v), audio_mode=mode, music_id=music_id,
                     original_volume=ov, music_volume=mv, apply_sponsors=bool(spec),
-                    overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec), params_hash=ph)
+                    overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec), params_hash=ph, frame_orientation=orient)
     db.add(job)
     db.flush()
     audit.record(db, a.user.id, v.arena_id, "export.create", "export", job.id, {"mode": mode, "music_id": music_id})

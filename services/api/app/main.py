@@ -6,7 +6,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .logsafe import install_redaction
-from .routers import agent, arena, arena_capacity, auth, ingest, media, platform, platform_capacity, user
+from .routers import (agent, agent_remote, arena, arena_capacity, auth, ingest, media, platform, platform_capacity, portal_config, portal_frames,
+                      portal_monitor, user)
 
 CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -34,7 +35,7 @@ def create_app() -> FastAPI:
         return resp
 
     for r in (auth.router, user.router, arena.router, arena_capacity.router, platform.router, platform_capacity.router,
-              ingest.router, agent.router, media.router):
+              ingest.router, agent.router, agent_remote.router, portal_config.router, portal_frames.router, portal_monitor.router, media.router):
         app.include_router(r)
 
     @app.get("/api/health")

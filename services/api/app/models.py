@@ -348,6 +348,7 @@ class ExportJob(Base):
     music_id: Mapped[str | None] = mapped_column(ForeignKey("music_tracks.id", ondelete="SET NULL"), nullable=True)
     original_volume: Mapped[float] = mapped_column(Float, default=1.0)
     music_volume: Mapped[float] = mapped_column(Float, default=0.6)
+    frame_orientation: Mapped[str] = mapped_column(String(12), default="horizontal")  # moldura aplicada pelo agente (horizontal|vertical)
     apply_sponsors: Mapped[bool] = mapped_column(Boolean, default=True)
     overlay_spec: Mapped[str] = mapped_column(Text, default="[]")  # snapshot JSON dos patrocínios
     sponsor_template_version: Mapped[str] = mapped_column(String(16), default="")
@@ -380,3 +381,208 @@ class AuditLog(Base):
     resource_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     changed_fields: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# ====================================================================================================================
+# Configuração remota (Portal do Desenvolvedor -> API central -> agente local). Ver docs/CONFIGURACAO-REMOTA.md.
+# Segredos de câmera ficam CIFRADOS (secretbox) e nunca são devolvidos por nenhuma consulta.
+# ====================================================================================================================
+class LocalServer(Base):
+    """Servidor local de uma arena. O agente (arena_agents) é a identidade autenticada vinculada a ele."""
+    __tablename__ = "local_servers"
+    __table_args__ = (UniqueConstraint("arena_id", "name"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(String(300), default="")
+    agent_id: Mapped[str | None] = mapped_column(ForeignKey("arena_agents.id", ondelete="SET NULL"), nullable=True, unique=True)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active|revoked
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_state: Mapped[str | None] = mapped_column(String(12), nullable=True)  # último estado observado (para histórico de conexão)
+    applied_version: Mapped[int] = mapped_column(Integer, default=0)            # versão de configuração CONFIRMADA pelo agente
+    inventory_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # dispositivos/serviços informados pelo agente (sem segredos)
+    inventory_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ServerEvent(Base):
+    __tablename__ = "server_events"
+    __table_args__ = (Index("ix_srvev_server", "server_id", "created_at"),)
+    id: Mapped[str] = _id()
+    server_id: Mapped[str] = mapped_column(ForeignKey("local_servers.id", ondelete="CASCADE"))
+    arena_id: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(24))  # provisioned|connected|disconnected|revoked|config_applied|config_failed|config_reverted
+    detail: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Camera(Base):
+    __tablename__ = "cameras"
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
+    court_id: Mapped[str | None] = mapped_column(ForeignKey("courts.id", ondelete="SET NULL"), nullable=True)
+    server_id: Mapped[str | None] = mapped_column(ForeignKey("local_servers.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(80))
+    vendor: Mapped[str] = mapped_column(String(40), default="")
+    model: Mapped[str] = mapped_column(String(60), default="")
+    host: Mapped[str] = mapped_column(String(253))
+    rtsp_port: Mapped[int] = mapped_column(Integer, default=554)
+    transport: Mapped[str] = mapped_column(String(3), default="tcp")
+    rtsp_path: Mapped[str] = mapped_column(String(200), default="")
+    username: Mapped[str] = mapped_column(String(80), default="")
+    secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # senha cifrada; NUNCA exposta
+    secret_version: Mapped[int] = mapped_column(Integer, default=0)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    codec: Mapped[str] = mapped_column(String(10), default="h264")
+    profile: Mapped[str] = mapped_column(String(40), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)  # controle otimista de concorrência
+    last_test_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Controller(Base):
+    """Controlador de acionamento (Arduino USB, botoeira IP...). Capacidade real (nº de entradas) vem do firmware informado."""
+    __tablename__ = "controllers"
+    __table_args__ = (UniqueConstraint("server_id", "name"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
+    server_id: Mapped[str] = mapped_column(ForeignKey("local_servers.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(16), default="arduino_usb")  # arduino_usb|ip_button
+    name: Mapped[str] = mapped_column(String(60))
+    port_id: Mapped[str] = mapped_column(String(160), default="")   # identificador estável (by-id/serial), não /dev/ttyUSB0 fixo
+    baud: Mapped[int] = mapped_column(Integer, default=9600)
+    address: Mapped[str] = mapped_column(String(253), default="")    # botoeira IP
+    inputs_capacity: Mapped[int] = mapped_column(Integer, default=1)  # entradas suportadas pelo firmware (declarado/detectado)
+    debounce_s: Mapped[float] = mapped_column(Float, default=0.3)
+    cooldown_s: Mapped[float] = mapped_column(Float, default=3.0)
+    min_interval_s: Mapped[float] = mapped_column(Float, default=0.0)
+    reconnect_behavior: Mapped[str] = mapped_column(String(20), default="discard_pending")  # discard_pending|process_pending
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ControllerInput(Base):
+    __tablename__ = "controller_inputs"
+    __table_args__ = (UniqueConstraint("controller_id", "input_ref"),)
+    id: Mapped[str] = _id()
+    controller_id: Mapped[str] = mapped_column(ForeignKey("controllers.id", ondelete="CASCADE"), index=True)
+    arena_id: Mapped[str] = mapped_column(String(32), index=True)
+    input_ref: Mapped[str] = mapped_column(String(40))              # mensagem/entrada emitida pelo firmware (ex.: REPLAY_01)
+    label: Mapped[str] = mapped_column(String(60), default="")
+    court_id: Mapped[str | None] = mapped_column(ForeignKey("courts.id", ondelete="SET NULL"), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CourtSetting(Base):
+    """Configuração técnica de captura/replay de UMA quadra (somente Portal Dev; o gestor da arena não vê)."""
+    __tablename__ = "court_settings"
+    court_id: Mapped[str] = mapped_column(ForeignKey("courts.id", ondelete="CASCADE"), primary_key=True)
+    arena_id: Mapped[str] = mapped_column(String(32), index=True)
+    server_id: Mapped[str | None] = mapped_column(ForeignKey("local_servers.id", ondelete="SET NULL"), nullable=True)
+    pre_s: Mapped[float] = mapped_column(Float, default=15.0)
+    post_s: Mapped[float] = mapped_column(Float, default=5.0)
+    close_countdown_s: Mapped[float] = mapped_column(Float, default=2.0)
+    buffer_s: Mapped[float] = mapped_column(Float, default=120.0)
+    segment_s: Mapped[float] = mapped_column(Float, default=2.0)
+    storage_limit_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retention_days: Mapped[int] = mapped_column(Integer, default=30)
+    audio_mode: Mapped[str] = mapped_column(String(10), default="original")
+    export_formats: Mapped[str] = mapped_column(String(40), default="horizontal")  # horizontal|vertical|horizontal,vertical
+    priority: Mapped[int] = mapped_column(Integer, default=5)
+    reconnect_min_s: Mapped[float] = mapped_column(Float, default=1.0)
+    reconnect_max_s: Mapped[float] = mapped_column(Float, default=30.0)
+    frame_h_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    frame_v_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    frames_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    out_h: Mapped[str] = mapped_column(String(12), default="1920x1080")
+    out_v: Mapped[str] = mapped_column(String(12), default="1080x1920")
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Frame(Base):
+    """Moldura (biblioteca por arena). O arquivo vive em FrameVersion (versionado e com SHA-256)."""
+    __tablename__ = "frames"
+    __table_args__ = (UniqueConstraint("arena_id", "name"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(ForeignKey("arenas.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(String(300), default="")
+    orientation: Mapped[str] = mapped_column(String(12), default="horizontal")  # horizontal|vertical|other
+    kind: Mapped[str] = mapped_column(String(10), default="default")            # default|court|event|sponsor
+    court_id: Mapped[str | None] = mapped_column(ForeignKey("courts.id", ondelete="SET NULL"), nullable=True)
+    available: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_version_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class FrameVersion(Base):
+    __tablename__ = "frame_versions"
+    __table_args__ = (UniqueConstraint("frame_id", "version"),)
+    id: Mapped[str] = _id()
+    frame_id: Mapped[str] = mapped_column(ForeignKey("frames.id", ondelete="CASCADE"), index=True)
+    arena_id: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(300))
+    sha256: Mapped[str] = mapped_column(String(64))
+    bytes: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    window_json: Mapped[str] = mapped_column(Text)   # área do vídeo detectada na arte (px da imagem): {x,y,w,h}
+    layout_json: Mapped[str] = mapped_column(Text)   # composição (ver framing.py)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ConfigRevision(Base):
+    """Versão da configuração DESEJADA de um servidor. Só vale como 'aplicada' quando o AGENTE confirma."""
+    __tablename__ = "config_revisions"
+    __table_args__ = (UniqueConstraint("server_id", "version"), Index("ix_rev_server_status", "server_id", "status"))
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(String(32), index=True)
+    server_id: Mapped[str] = mapped_column(ForeignKey("local_servers.id", ondelete="CASCADE"))
+    version: Mapped[int] = mapped_column(Integer)
+    # rascunho|salvo|pendente|enviado|recebido|aplicando|aplicado|falha|revertido
+    status: Mapped[str] = mapped_column(String(12), default="salvo")
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    base_version: Mapped[int] = mapped_column(Integer, default=0)   # versão que o editor tinha carregado (concorrência)
+    allow_restart: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    reverted_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(400), nullable=True)
+
+
+class AgentTask(Base):
+    """Tarefa de DIAGNÓSTICO/OPERAÇÃO de lista fechada (sem shell). O agente a busca por conexão de saída e devolve o resultado."""
+    __tablename__ = "agent_tasks"
+    __table_args__ = (Index("ix_task_server_status", "server_id", "status", "created_at"),)
+    id: Mapped[str] = _id()
+    arena_id: Mapped[str] = mapped_column(String(32), index=True)
+    server_id: Mapped[str] = mapped_column(ForeignKey("local_servers.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(24))
+    params_json: Mapped[str] = mapped_column(Text, default="{}")  # sem segredos (o segredo é resolvido na entrega e descartado)
+    status: Mapped[str] = mapped_column(String(10), default="pending")  # pending|delivered|done|failed|expired
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)

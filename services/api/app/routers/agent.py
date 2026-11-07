@@ -152,10 +152,25 @@ def heartbeat(body: HeartbeatIn, ag: ArenaAgent = Depends(bound), db: Session = 
     capacity.record_sample(db, ag.arena_id, None, total, body.system.diskFreeBytes, body.system.diskTotalBytes, now)
     current = capacity.agent_config(db, arena)["configVersion"]
     cmds = _deliver_commands(db, ag, now)
+    remote = _remote_hint(db, ag)
     db.commit()
-    return {"ok": True, "serverTime": now.isoformat() + "Z", "epoch": settings.central_epoch, "commands": cmds,
+    return {"ok": True, "serverTime": now.isoformat() + "Z", "epoch": settings.central_epoch, "commands": cmds, "remote": remote,
             "configVersion": current, "configChanged": current != body.configVersion, "unknownCourts": unknown,
             **rotation_hint(ag)}
+
+
+def _remote_hint(db: Session, ag: ArenaAgent) -> dict:
+    """Dica barata para o agente só buscar configuração/tarefas quando houver algo (configuração remota; ver agent_remote.py)."""
+    from .. import remote_config as rc
+    from ..models import AgentTask, ConfigRevision, LocalServer
+    srv = db.query(LocalServer).filter_by(agent_id=ag.id).first()
+    if not srv or srv.status == "revoked":
+        return {"linked": False}
+    rc.record_state(db, srv)
+    pend = (db.query(ConfigRevision.version).filter(ConfigRevision.server_id == srv.id, ConfigRevision.status.in_(("pendente", "enviado", "recebido", "aplicando")))
+            .order_by(ConfigRevision.version.desc()).first())
+    tasks = db.query(AgentTask.id).filter_by(server_id=srv.id, status="pending").first() is not None
+    return {"linked": True, "pendingVersion": pend[0] if pend else None, "tasks": tasks, "appliedVersion": srv.applied_version}
 
 
 def _deliver_commands(db: Session, ag: ArenaAgent, now) -> list[dict]:
@@ -448,7 +463,7 @@ def render_next(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
         db.commit()
         return {"jobId": j.id, "purpose": j.purpose, "localId": v.local_id, "audioMode": j.audio_mode, "originalVolume": j.original_volume,
                 "musicVolume": j.music_volume, "overlays": overlays, "music": music, "leaseS": settings.render_lease_s,
-                "sponsorVersion": j.sponsor_template_version}
+                "sponsorVersion": j.sponsor_template_version, "frameOrientation": j.frame_orientation}
     return Response(status_code=204)
 
 
