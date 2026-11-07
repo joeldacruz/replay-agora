@@ -48,10 +48,10 @@ export function icon(name, { size = 24, label = '' } = {}) {
     'stroke-linecap': 'round', 'stroke-linejoin': 'round', focusable: 'false', 'aria-hidden': label ? null : 'true', role: label ? 'img' : null, 'aria-label': label || null }, el('path', { d: ICONS[name] || ICONS.alert }));
 }
 
-/** Logotipo oficial (símbolo SVG único) + nome em texto; nunca sobrepostos. */
+/** Logomarca OFICIAL (/brand/logo-horizontal-*.webp), proporção original preservada. */
 export function brand() {
-  return el('div', { class: 'g-brand', role: 'img', 'aria-label': 'Replay Agora' },
-    el('img', { class: 'g-brand-mark', src: 'assets/logo-mark.svg', alt: '', width: 80, height: 80 }), el('span', { class: 'g-brand-name', 'aria-hidden': 'true' }, 'Replay Agora'));
+  return el('span', { class: 'g-brand' }, el('img', { class: 'g-brand-logo', src: '/brand/logo-horizontal-480.webp', srcset: '/brand/logo-horizontal-480.webp 480w, /brand/logo-horizontal-960.webp 960w',
+    sizes: '150px', width: 1296, height: 460, alt: 'Replay Agora', decoding: 'async' }));
 }
 
 export const fmt = {

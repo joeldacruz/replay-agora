@@ -55,14 +55,13 @@ export function icon(name, { size = 24, filled = false, label = '' } = {}) {
   el('path', { d: ICONS[name] }));
 }
 
-// ---------------------------------------------------------------- logotipo (arquivo único: /assets/logo-mark.svg)
-/** Lockup símbolo + nome. Todas as medidas são em `em`: escala com `--brand-size` e nunca sobrepõe o texto.
- *  stacked=true  → "Replay / Agora" em duas linhas (tela de acesso); false → linha única (cabeçalhos). */
+// ---------------------------------------------------------------- logotipo OFICIAL (/brand/logo-horizontal-*.webp, gerado do arquivo original)
+/** Logomarca oficial (símbolo + "Replay / Agora"), proporção original preservada.
+ *  A altura vem de `--j-brand-size` (altura = 2 × tamanho); a largura acompanha. `stacked` só indica o uso grande (tela de acesso). */
 export function brand({ stacked = false } = {}) {
-  return el('div', { class: 'j-brand' + (stacked ? ' j-brand--stacked' : ''), role: 'img', 'aria-label': 'Replay Agora' },
-    el('img', { class: 'j-brand-mark', src: '/assets/logo-mark.svg', alt: '', width: 80, height: 80, decoding: 'async' }),
-    stacked ? el('span', { class: 'j-brand-name', 'aria-hidden': 'true' }, el('span', {}, 'Replay'), el('span', {}, 'Agora'))
-      : el('span', { class: 'j-brand-name', 'aria-hidden': 'true' }, 'Replay Agora'));
+  return el('span', { class: 'j-brand' + (stacked ? ' j-brand--stacked' : '') },
+    el('img', { class: 'j-brand-logo', src: '/brand/logo-horizontal-480.webp', srcset: '/brand/logo-horizontal-480.webp 480w, /brand/logo-horizontal-960.webp 960w',
+      sizes: stacked ? '(min-width: 1024px) 360px, 240px' : '170px', width: 1296, height: 460, alt: 'Replay Agora', decoding: 'async' }));
 }
 
 // ---------------------------------------------------------------- ondas inferiores (azul · coral · branco)

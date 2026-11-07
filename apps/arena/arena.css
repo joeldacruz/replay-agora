@@ -35,9 +35,8 @@ body.g-body { margin: 0; background: var(--paper); color: var(--ink); font: 16px
 .g-main { position: relative; margin-top: -44px; padding: 0 var(--gutter) 28px; display: grid; gap: 16px; }
 
 /* ---------------------------------------------------------------- 4. COMPONENTES */
-.g-brand { display: inline-flex; align-items: center; gap: .5em; font-size: 1.15rem; }
-.g-brand-mark { width: 1.6em; height: 1.6em; display: block; }
-.g-brand-name { font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
+.g-brand { display: inline-flex; align-items: center; line-height: 0; }
+.g-brand-logo { display: block; height: 44px; width: auto; }
 .g-switch { position: relative; display: inline-flex; align-items: center; max-width: 58%; }
 .g-switch select { appearance: none; max-width: 100%; min-height: 44px; padding: 8px 36px 8px 14px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 999px; background: rgba(255, 255, 255, .12); color: #fff; font-weight: 700; text-overflow: ellipsis; }
 .g-switch select option { color: var(--ink); }
@@ -124,7 +123,7 @@ dialog.g-sheet::backdrop { background: rgba(2, 12, 38, .6); }
 @media (min-width: 1100px) {
   body.g-body { --rail: 92px; --nav-h: 0px; --col: 1000px; }
   .g-nav { inset: 0 auto 0 0; width: var(--rail); height: auto; grid-template-columns: 1fr; grid-auto-rows: 76px; align-content: start; gap: 6px; padding: 16px 8px; border-radius: 0 24px 24px 0; }
-  .g-nav-logo { display: grid; place-items: center; height: 56px; margin-bottom: 10px; } .g-nav-logo img { width: 40px; height: 40px; }
+  .g-nav-logo { display: grid; place-items: center; height: 56px; margin-bottom: 10px; } .g-nav-logo img { width: 48px; height: auto; }
   .g-toast { bottom: 24px; }
   .g-app { padding-bottom: 0; }
 }

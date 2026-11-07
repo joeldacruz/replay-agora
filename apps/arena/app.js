@@ -43,7 +43,7 @@ const NAV = [['/', 'Início', 'home'], ['/replays', 'Replays', 'replays'], ['/ge
 function nav() {
   const cur = location.hash.slice(1).split('?')[0] || '/';
   const active = (p) => (p === '/' ? cur === '/' : cur === p || cur.startsWith(p + '/'));
-  return el('nav', { class: 'g-nav', 'aria-label': 'Navegação principal' }, el('span', { class: 'g-nav-logo' }, el('img', { src: 'assets/logo-mark.svg', alt: 'Replay Agora', width: 40, height: 40 })),
+  return el('nav', { class: 'g-nav', 'aria-label': 'Navegação principal' }, el('span', { class: 'g-nav-logo' }, el('img', { src: '/brand/logo-symbol-96.webp', srcset: '/brand/logo-symbol-96.webp 96w, /brand/logo-symbol-192.webp 192w', sizes: '48px', alt: 'Replay Agora', width: 394, height: 413 })),
     NAV.map(([p, l, i]) => el('a', { href: '#' + p, 'aria-current': active(p) ? 'page' : null }, icon(i, { size: 26 }), l)));
 }
 

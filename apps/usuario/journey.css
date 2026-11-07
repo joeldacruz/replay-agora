@@ -66,14 +66,8 @@ body.j-body {
 /* ---------------------------------------------------------------- 4. COMPONENTES */
 
 /* 4.1 Logotipo — tudo em `em`: o símbolo escala junto com o texto e nunca o sobrepõe */
-.j-brand {
-  display: inline-flex; align-items: center; gap: .3em;
-  font-size: var(--j-brand-size); font-weight: 800; letter-spacing: -.04em; line-height: 1; color: #fff;
-  white-space: nowrap;
-}
-.j-brand-mark { flex: none; width: 1.5em; height: 1.5em; display: block; }
-.j-brand--stacked .j-brand-mark { width: 1.95em; height: 1.95em; }
-.j-brand--stacked .j-brand-name { display: grid; line-height: .98; letter-spacing: -.05em; }
+.j-brand { display: inline-flex; align-items: center; line-height: 0; }
+.j-brand-logo { display: block; height: calc(var(--j-brand-size) * 2); width: auto; max-width: 100%; }
 
 /* 4.2 Fundo azul premium com luz ciano (hero e cabeçalhos) */
 .j-hero, .j-header {

@@ -44,7 +44,8 @@ def create_app() -> FastAPI:
     # Três aplicações estáticas independentes + pacote compartilhado de UI (sem build).
     root = settings.frontend_dir
     for mount, folder in (("/shared", root / "packages" / "ui"), ("/portal", root / "apps" / "portal-dev"),
-                          ("/arena", root / "apps" / "arena"), ("/", root / "apps" / "usuario")):
+                          ("/arena", root / "apps" / "arena"), ("/brand", root / "apps" / "shared" / "assets" / "branding"),
+                          ("/", root / "apps" / "usuario")):
         if Path(folder).is_dir():
             app.mount(mount, StaticFiles(directory=folder, html=True), name=mount.strip("/") or "usuario")
     return app
