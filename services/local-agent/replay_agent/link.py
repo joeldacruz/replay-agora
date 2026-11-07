@@ -32,6 +32,7 @@ class CentralLink:
         self.governor = governor
         self.diag_provider = None          # callable() -> dict (diagnóstico completo)
         self.command_handler = None        # callable(cmd) -> dict(outcome, jobId, detail)
+        self.remote_tick = None            # callable(hint) -> None  (configuração remota: aplica pendências, tarefas e inventário)
         self.last_ok_at: float | None = None
         self.rotations = 0
 
@@ -117,6 +118,13 @@ class CentralLink:
                 self._register()
                 self.store.requeue_recent(self.resync_hours)
             self._run_commands(hb.get("commands", []))
+            if self.remote_tick is not None:
+                try:
+                    self.remote_tick(hb.get("remote"))
+                except (CentralUnavailable, CentralRejected):
+                    raise
+                except Exception:  # noqa: BLE001 - a configuração remota nunca derruba o ciclo de sincronização
+                    pass
             if hb.get("rotateRecommended") and self.creds is not None:
                 self.rotate_credentials()
             if hb.get("configChanged"):

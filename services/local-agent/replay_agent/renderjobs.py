@@ -64,7 +64,8 @@ def verify_output(path: Path, mode: str, expected: float, ffprobe: str = "ffprob
 class RenderWorker:
     def __init__(self, client: CentralClient, store: LocalStore, renders_dir: Path, ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe",
                  timeout_s: int = 600, nice: int = 10, allowed_source_roots: list[Path] | None = None,
-                 governor: ResourceGovernor | None = None):
+                 governor: ResourceGovernor | None = None, frame_provider=None):
+        self.frame_provider = frame_provider      # callable(court_key, orientation) -> FramePlan | None (cache local; nunca a central)
         self.client, self.store, self.dir = client, store, Path(renders_dir)
         self.ffmpeg, self.ffprobe, self.timeout_s, self.nice = ffmpeg, ffprobe, timeout_s, nice
         self.roots = [Path(r).resolve() for r in (allowed_source_roots or [])]
@@ -135,8 +136,15 @@ class RenderWorker:
             overlays.append(Overlay(str(p), o["logoW"], o["logoH"], o["position"], o["sizePct"], o["opacity"], o["durationS"]))
         music = self._fetch_asset(spec["jobId"], spec["music"]["asset"], spec["music"]["sha256"], tmp) if spec.get("music") else None
         out = tmp / "out.mp4"
+        frame = None
+        if self.frame_provider is not None:
+            row = self.store.get(spec["localId"])
+            try:
+                frame = self.frame_provider(row["court_key"], spec.get("frameOrientation") or "horizontal")
+            except Exception as e:  # noqa: BLE001 - FrameUnavailable: configurada mas ausente => recusa (nunca entrega sem a moldura configurada)
+                raise RenderError(str(e) or "moldura indisponível") from e
         plan = ExportPlan(str(src), str(out), meta, spec["audioMode"], str(music) if music else None,
-                          spec["originalVolume"], spec["musicVolume"], overlays)
+                          spec["originalVolume"], spec["musicVolume"], overlays, frame)
         meta_dur = meta.duration
         from contextlib import nullcontext
         with (self.governor.slot() if self.governor else nullcontext()):        # limite de FFmpeg e pausa se a captura atrasar

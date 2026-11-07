@@ -33,7 +33,8 @@ class BufferClipRenderer:
         self.governor = governor
 
     def ready_at(self, court_key: str, at_epoch: float, post: float) -> float | None:
-        return at_epoch + post + self.cams[court_key].segment_s + self.grace
+        clip = self.clips.get(court_key)
+        return at_epoch + post + self.cams[court_key].segment_s + (clip.close_s if clip is not None else self.grace)
 
     def _recording(self, court_key: str) -> bool:
         r = self.recorders.get(court_key)

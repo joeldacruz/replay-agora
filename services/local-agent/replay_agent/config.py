@@ -68,6 +68,7 @@ class ClipCfg:
     min_pre_s: float = 5.0             # sem cobertura contínua de pelo menos [t0-min_pre, t0+min_post] => irrecuperável
     min_post_s: float = 2.0
     gap_tolerance_s: float = 2.5
+    close_s: float = 2.0               # contagem para fechamento do replay após o fim da janela (espera o último segmento fechar)
     mode: str = "copy"                 # copy (barato; corta no keyframe) | encode (exato; custa CPU/GPU)
     renderer: str = "internal"         # internal | external_command (adaptador para replay.py legado)
     command: list[str] | None = None   # modelo com {court} {t0} {t0_iso} {pre} {post} {out}
@@ -91,6 +92,7 @@ class SerialCfg:
     log_file: str | None = None
     journal_unit: str | None = None    # ex.: replayagora-leitor.service
     regex: str = r"(REPLAY_[A-Za-z0-9_\-]+)"
+    reconnect: str = "discard_pending"  # a reabertura descarta o que ficou acumulado (único comportamento implementado)
 
 
 @dataclass
@@ -122,6 +124,7 @@ class AgentCfg:
     resources: ResourceCfg = field(default_factory=ResourceCfg)
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
+    raw: dict | None = None            # dicionário de origem (base para a configuração remota mesclar quadras/controladores)
 
     def button_map(self) -> dict[str, str]:
         return {b: c.key for c in self.courts for b in c.trigger.buttons}
@@ -215,7 +218,7 @@ def parse(data: dict) -> AgentCfg:
     if errs:
         raise ConfigError(errs)
     return AgentCfg(arena_tag=tag, data_dir=Path(data["data_dir"]), courts=courts, serial=serial, central=central, resources=res,
-                    ffmpeg_bin=data.get("ffmpeg_bin", "ffmpeg"), ffprobe_bin=data.get("ffprobe_bin", "ffprobe"))
+                    ffmpeg_bin=data.get("ffmpeg_bin", "ffmpeg"), ffprobe_bin=data.get("ffprobe_bin", "ffprobe"), raw=data)
 
 
 def load_config(path: str | Path) -> AgentCfg:

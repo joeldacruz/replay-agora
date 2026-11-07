@@ -5,6 +5,8 @@ O teste `test_ffplan_matches_central_worker` garante que os dois geram exatament
 """
 from dataclasses import dataclass, field
 
+from . import framing
+
 
 MARGIN_PCT = 2.0
 
@@ -42,6 +44,18 @@ class Overlay:
 
 
 @dataclass
+class FramePlan:
+    """Moldura PNG por cima do vídeo (composição feita NA EXPORTAÇÃO; o arquivo de origem e o buffer nunca são alterados)."""
+    path: str
+    width: int
+    height: int
+    window: dict          # janela do vídeo na arte (px da imagem)
+    layout: dict
+    out_w: int
+    out_h: int
+
+
+@dataclass
 class ExportPlan:
     src: str
     out: str
@@ -51,6 +65,7 @@ class ExportPlan:
     original_volume: float = 1.0
     music_volume: float = 0.6
     overlays: list[Overlay] = field(default_factory=list)
+    frame: FramePlan | None = None  # None = comando idêntico ao do worker central
 
 
 class PlanError(ValueError):
@@ -70,6 +85,11 @@ def build_command(p: ExportPlan, ffmpeg: str = "ffmpeg", hw=None) -> list[str]:
 
     cmd = [ffmpeg, "-y", "-v", "error", "-nostdin", *(hw.input_args() if hw else []), "-i", p.src]
     idx = 1
+    frame_idx = None
+    if p.frame:
+        cmd += ["-loop", "1", "-framerate", "25", "-i", p.frame.path]
+        frame_idx = idx
+        idx += 1
     logo_idx = []
     for o in p.overlays:
         cmd += ["-loop", "1", "-framerate", "25", "-i", o.path]
@@ -82,10 +102,24 @@ def build_command(p: ExportPlan, ffmpeg: str = "ffmpeg", hw=None) -> list[str]:
 
     filters: list[str] = []
     vmap, vcodec = "0:v:0", ["-c:v", "copy"]
-    if p.overlays:
-        cur = "[0:v]"
+    W, H = m.width, m.height
+    base_label = "[0:v]"
+    if p.frame:
+        f = p.frame
+        geom = framing.compute(f.layout, f.out_w, f.out_h, f.width, f.height, f.window)
+        vid = framing.video_geometry(geom["window"], m.width, m.height, f.layout)
+        filters += framing.build_filters(geom, vid, f.layout, src="0:v", frame=f"{frame_idx}:v", out="vfr")
+        base_label, W, H = "[vfr]", f.out_w, f.out_h
+    if p.frame and not p.overlays:
+        vmap = base_label
+        vcodec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]
+        if hw:
+            filters.append(f"{base_label}{hw.upload()}[vhw]")
+            vmap, vcodec = "[vhw]", hw.encoder()
+    elif p.overlays:
+        cur = base_label
         for n, (o, li) in enumerate(zip(p.overlays, logo_idx)):
-            x, y, w, h = overlay_geometry(m.width, m.height, o.logo_w, o.logo_h, o.position, o.size_pct)
+            x, y, w, h = overlay_geometry(W, H, o.logo_w, o.logo_h, o.position, o.size_pct)
             filters.append(f"[{li}:v]format=rgba,scale={w}:{h},colorchannelmixer=aa={o.opacity:.3f}[lg{n}]")
             en = f":enable='between(t,0,{o.duration_s:.3f})'" if o.duration_s else ""
             filters.append(f"{cur}[lg{n}]overlay=x={x}:y={y}:shortest=1{en}[v{n}]")
