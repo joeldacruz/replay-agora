@@ -224,7 +224,7 @@ body.j-body {
 .j-header--arena { padding-bottom: 62px; }
 .j-arena-body { position: relative; margin-top: -42px; }
 .j-arena-card { display: flex; align-items: center; gap: 14px; padding: 16px; }
-.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; color: var(--j-ink); }
+.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; color: var(--j-ink); border-radius: 12px; overflow: hidden; }
 .j-arena-id { flex: 1; min-width: 0; display: grid; padding-left: 14px; border-left: 1.5px solid var(--j-line); }
 .j-arena-id strong { font-size: 1.3rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
 .j-arena-id small { color: var(--j-muted); font-size: .95rem; }
