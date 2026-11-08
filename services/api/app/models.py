@@ -28,6 +28,14 @@ class User(Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     mfa_last_step: Mapped[int] = mapped_column(Integer, default=0)  # anti-replay
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # --- gestão de usuários (migração 0011) ---
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    auth_method: Mapped[str] = mapped_column(String(10), default="password")  # métodos PERMITIDOS: password|google|both
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    password_set_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    google_link_allowed: Mapped[bool] = mapped_column(Boolean, default=False)  # convite autoriza vincular o Google deste e-mail (1 vez)
+    tokens_valid_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # revoga sessões emitidas antes
 
 
 class Plan(Base):
@@ -586,3 +594,71 @@ class AgentTask(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+# ====================================================================================================================
+# Gestão de usuários e login Google (migração 0011)
+# ====================================================================================================================
+class UserIdentity(Base):
+    """Identidade externa vinculada à conta. Chave estável = (provider, sub); o e-mail NUNCA identifica a conta."""
+    __tablename__ = "user_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject"), UniqueConstraint("user_id", "provider"))
+    id: Mapped[str] = _id()
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    subject: Mapped[str] = mapped_column(String(64))
+    email: Mapped[str] = mapped_column(String(254))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthFlow(Base):
+    """Fluxo Authorization Code + PKCE em andamento (state de uso único, nonce, code_verifier) e ticket de entrega ao navegador."""
+    __tablename__ = "oauth_flows"
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    app: Mapped[str] = mapped_column(String(10))
+    intent: Mapped[str] = mapped_column(String(8), default="login")  # login|link
+    nonce: Mapped[str] = mapped_column(String(64))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)   # intent=link: quem está vinculando
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ticket_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    ticket_user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ticket_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ticket_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AccountToken(Base):
+    """Convite / definição / redefinição de senha: token de uso único, só o hash fica no banco."""
+    __tablename__ = "account_tokens"
+    id: Mapped[str] = _id()
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # invite|reset
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class OutboxMail(Base):
+    """E-mails gerados. Com SMTP configurado só registra o envio; sem SMTP (homologação) guarda o texto para o global_admin entregar."""
+    __tablename__ = "outbox_mail"
+    id: Mapped[str] = _id()
+    to_email: Mapped[str] = mapped_column(String(254))
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(10), default="")
+    status: Mapped[str] = mapped_column(String(10), default="outbox")  # outbox|sent|failed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class IntegrationSetting(Base):
+    """Configurações protegidas (ex.: credenciais OAuth do Google). Segredo cifrado (secretbox); nunca devolvido."""
+    __tablename__ = "integration_settings"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value_enc: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

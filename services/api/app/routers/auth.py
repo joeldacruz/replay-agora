@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, userman
 from ..config import settings
-from ..db import get_db
+from ..db import get_db, utcnow
 from ..deps import ARENA_STAFF, Auth, active_arena_ids, user_auth, arena_auth, _platform_base
 from ..models import Membership, User
 from ..ratelimit import RateLimiter
@@ -42,10 +42,15 @@ def _authenticate(db: Session, request: Request, c: Credentials) -> User:
     email = _norm(c.email)
     limiter.check(f"{request.client.host if request.client else '-'}:{email}")
     u = db.query(User).filter_by(email=email).first()
-    ok = verify_password(c.password, u.password_hash if u else DUMMY_HASH)
-    if not u or not ok or not u.active:
+    pw_allowed = bool(u) and u.auth_method in ("password", "both") and u.password_hash != userman.UNUSABLE
+    ok = verify_password(c.password, u.password_hash if pw_allowed else DUMMY_HASH)
+    if not u or not ok or not pw_allowed or not u.active:
         raise HTTPException(401, "e-mail ou senha incorretos")
     return u
+
+
+def mark_login(db: Session, u: User) -> None:
+    u.last_login_at = utcnow()
 
 
 def _me(db: Session, u: User) -> dict:
@@ -69,6 +74,8 @@ def register(body: Register, request: Request, db: Session = Depends(get_db)):
 @router.post("/user/login")
 def user_login(body: Credentials, request: Request, db: Session = Depends(get_db)):
     u = _authenticate(db, request, body)
+    mark_login(db, u)
+    db.commit()
     return {"token": create_access_token(u.id, "user"), "user": _me(db, u)}
 
 
@@ -78,6 +85,8 @@ def arena_login(body: Credentials, request: Request, db: Session = Depends(get_d
     if not active_arena_ids(db, u, ARENA_STAFF):
         # mesma mensagem genérica: não revela se a conta existe só como atleta
         raise HTTPException(403, "esta conta não gerencia nenhuma arena ativa")
+    mark_login(db, u)
+    db.commit()
     return {"token": create_access_token(u.id, "arena"), "user": _me(db, u)}
 
 
@@ -130,6 +139,7 @@ def mfa_verify(body: Totp, request: Request, authorization: str | None = Header(
     u.mfa_last_step = step
     u.mfa_enabled = True
     audit.record(db, u.id, None, "platform.mfa_enabled" if first else "platform.login", "user", u.id)
+    mark_login(db, u)
     db.commit()
     return {"token": create_access_token(u.id, "platform", mfa=True), "user": _me(db, u)}
 
@@ -159,3 +169,31 @@ def _me_full(db: Session, a: Auth, staff_only: bool = False) -> dict:
     return _me(db, a.user) | {"memberships": [
         {"arenaId": ar.id, "arenaSlug": ar.slug, "arenaName": ar.name, "role": m.role, "brandColor": ar.brand_color}
         for m, ar in q.all()]}
+
+
+# ---------- convite / redefinição de senha (token de uso único enviado por e-mail) ----------
+class SetPassword(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=10, max_length=200)
+
+
+@router.get("/password/check")
+def password_check(token: str, request: Request, db: Session = Depends(get_db)):
+    limiter.check(f"pwc:{request.client.host if request.client else '-'}")
+    t, u = userman.consume_token(db, token)
+    return {"kind": t.kind, "name": u.name, "email": u.email, "authMethod": u.auth_method}
+
+
+@router.post("/password/set")
+def password_set(body: SetPassword, request: Request, db: Session = Depends(get_db)):
+    limiter.check(f"pws:{request.client.host if request.client else '-'}")
+    t, u = userman.consume_token(db, body.token)
+    if u.auth_method == "google":
+        u.auth_method = "both"  # definir senha por convite/reset habilita também e-mail+senha
+    u.password_hash = hash_password(body.password)
+    u.password_set_at = utcnow()
+    u.tokens_valid_after = utcnow()  # revoga sessões anteriores
+    t.used_at = utcnow()
+    audit.record(db, u.id, None, f"userman.password_{t.kind}", "user", u.id, {"email": u.email})
+    db.commit()
+    return {"ok": True}

@@ -7,11 +7,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, capacity
+from .. import audit, capacity, mailer, userman
 from ..db import get_db, utcnow
 from ..deps import Auth, platform_auth
-from ..models import (AuditLog, Arena, ArenaAgent, Court, ExportJob, Membership, Plan, ReplayEvent, User, Video)
+from ..models import (AuditLog, Arena, ArenaAgent, Court, ExportJob, Membership, OutboxMail, Plan, ReplayEvent, User, Video)
 from ..security import hash_password
+from ..userschemas import MemberChange, NewMember
 from .arena import storage_used
 from .serializers import iso
 
@@ -69,7 +70,22 @@ class ArenaIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     planId: str | None = None
     timezone: str = "America/Sao_Paulo"
-    adminEmail: str | None = Field(None, max_length=254)
+    adminEmail: str | None = Field(None, max_length=254)  # legado: conta existente
+    manager: "ManagerIn | None" = None
+
+
+class ManagerIn(BaseModel):
+    """Gestor inicial da arena: 'existing' (userId/email de conta existente) ou 'new' (cadastro no mesmo ato)."""
+    mode: str = Field(pattern=r"^(existing|new)$")
+    userId: str | None = None
+    email: str | None = Field(None, max_length=254)
+    name: str | None = Field(None, max_length=120)
+    phone: str | None = Field(None, max_length=30)
+    authMethod: str = "password"
+    sendInvite: bool = True
+
+
+ArenaIn.model_rebuild()
 
 
 class ArenaPatch(BaseModel):
@@ -104,23 +120,44 @@ def arenas(a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     return [_arena_out(db, r) for r in db.query(Arena).order_by(Arena.name)]
 
 
+def _actor(a: Auth) -> userman.Actor:
+    return userman.Actor("platform", a.user)
+
+
 @router.post("/arenas", status_code=201)
 def create_arena(body: ArenaIn, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    """Arena + primeiro gestor em UMA transação: se o gestor falhar (e-mail duplicado, inválido…), nada é gravado."""
     _valid_tz(body.timezone)
     if db.query(Arena).filter_by(slug=body.slug).first():
         raise HTTPException(409, "slug já utilizado")
     if body.planId and not db.get(Plan, body.planId):
         raise HTTPException(422, "plano inexistente")
-    ar = Arena(slug=body.slug, name=body.name.strip(), plan_id=body.planId, timezone=body.timezone)
-    db.add(ar)
-    db.flush()
-    if body.adminEmail:
-        u = db.query(User).filter_by(email=body.adminEmail.strip().lower()).first()
-        if not u:
-            raise HTTPException(404, "responsável não cadastrado")
-        db.add(Membership(user_id=u.id, arena_id=ar.id, role="arena_admin"))
-    audit.record(db, a.user.id, ar.id, "platform.arena_create", "arena", ar.id, body.model_dump())
-    db.commit()
+    mg = body.manager
+    if body.adminEmail and not mg:
+        mg = ManagerIn(mode="existing", email=body.adminEmail)
+    try:
+        ar = Arena(slug=body.slug, name=body.name.strip(), plan_id=body.planId, timezone=body.timezone)
+        db.add(ar)
+        db.flush()
+        audit.record(db, a.user.id, ar.id, "platform.arena_create", "arena", ar.id,
+                     {**body.model_dump(exclude={"manager"}), "manager": mg.mode if mg else None})
+        if mg:
+            act = _actor(a)
+            if mg.mode == "existing":
+                u = db.get(User, mg.userId) if mg.userId else (
+                    db.query(User).filter_by(email=userman.norm_email(mg.email)).first() if mg.email else None)
+                if not u:
+                    raise HTTPException(404, "responsável não cadastrado")
+                userman.create_or_link(db, act, ar, name=None, email=u.email, role="arena_admin", link_existing=True)
+            else:
+                if not mg.email or not mg.name:
+                    raise HTTPException(422, "informe nome e e-mail do gestor")
+                userman.create_or_link(db, act, ar, name=mg.name, email=mg.email, role="arena_admin", phone=mg.phone,
+                                       auth_method=mg.authMethod, send_invite=mg.sendInvite)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return _arena_out(db, ar)
 
 
@@ -172,25 +209,56 @@ def assign_admin(arena_id: str, body: AdminAssign, a: Auth = Depends(platform_au
     return _arena_out(db, ar)
 
 
-# ---- usuários ----
+# ---- usuários (visão global) ----
 class UserPatch(BaseModel):
     active: bool | None = None
     globalRole: str | None = Field(None, pattern=r"^(global_admin|none)$")
+    name: str | None = Field(None, max_length=120)
+    phone: str | None = Field(None, max_length=30)
+    authMethod: str | None = None
+
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(max_length=254)
+    phone: str | None = Field(None, max_length=30)
+    authMethod: str = "password"
+    globalRole: str | None = Field(None, pattern=r"^(global_admin)$")
+    sendInvite: bool = True
 
 
 @router.get("/users")
-def users(q: str | None = Query(None, max_length=60), limit: int = Query(50, ge=1, le=200),
+def users(q: str | None = Query(None, max_length=60), role: str | None = Query(None, max_length=20),
+          status: str | None = Query(None, pattern=r"^(active|inactive|suspended)$"), limit: int = Query(100, ge=1, le=300),
           a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
-    qs = db.query(User)
-    if q:
-        qs = qs.filter((User.email.ilike(f"%{q}%")) | (User.name.ilike(f"%{q}%")))
-    out = []
-    for u in qs.order_by(User.created_at.desc()).limit(limit):
-        ms = db.query(Membership, Arena).join(Arena, Arena.id == Membership.arena_id).filter(Membership.user_id == u.id).all()
-        out.append({"id": u.id, "name": u.name, "email": u.email, "active": u.active, "globalRole": u.global_role,
-                    "mfaEnabled": u.mfa_enabled,
-                    "memberships": [{"arenaId": ar.id, "arena": ar.name, "role": m.role, "status": m.status} for m, ar in ms]})
-    return out
+    return userman.list_users(db, None, q, role, status, limit=limit)
+
+
+@router.post("/users", status_code=201)
+def create_user(body: UserCreate, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    """Cria conta sem vínculo (ex.: novo administrador global ou usuário a vincular depois)."""
+    e = userman.norm_email(body.email)
+    if db.query(User).filter_by(email=e).first():
+        raise HTTPException(409, detail={"code": "email_exists", "message": "já existe uma conta com este e-mail"})
+    if body.authMethod not in userman.AUTH_METHODS:
+        raise HTTPException(422, "método de autenticação inválido")
+    u = User(name=body.name.strip(), email=e, password_hash=userman.UNUSABLE, phone=userman.norm_phone(body.phone),
+             auth_method=body.authMethod, global_role=body.globalRole, google_link_allowed=body.authMethod in ("google", "both"))
+    db.add(u)
+    db.flush()
+    userman.log(db, _actor(a), None, "create", u, {"globalRole": body.globalRole, "authMethod": body.authMethod})
+    if body.sendInvite:
+        userman.issue_token(db, u, "invite", a.user.id)
+    db.commit()
+    return userman.user_out(db, u)
+
+
+@router.get("/users/{user_id}")
+def get_user(user_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(404, "usuário não encontrado")
+    return userman.user_out(db, u)
 
 
 @router.patch("/users/{user_id}")
@@ -199,17 +267,125 @@ def patch_user(user_id: str, body: UserPatch, a: Auth = Depends(platform_auth), 
     if not u:
         raise HTTPException(404, "usuário não encontrado")
     ch = body.model_dump(exclude_unset=True)
+    act = _actor(a)
     if u.id == a.user.id and (ch.get("active") is False or ch.get("globalRole") == "none"):
         raise HTTPException(409, "não é possível remover o próprio acesso")
-    if "active" in ch:
-        u.active = ch["active"]
+    if "active" in ch and ch["active"] != u.active:
+        userman.set_account_active(db, act, u, ch["active"])
     if "globalRole" in ch:
-        u.global_role = "global_admin" if ch["globalRole"] == "global_admin" else None
-        if u.global_role is None:
-            u.mfa_enabled, u.mfa_secret = False, None
-    audit.record(db, a.user.id, None, "platform.user_update", "user", u.id, ch)
+        new = "global_admin" if ch["globalRole"] == "global_admin" else None
+        if new != u.global_role:
+            u.global_role = new
+            if new is None:
+                u.mfa_enabled, u.mfa_secret = False, None
+                u.tokens_valid_after = utcnow()
+            userman.log(db, act, None, "global_role", u, {"globalRole": new})
+    if {"name", "phone", "authMethod"} & ch.keys():
+        userman.update_profile(db, act, u, name=ch.get("name"), phone=ch.get("phone", "__unset__"), auth_method=ch.get("authMethod"))
     db.commit()
-    return {"id": u.id, "active": u.active, "globalRole": u.global_role}
+    return userman.user_out(db, u)
+
+
+@router.post("/users/{user_id}/invite")
+def resend_invite(user_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    u = db.get(User, user_id)
+    if not u or not u.active:
+        raise HTTPException(404, "usuário não encontrado ou inativo")
+    if u.password_set_at or u.last_login_at:
+        raise HTTPException(409, "este usuário já ativou o acesso; use 'Redefinir acesso'")
+    userman.issue_token(db, u, "invite", a.user.id)
+    userman.log(db, _actor(a), None, "invite_resend", u)
+    db.commit()
+    return {"sent": True}
+
+
+@router.post("/users/{user_id}/reset-access")
+def reset_access(user_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    u = db.get(User, user_id)
+    if not u or not u.active:
+        raise HTTPException(404, "usuário não encontrado ou inativo")
+    userman.issue_token(db, u, "reset", a.user.id)
+    userman.log(db, _actor(a), None, "reset_access", u)
+    db.commit()
+    return {"sent": True}
+
+
+@router.get("/users/{user_id}/history")
+def user_history(user_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    if not db.get(User, user_id):
+        raise HTTPException(404, "usuário não encontrado")
+    return userman.history(db, user_id=user_id)
+
+
+# ---- usuários por arena (aba "Gestores e Usuários") ----
+def _arena_or_404(db: Session, arena_id: str) -> Arena:
+    ar = db.get(Arena, arena_id)
+    if not ar:
+        raise HTTPException(404, "arena não encontrada")
+    return ar
+
+
+def _membership_or_404(db: Session, arena_id: str, mid: str) -> Membership:
+    m = db.get(Membership, mid)
+    if not m or m.arena_id != arena_id:
+        raise HTTPException(404, "vínculo não encontrado")
+    return m
+
+
+@router.get("/arenas/{arena_id}/members")
+def arena_members(arena_id: str, q: str | None = Query(None, max_length=60), role: str | None = Query(None, max_length=20),
+                  status: str | None = Query(None, pattern=r"^(active|suspended|inactive)$"),
+                  a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    _arena_or_404(db, arena_id)
+    return userman.list_members(db, arena_id, q, role, status)
+
+
+@router.post("/arenas/{arena_id}/members", status_code=201)
+def arena_member_add(arena_id: str, body: NewMember, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    ar = _arena_or_404(db, arena_id)
+    link = body.linkExisting
+    if body.name is None:
+        if not db.query(User).filter_by(email=body.email.strip().lower()).first():
+            raise HTTPException(404, "usuário não cadastrado (informe o nome para cadastrar um novo usuário)")
+        link = True
+    r = userman.create_or_link(db, _actor(a), ar, name=body.name, email=body.email, role=body.role, phone=body.phone,
+                               active=body.active, auth_method=body.authMethod, link_existing=link, send_invite=body.sendInvite)
+    db.commit()
+    return {**userman.member_row(r["user"]), "created": r["created"]}
+
+
+@router.patch("/arenas/{arena_id}/members/{member_id}")
+def arena_member_patch(arena_id: str, member_id: str, body: MemberChange, a: Auth = Depends(platform_auth),
+                       db: Session = Depends(get_db)):
+    ar = _arena_or_404(db, arena_id)
+    m = _membership_or_404(db, arena_id, member_id)
+    act, ch = _actor(a), body.model_dump(exclude_unset=True)
+    userman.change_membership(db, act, ar, m, role=ch.get("role"), status=ch.get("status"))
+    if {"name", "phone", "authMethod"} & ch.keys():
+        userman.update_profile(db, act, db.get(User, m.user_id), name=ch.get("name"), phone=ch.get("phone", "__unset__"),
+                               auth_method=ch.get("authMethod"), arena_id=arena_id)
+    db.commit()
+    return userman.member_row(userman.user_out(db, db.get(User, m.user_id), arena_id))
+
+
+@router.delete("/arenas/{arena_id}/members/{member_id}", status_code=204)
+def arena_member_remove(arena_id: str, member_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    ar = _arena_or_404(db, arena_id)
+    userman.remove_membership(db, _actor(a), ar, _membership_or_404(db, arena_id, member_id))
+    db.commit()
+
+
+@router.get("/arenas/{arena_id}/history")
+def arena_history(arena_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    _arena_or_404(db, arena_id)
+    return userman.history(db, arena_id=arena_id)
+
+
+@router.get("/outbox")
+def outbox(limit: int = Query(50, ge=1, le=200), a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    """Caixa de saída de homologação (sem SMTP). Visível só ao global_admin; mensagens enviadas por SMTP não retêm conteúdo."""
+    return [{"id": r.id, "to": r.to_email, "subject": r.subject, "body": r.body, "kind": r.kind, "status": r.status,
+             "createdAt": iso(r.created_at)} for r in db.query(OutboxMail).order_by(OutboxMail.created_at.desc()).limit(limit)]
 
 
 # ---- agentes / status / auditoria ----

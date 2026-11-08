@@ -1,3 +1,4 @@
+import calendar
 import base64
 import hashlib
 import hmac
@@ -33,7 +34,8 @@ DUMMY_HASH = _ph.hash("dummy-password-for-timing")
 
 
 def _encode(payload: dict, ttl_s: int) -> str:
-    payload = {**payload, "exp": utcnow() + timedelta(seconds=ttl_s)}
+    now = utcnow()
+    payload = {**payload, "iat": calendar.timegm(now.utctimetuple()), "iatm": calendar.timegm(now.utctimetuple()) * 1000 + now.microsecond // 1000, "exp": now + timedelta(seconds=ttl_s)}
     return jwt.encode(payload, settings.secret_key, algorithm=_ALG)
 
 

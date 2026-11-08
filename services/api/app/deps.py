@@ -1,4 +1,5 @@
 """Autorização centralizada. Todo endpoint protegido passa por uma destas dependências."""
+import calendar
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException
@@ -34,6 +35,8 @@ def _auth(app: str):
         user = db.get(User, claims["sub"])
         if not user or not user.active:
             raise HTTPException(401, "sessão inválida ou expirada")
+        if user.tokens_valid_after and int(claims.get("iatm", 0)) < (calendar.timegm(user.tokens_valid_after.utctimetuple()) * 1000 + user.tokens_valid_after.microsecond // 1000):
+            raise HTTPException(401, "sessão revogada: entre novamente")      # troca/redefinição de senha revoga sessões anteriores
         return Auth(user, app, bool(claims.get("mfa")))
     return dep
 

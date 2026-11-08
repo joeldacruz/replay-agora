@@ -78,6 +78,23 @@ class Settings:
         if self.node_role not in ("primary", "standby"):
             raise RuntimeError("NODE_ROLE deve ser 'primary' ou 'standby'")
         self.central_epoch = _env_int("CENTRAL_EPOCH", 1)
+        # Gestão de usuários / e-mail / Google (segredos só por ambiente ou pelo cofre cifrado do Portal; nunca no frontend/Git)
+        self.public_base_url = os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+        self.smtp_host = os.environ.get("SMTP_HOST", "")
+        self.smtp_port = _env_int("SMTP_PORT", 587)
+        self.smtp_user = os.environ.get("SMTP_USER", "")
+        self.smtp_password = os.environ.get("SMTP_PASSWORD", "")
+        self.smtp_from = os.environ.get("SMTP_FROM", "Replay Agora <nao-responda@replayagora.example>")
+        self.invite_ttl_h = _env_int("INVITE_TTL_H", 72)
+        self.reset_ttl_min = _env_int("RESET_TTL_MIN", 60)
+        self.google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+        self.google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+        sec_file = os.environ.get("GOOGLE_CLIENT_SECRET_FILE", "")
+        if not self.google_client_secret and sec_file:
+            try:
+                self.google_client_secret = Path(sec_file).read_text().strip()
+            except OSError:
+                pass
         self.frontend_dir = Path(os.environ.get("FRONTEND_DIR", str(REPO_ROOT)))
 
 
