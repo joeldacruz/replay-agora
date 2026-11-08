@@ -547,7 +547,7 @@ await step('portal: configura o login Google (segredo write-only) e a caixa de s
   await p.click('summary:has-text("Login com Google")');
   assert.ok(!(await p.locator('body').innerHTML()).includes('e2e-secret-value-123'), 'segredo nunca volta ao navegador');
   await p.click('summary:has-text("Caixa de saída")');
-  assert.ok((await p.locator('details[open]').innerText()).includes(GESTOR));
+  assert.ok((await p.locator('details:has(summary:has-text("Caixa de saída"))').innerText()).includes(GESTOR));
 });
 const gctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 const g = await gctx.newPage();
@@ -607,7 +607,7 @@ await step('google: jogador novo entra pelo Google sem perfil administrativo e n
 });
 await step('portal: convite → definição de senha por link de uso único; novo gestor entra por e-mail/senha; redefinição encerra sessões', async () => {
   await nav('Usuários e Permissões'); await p.click('summary:has-text("Caixa de saída")');
-  const body = await p.locator('details[open] pre', { hasText: 'definir-senha' }).first().innerText();
+  const body = await p.locator('details:has(summary:has-text("Caixa de saída")) pre', { hasText: 'definir-senha' }).first().innerText();
   const link = body.match(/https?:\/\/\S+definir-senha\.html\?token=[\w-]+/)[0].replace(/^https?:\/\/[^/]+/, BASE);
   const c4 = await browser.newContext(); const d = await c4.newPage();
   await d.goto(link); await d.waitForSelector('h2:has-text("Criar sua senha")');
@@ -626,12 +626,12 @@ await step('portal: histórico da arena registra cadastro, perfil, vínculo e in
 });
 await step('portal: visão global de usuários (filtros, busca, Novo usuário) e inativação revoga sessão imediatamente', async () => {
   await nav('Usuários e Permissões'); await p.waitForSelector(`tbody tr:has-text("${OPER}")`);
-  await p.selectOption('select[aria-label="Filtrar por perfil"]', 'arena_operator'); await p.waitForFunction(() => !document.body.innerText.includes('atleta.alfa@example.test'));
+  await p.selectOption('select[aria-label="Filtrar por perfil"]', 'arena_operator'); await p.waitForFunction(() => !document.querySelector('section.p-card').innerText.includes('atleta.alfa@example.test'));
   await p.selectOption('select[aria-label="Filtrar por perfil"]', '');
   const sess = await browser.newContext(); const o = await sess.newPage();
   await p.click('button:has-text("Novo usuário")'); await p.fill('dialog input[name=name]', 'Conta Sem Vinculo'); await p.fill('dialog input[name=email]', 'sem.vinculo@example.test'); await p.click('dialog button[type=submit]');
   await p.waitForSelector('tbody tr:has-text("sem.vinculo@example.test")');
-  await p.fill('input[aria-label=Buscar]', 'Conta Sem'); await p.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
+  await p.fill('input[aria-label=Buscar]', 'Conta Sem'); await p.waitForFunction(() => document.querySelectorAll('section.p-card:first-of-type tbody tr').length === 1);
   await rowMenu(p, 'sem.vinculo@example.test', 'Inativar conta'); await p.click('dialog button[type=submit]');
   await p.waitForSelector('tbody tr:has-text("sem.vinculo@example.test"):has-text("Inativo")');
   await sess.close();

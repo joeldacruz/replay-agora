@@ -80,6 +80,7 @@ def user_out(db: Session, u: User, arena_id: str | None = None, scope: set | Non
            "authMethod": u.auth_method, "passwordSet": u.password_hash not in (UNUSABLE, ""), "googleLinked": google,
            "mfaEnabled": u.mfa_enabled, "lastLoginAt": iso(u.last_login_at), "invitedAt": iso(u.invited_at),
            "createdAt": iso(u.created_at), "memberships": ms}
+    out["totalArenas"] = db.query(func.count(Membership.id)).filter(Membership.user_id == u.id).scalar()  # só a contagem (sem nomes)
     if arena_id:
         m = next((x for x in ms if x["arenaId"] == arena_id), None)
         out["membership"] = m
@@ -330,7 +331,7 @@ def member_row(row: dict) -> dict:
     return {"id": m["id"], "userId": row["id"], "name": row["name"], "email": row["email"], "phone": row["phone"],
             "role": m["role"], "status": m["status"], "accountActive": row["active"], "authMethod": row["authMethod"],
             "passwordSet": row["passwordSet"], "googleLinked": row["googleLinked"], "lastLoginAt": row["lastLoginAt"],
-            "invitedAt": row["invitedAt"], "otherArenas": len(row["memberships"]) - 1}
+            "invitedAt": row["invitedAt"], "otherArenas": max(row["totalArenas"] - 1, 0)}
 
 
 def list_members(db: Session, arena_id: str, q=None, role=None, status=None) -> list[dict]:
