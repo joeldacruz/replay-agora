@@ -22,6 +22,11 @@ JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs"
 KEY_ID, KEY_SECRET = "google.client_id", "google.client_secret"
 
 
+def _ep(name: str, default: str) -> str:
+    b = settings.google_test_base
+    return f"{b}/{name}" if b else default
+
+
 class GoogleError(Exception):
     """Falha de validação/troca. A mensagem é genérica para o usuário; o detalhe vai só para log."""
 
@@ -64,12 +69,12 @@ class GoogleProvider:
              "state": state, "nonce": nonce, "code_challenge": challenge, "code_challenge_method": "S256", "prompt": "select_account"}
         if login_hint:
             q["login_hint"] = login_hint
-        return f"{AUTH_ENDPOINT}?{urllib.parse.urlencode(q)}"
+        return f"{_ep('auth', AUTH_ENDPOINT)}?{urllib.parse.urlencode(q)}"
 
     def exchange(self, cfg: Config, code: str, verifier: str) -> str:
         import httpx
         try:
-            r = httpx.post(TOKEN_ENDPOINT, data={"code": code, "client_id": cfg.client_id, "client_secret": cfg.client_secret,
+            r = httpx.post(_ep("token", TOKEN_ENDPOINT), data={"code": code, "client_id": cfg.client_id, "client_secret": cfg.client_secret,
                                                  "redirect_uri": redirect_uri(), "grant_type": "authorization_code",
                                                  "code_verifier": verifier}, timeout=10)
             r.raise_for_status()
@@ -81,7 +86,7 @@ class GoogleProvider:
         import httpx
         try:
             kid = jwt.get_unverified_header(id_token).get("kid")
-            keys = httpx.get(JWKS_URI, timeout=10).json()["keys"]
+            keys = httpx.get(_ep("certs", JWKS_URI), timeout=10).json()["keys"]
             jwk = next(k for k in keys if k.get("kid") == kid)
             return jwt.algorithms.RSAAlgorithm.from_jwk(jwk)
         except Exception as e:  # noqa: BLE001
@@ -98,7 +103,7 @@ def validate_id_token(id_token: str, cfg: Config, nonce: str, key) -> dict:
                             options={"require": ["exp", "iat", "iss", "aud", "sub"]}, leeway=30)
     except jwt.PyJWTError as e:
         raise GoogleError(f"id_token inválido: {type(e).__name__}") from e
-    if claims.get("iss") not in ISSUERS:
+    if claims.get("iss") not in ISSUERS + ((settings.google_test_base,) if settings.google_test_base else ()):
         raise GoogleError("emissor inválido")
     if not secrets.compare_digest(str(claims.get("nonce", "")), nonce):
         raise GoogleError("nonce inválido")

@@ -1,5 +1,6 @@
 // Telas: Início (dashboard), Replays e Perfil. Dados sempre da API, sempre da arena selecionada (ctx.base()).
 import { el, icon, fmt, pill, toast, confirmSheet, sheet } from './kit.js';
+import { googleIdentity, googleLinkStart, googleUnlink } from '/shared/ui.js';
 
 const filters = { vis: '', court: '' };
 export const resetReplayFilters = () => { filters.vis = ''; filters.court = ''; };
@@ -68,13 +69,25 @@ export async function replays(ctx) {
 }
 
 // ------------------------------------------------------------------ Perfil
+async function googleCard(ctx) {
+  const g = await googleIdentity(ctx.api).catch(() => null);
+  if (!g || (!g.enabled && !g.linked)) return '';
+  return el('section', { class: 'g-card g-stack' }, el('div', { class: 'g-row-text' }, el('strong', {}, 'Login com Google'),
+    el('small', {}, g.linked ? `Vinculado (${g.email}). Você pode entrar com Google ou com e-mail e senha.` : 'Vincule sua conta Google para entrar sem senha. O vínculo é feito pela identidade Google, não pelo e-mail.')),
+  g.linked ? el('button', { class: 'g-btn g-btn--outline', type: 'button', onclick: guard(async () => {
+    if (await confirmSheet('Desvincular o Google desta conta? Você continuará entrando com e-mail e senha.', 'Desvincular')) { await googleUnlink(ctx.api); toast('Google desvinculado'); ctx.go(); }
+  }) }, 'Desvincular Google') : el('button', { class: 'g-btn g-btn--outline', type: 'button', onclick: guard(() => googleLinkStart(ctx.api, 'arena')) }, 'Vincular conta Google'));
+}
+
 export async function perfil(ctx) {
   const me = ctx.me, a = ctx.arena;
+  const gcard = await googleCard(ctx);
   const role = { arena_admin: 'Gestor', arena_operator: 'Operador' };
   ctx.page({ title: 'Perfil', content: [
     el('section', { class: 'g-card' }, el('div', { class: 'g-profile-id' }, el('span', { class: 'g-avatar', 'aria-hidden': 'true' }, (me.name || '?').trim().charAt(0).toUpperCase())),
       el('dl', {}, el('div', { class: 'g-dl' }, el('dt', {}, 'Nome'), el('dd', {}, me.name)), el('div', { class: 'g-dl' }, el('dt', {}, 'E-mail da conta'), el('dd', {}, me.email)),
         el('div', { class: 'g-dl' }, el('dt', {}, 'Papel na arena selecionada'), el('dd', {}, `${role[a.role] || a.role} · ${a.arenaName}`)))),
+    gcard,
     el('button', { class: 'g-btn g-btn--outline', style: 'color:var(--bad);border-color:#f0c4c0', type: 'button', onclick: () => ctx.signOut() }, icon('logout', { size: 22 }), 'Sair da conta'),
   ] });
 }

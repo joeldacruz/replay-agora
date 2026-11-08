@@ -1,7 +1,8 @@
 // Portal do Desenvolvedor — casca (navegação lateral/gaveta), autenticação MFA, contexto persistente (arena/servidor) e roteamento.
-import { createApi, createRouter } from '/shared/ui.js';
+import { createApi, createRouter, GOOGLE_ERR, googleEnabled, googleStart, googleReturnParams, googleExchange } from '/shared/ui.js';
 import { el, icon, brandLogo, toast, fld, input } from './kit.js';
-import { painel, arenas, usuarios, planos, auditoria } from './views-core.js';
+import { painel, planos, auditoria } from './views-core.js';
+import { arenas, arenaDetalhe, usuarios } from './views-usuarios.js';
 import { servidores, servidorDetalhe, quadras, cameras, botoeiras, replayCaptura, servicos, monitoramento } from './views-infra.js';
 import { molduras, molduraEditor } from './views-frames.js';
 
@@ -74,7 +75,7 @@ const loading = () => root.replaceChildren(el('p', { class: 'p-loading' }, 'Carr
 const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p || {}); };
 
 // ------------------------------------------------------------------ login (senha -> cadastro TOTP -> código de 6 dígitos)
-function login() {
+function login(pre = {}) {
   const err = el('p', { class: 'p-err', role: 'alert' });
   const box = el('div', { class: 'p-card p-login-card' });
   root.replaceChildren(el('div', { class: 'p-login' }, box));
@@ -89,7 +90,7 @@ function login() {
     } catch (x) { err.textContent = x.message; }
   } }, brandLogo(), el('h2', {}, 'Portal do Desenvolvedor'), el('p', { class: 'p-lead' }, 'Exclusivo da equipe da plataforma. Requer senha e verificação em duas etapas.'),
   fld('E-mail', input('email', { type: 'email', required: true, autocomplete: 'username' })), fld('Senha', input('password', { type: 'password', required: true, autocomplete: 'current-password' })),
-  err, el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Continuar'));
+  err, el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Continuar'), googleBtn());
   function step2(hdr, setup) {
     const code = input('code', { inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: 6, required: true, autocomplete: 'one-time-code', 'aria-label': 'Código de 6 dígitos' });
     const e2 = el('p', { class: 'p-err', role: 'alert' });
@@ -105,11 +106,28 @@ function login() {
     box.replaceChildren(f); code.focus();
   }
   box.replaceChildren(step1);
+  if (pre.err) err.textContent = pre.err;
+  if (pre.mfa) {   // retorno do Google: o TOTP continua obrigatório
+    const hdr = { Authorization: 'Bearer ' + pre.mfa.mfaToken };
+    (async () => { let setup = null; if (pre.mfa.mfaStep === 'enroll') setup = await (await fetch('/api/auth/platform/mfa/setup', { method: 'POST', headers: hdr })).json(); step2(hdr, setup); })();
+  }
+}
+
+function googleBtn() {
+  const b = el('button', { class: 'p-btn p-btn--outline', type: 'button', hidden: true, onclick: () => googleStart('platform') }, 'Entrar com Google');
+  googleEnabled().then((on) => { if (on) b.hidden = false; });
+  return b;
+}
+async function googleReturn() {
+  const r = googleReturnParams();
+  if (r.err) return login({ err: GOOGLE_ERR[r.err] || 'Falha no login com Google.' });
+  if (!r.ticket) return login();
+  try { login({ mfa: await googleExchange(r.ticket, 'platform') }); } catch (x) { login({ err: x.message }); }   // o TOTP continua obrigatório
 }
 
 document.body.classList.add('p-body');
 const router = createRouter(root, {
-  '/': guarded(painel), '/login': login, '/arenas': guarded(arenas), '/servidores': guarded(servidores), '/servidores/:id': guarded(servidorDetalhe),
+  '/': guarded(painel), '/login': login, '/arenas': guarded(arenas), '/arenas/:id': guarded(arenaDetalhe), '/arenas/:id/:tab': guarded(arenaDetalhe), '/auth/google': googleReturn, '/servidores': guarded(servidores), '/servidores/:id': guarded(servidorDetalhe),
   '/servidores/:id/:tab': guarded(servidorDetalhe), '/quadras': guarded(quadras), '/cameras': guarded(cameras), '/botoeiras': guarded(botoeiras),
   '/replay': guarded(replayCaptura), '/molduras': guarded(molduras), '/molduras/:id': guarded(molduraEditor), '/servicos': guarded(servicos),
   '/monitoramento': guarded(monitoramento), '/usuarios': guarded(usuarios), '/planos': guarded(planos), '/auditoria': guarded(auditoria),

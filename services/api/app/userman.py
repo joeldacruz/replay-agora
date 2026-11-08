@@ -144,13 +144,13 @@ def issue_token(db: Session, u: User, kind: str, created_by: str | None, arena: 
             kindtxt = "invite"
         else:
             body = (f"Olá, {u.name}.\n\nSeu acesso ao Replay Agora{where} foi criado. Defina sua senha (link válido por "
-                    f"{settings.invite_ttl_h} h, uso único):\n{base}/usuario/definir-senha.html?token={raw}\n{gtxt}")
+                    f"{settings.invite_ttl_h} h, uso único):\n{base}/definir-senha.html?token={raw}\n{gtxt}")
             kindtxt = "invite"
         subject = "Convite — Replay Agora"
         u.invited_at = now
     else:
         body = (f"Olá, {u.name}.\n\nFoi solicitada a redefinição do seu acesso ao Replay Agora. Crie uma nova senha (link válido por "
-                f"{settings.reset_ttl_min} min, uso único):\n{base}/usuario/definir-senha.html?token={raw}\n\n"
+                f"{settings.reset_ttl_min} min, uso único):\n{base}/definir-senha.html?token={raw}\n\n"
                 "Se você não reconhece esta solicitação, ignore este e-mail.")
         subject, kindtxt = "Redefinição de acesso — Replay Agora", "reset"
     mailer.send(db, u.email, subject, body, kindtxt)

@@ -1,7 +1,7 @@
 // App do Jogador — bootstrap: sessão, roteamento e contexto compartilhado. Toda a interface está em journey.js / kit.js / journey.css.
-import { mount, createApi, createRouter, registerSW } from '/shared/ui.js';
+import { mount, createApi, createRouter, registerSW, toast, GOOGLE_ERR, googleReturnParams, googleExchange } from '/shared/ui.js';
 import { el, icon } from './kit.js';
-import { validSelection, journeyHome, journeyAddArena, journeyArena, journeyProfile, journeyWatch, journeyAuth } from './journey.js';
+import { validSelection, journeyHome, journeyAddArena, journeyArena, journeyProfile, journeyWatch, journeyAuth, finishLogin } from './journey.js';
 
 const root = document.getElementById('app');
 const api = createApi('ra_user_token', () => (location.hash = '#/login'));
@@ -35,7 +35,17 @@ async function redeem(p) {
   }
 }
 
+async function googleReturn() {
+  const r = googleReturnParams();
+  if (r.linked) { toast('Google vinculado'); location.hash = '#/profile'; return; }
+  if (r.err) { if (api.token()) { toast(GOOGLE_ERR[r.err] || 'Falha ao vincular o Google', true); location.hash = '#/profile'; return; } return journeyAuth('login', ctx, { err: GOOGLE_ERR[r.err] || 'Falha no login com Google.' }); }
+  if (!r.ticket) { location.hash = '#/login'; return; }
+  try { const j = await googleExchange(r.ticket, 'user'); api.setToken(j.token); finishLogin(ctx); }   // retoma QR/compartilhamento pendente
+  catch (x) { journeyAuth('login', ctx, { err: x.message }); }
+}
+
 const router = createRouter(root, {
+  '/auth/google': googleReturn, '/auth/google-done': () => { location.hash = '#/'; },
   '/': () => journeyHome(ctx),
   '/add-arena': () => journeyAddArena(ctx),
   '/replays': replays,

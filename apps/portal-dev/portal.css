@@ -118,3 +118,13 @@ dialog.p-sheet::backdrop { background: rgba(2, 12, 38, .6); }
   .p-table--cards, .p-table--cards tbody, .p-table--cards tr, .p-table--cards td { display: block; width: 100%; }
   .p-table--cards tr { padding: 10px 0; border-bottom: 1px solid var(--line); } .p-table--cards td { border: 0; padding: 3px 0; }
 }
+
+/* gestão de usuários */
+.p-link { color: var(--blue); text-decoration: none; } .p-link:hover { text-decoration: underline; }
+.p-filters { flex-wrap: wrap; align-items: center; } .p-filters .p-input { flex: 1 1 200px; min-width: 0; width: auto; }
+.p-menu { position: relative; display: inline-block; } .p-menu > summary { list-style: none; cursor: pointer; } .p-menu > summary::-webkit-details-marker { display: none; }
+.p-menu-list { position: absolute; right: 0; z-index: 20; min-width: 230px; display: grid; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+.p-menu-list button { text-align: left; min-height: 38px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; font: inherit; cursor: pointer; } .p-menu-list button:hover, .p-menu-list button:focus-visible { background: #eef3fb; }
+.p-menu-list button.is-danger { color: var(--bad); }
+.p-pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; background: #f1f4fa; padding: 8px; border-radius: 8px; max-width: 520px; }
+@media (max-width: 720px) { .p-menu-list { position: fixed; left: 12px; right: 12px; bottom: 12px; min-width: 0; } }

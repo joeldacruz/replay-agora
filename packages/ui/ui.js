@@ -41,9 +41,9 @@ export function createApi(storageKey, onUnauthorized) {
     const r = await fetch(path, { method, headers, body: body === undefined ? undefined : isForm ? body : JSON.stringify(body) });
     if (r.status === 401 && tk) { set(null); onUnauthorized && onUnauthorized(); }
     if (!r.ok) {
-      let msg = r.statusText;
-      try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : Array.isArray(j.detail) ? j.detail.map((d) => d.msg).join('; ') : msg; } catch { /* corpo vazio */ }
-      const e = new Error(msg); e.status = r.status; throw e;
+      let msg = r.statusText; let detail = null;
+      try { const j = await r.json(); detail = j.detail; msg = typeof j.detail === 'string' ? j.detail : Array.isArray(j.detail) ? j.detail.map((d) => d.msg).join('; ') : (j.detail && j.detail.message) || msg; } catch { /* corpo vazio */ }
+      const e = new Error(msg); e.status = r.status; e.detail = detail; throw e;
     }
     if (r.status === 204) return null;
     return (r.headers.get('content-type') || '').includes('json') ? r.json() : r;
@@ -81,4 +81,35 @@ export async function copy(text) { try { await navigator.clipboard.writeText(tex
 export function registerSW(path, scope) { if ('serviceWorker' in navigator) navigator.serviceWorker.register(path, { scope }).catch(() => {}); }
 export function tabs(items, active) {
   return h('nav', { class: 'tabs', 'aria-label': 'Navegação' }, items.map(([href, label]) => h('a', { href: '#' + href, 'aria-current': active === href ? 'page' : null }, label)));
+}
+
+// ---- Login com Google (lógica compartilhada; a interface é de cada aplicativo). O ticket de retorno é de uso único e some da barra de endereço. ----
+export const GOOGLE_ERR = {
+  google_nao_configurado: 'Login com Google não está configurado.', cancelado: 'Login com Google cancelado.', falha: 'Não foi possível concluir o login com Google. Tente novamente.',
+  sem_acesso: 'Esta conta Google não tem acesso a este aplicativo. Peça um convite ao gestor.', conta_existente: 'Já existe uma conta com este e-mail. Entre com e-mail e senha e vincule o Google no seu perfil.',
+  inativo: 'Conta ou vínculo inativo. Fale com o gestor.',
+};
+export async function googleEnabled() { try { return (await (await fetch('/api/auth/google/status')).json()).enabled === true; } catch { return false; } }
+export function googleStart(app) { location.href = '/api/auth/google/start?app=' + encodeURIComponent(app); }
+/** Lê (e remove do endereço) o retorno do Google: { err } | { linked } | { ticket }. */
+export function googleReturnParams() {
+  const qs = new URLSearchParams(location.hash.split('?')[1] || '');
+  history.replaceState(null, '', location.pathname + location.search + '#/auth/google-done');
+  return { err: qs.get('err'), ticket: qs.get('ticket'), linked: qs.get('linked') };
+}
+export async function googleExchange(ticket, app) {
+  const r = await fetch('/api/auth/google/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket, app }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Ticket inválido ou expirado');
+  return j;
+}
+const authH = (api) => ({ Authorization: 'Bearer ' + api.token() });
+export async function googleIdentity(api) { return (await fetch('/api/auth/google/identity', { headers: authH(api) })).json(); }
+export async function googleLinkStart(api, app) {
+  const r = await fetch('/api/auth/google/link/start', { method: 'POST', headers: { ...authH(api), 'Content-Type': 'application/json' }, body: JSON.stringify({ app }) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Não foi possível iniciar o vínculo'); location.href = j.url;
+}
+export async function googleUnlink(api) {
+  const r = await fetch('/api/auth/google/link', { method: 'DELETE', headers: authH(api) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.detail || 'Não foi possível desvincular'); return j;
 }

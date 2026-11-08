@@ -137,19 +137,6 @@ export async function musica(ctx) {
       rowBtn('Excluir', async () => { if (await confirmSheet('Excluir a faixa?', 'Excluir')) { await ctx.api.del(`${ctx.base()}/music/${t.id}`); ctx.go(); } }, 'ghost')) : ''))) : el('div', { class: 'g-card g-empty' }, 'Nenhuma faixa cadastrada.')] });
 }
 
-// ------------------------------------------------------------------ equipe
-export async function equipe(ctx) {
-  if (!ctx.isAdmin()) { ctx.page({ title: 'Equipe', back: '/gestao', content: onlyAdmin(ctx) }); return; }
-  const ms = await ctx.api.get(ctx.base() + '/members');
-  const R = [['arena_admin', 'Gestor'], ['arena_operator', 'Operador']];
-  ctx.page({ title: 'Equipe', back: '/gestao', content: [addBtn('Adicionar pessoa', () => sheet({ title: 'Adicionar pessoa', fields: [fld('E-mail da conta já cadastrada', input('email', { type: 'email', required: true })), fld('Papel', select('role', R, 'arena_operator'))],
-    onSubmit: async (fd) => { await ctx.api.post(ctx.base() + '/members', Object.fromEntries(fd)); toast('Pessoa adicionada'); ctx.go(); } })),
-  el('div', { class: 'g-stack' }, ms.map((m) => el('div', { class: 'g-card g-stack' }, el('div', { class: 'g-row-text' }, el('strong', {}, m.name), el('small', {}, m.email)),
-    el('div', { class: 'g-row' }, el('select', { class: 'g-input', 'aria-label': 'Papel de ' + m.name, onchange: guard(async (e) => { try { await ctx.api.patch(`${ctx.base()}/members/${m.id}`, { role: e.target.value }); toast('Papel atualizado'); } catch (x) { toast(x.message, true); ctx.go(); } }) },
-      [...R, ['user', 'Atleta']].map(([v, l]) => el('option', { value: v, selected: v === m.role }, l))),
-    rowBtn('Remover', async () => { if (await confirmSheet(`Remover ${m.name} da arena?`, 'Remover')) { await ctx.api.del(`${ctx.base()}/members/${m.id}`); ctx.go(); } }, 'ghost')))))] });
-}
-
 // ------------------------------------------------------------------ dados da arena
 export async function dadosArena(ctx) {
   if (!ctx.isAdmin()) { ctx.page({ title: 'Dados da arena', back: '/gestao', content: onlyAdmin(ctx) }); return; }

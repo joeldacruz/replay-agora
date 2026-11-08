@@ -1,6 +1,6 @@
 // Jornada do jogador:  QR/código → Arena → Quadra → Data → Horário → Replays → Assistir → Baixar/Compartilhar.
 // Usa somente endpoints autorizados do app do usuário. O QR apenas IDENTIFICA a arena (slug): não é token nem dá acesso a vídeos privados.
-import { toast, copy } from '/shared/ui.js';
+import { toast, copy, googleEnabled, googleStart, googleIdentity, googleLinkStart, googleUnlink } from '/shared/ui.js';
 import { el, icon, brand, waves, qrArt, thumb, fmt } from './kit.js';
 
 const state = { arena: '', court: '', date: '', hour: '', showAll: false, filtersOpen: false };
@@ -410,11 +410,22 @@ export async function journeyWatch(p, ctx) {
 }
 
 // ------------------------------------------------------------------------------------------ perfil: nome, e-mail e sair
+async function googleCard(ctx) {
+  const g = await googleIdentity(ctx.api).catch(() => null);
+  if (!g || (!g.enabled && !g.linked)) return '';
+  const run = (fn) => async () => { try { await fn(); } catch (e) { toast(e.message, true); } };
+  return el('section', { class: 'j-card j-pad', 'aria-label': 'Login com Google' }, el('h3', {}, 'Login com Google'),
+    el('p', { class: 'j-hint j-hint--dark' }, g.linked ? `Vinculado (${g.email}). Você pode entrar com Google ou com e-mail e senha.` : 'Vincule sua conta Google para entrar sem senha.'),
+    g.linked ? el('button', { class: 'j-btn j-btn--outline', type: 'button', onclick: run(async () => { if (window.confirm('Desvincular o Google desta conta?')) { await googleUnlink(ctx.api); toast('Google desvinculado'); journeyProfile(ctx); } }) }, 'Desvincular Google')
+      : el('button', { class: 'j-btn j-btn--outline', type: 'button', onclick: run(() => googleLinkStart(ctx.api, 'user')) }, 'Vincular conta Google'));
+}
+
 export async function journeyProfile(ctx) {
   if (!(await ctx.ensureMe())) return;
   const root = ctx.root; shell(root, 'j-app--profile');
   let user;
   try { user = await ctx.api.get('/api/auth/user/me'); } catch { go('#/login'); return; }
+  const gcard = await googleCard(ctx);
   const initial = (user.name || user.email || 'U').trim().slice(0, 1).toUpperCase();
   root.append(
     header({ title: 'Perfil' }),
@@ -424,15 +435,25 @@ export async function journeyProfile(ctx) {
         el('dl', { class: 'j-data' },
           el('div', {}, el('dt', {}, 'Nome'), el('dd', {}, user.name || 'Não informado')),
           el('div', {}, el('dt', {}, 'E-mail da conta'), el('dd', {}, user.email || 'Não informado')))),
+      gcard,
       el('button', { class: 'j-btn j-btn--danger', type: 'button', onclick: () => { ctx.signOut(); go('#/login'); } }, icon('logout', { size: 24 }), 'Sair da conta')),
     bottomNav('/profile'));
 }
 
 // ------------------------------------------------------------------------------------------ entrar / criar conta
-export function journeyAuth(mode, ctx) {
+/** Após qualquer login (senha ou Google) retoma o fluxo pendente do QR Code / link compartilhado. */
+export function finishLogin(ctx) {
+  ctx.resetMe();
+  const share = sessionStorage.getItem('ra_pending_share');
+  if (share) { sessionStorage.removeItem('ra_pending_share'); location.hash = '#/s/' + share; }
+  else location.hash = '#/';
+}
+export function journeyAuth(mode, ctx, pre = {}) {
   const root = ctx.root; shell(root, 'j-app--auth');
   const login = mode === 'login';
-  const err = el('p', { class: 'j-status j-status--err', role: 'alert' });
+  const err = el('p', { class: 'j-status j-status--err', role: 'alert' }, pre.err || '');
+  const gBtn = el('button', { class: 'j-btn j-btn--outline', type: 'button', hidden: '', onclick: () => googleStart('user') }, 'Continuar com Google');
+  googleEnabled().then((on) => { if (on) gBtn.hidden = false; });
   const field = (label, props) => el('label', { class: 'j-field' }, el('span', { class: 'j-label' }, label), el('input', { class: 'j-input', ...props }));
   const form = el('form', { class: 'j-card j-pad j-form', novalidate: '' },
     el('h2', {}, login ? 'Entrar' : 'Criar conta'),
@@ -441,17 +462,14 @@ export function journeyAuth(mode, ctx) {
     field('Senha', { name: 'password', type: 'password', required: '', minlength: login ? '1' : '10', autocomplete: login ? 'current-password' : 'new-password' }),
     login ? '' : el('p', { class: 'j-hint j-hint--dark' }, 'Mínimo de 10 caracteres.'),
     err,
-    el('button', { class: 'j-btn j-btn--primary', type: 'submit' }, login ? 'Entrar' : 'Criar conta'),
+    el('button', { class: 'j-btn j-btn--primary', type: 'submit' }, login ? 'Entrar' : 'Criar conta'), gBtn,
     el('p', { class: 'j-switch' }, login ? el('a', { href: '#/register' }, 'Não tenho conta') : el('a', { href: '#/login' }, 'Já tenho conta')));
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault(); err.textContent = '';
     if (!form.checkValidity()) { form.reportValidity(); return; }
     try {
       const r = await ctx.api.post(login ? '/api/auth/user/login' : '/api/auth/user/register', Object.fromEntries(new FormData(form)));
-      ctx.api.setToken(r.token); ctx.resetMe();
-      const share = sessionStorage.getItem('ra_pending_share');
-      if (share) { sessionStorage.removeItem('ra_pending_share'); location.hash = '#/s/' + share; }
-      else location.hash = sessionStorage.getItem('ra_pending_arena') ? '#/' : '#/';
+      ctx.api.setToken(r.token); finishLogin(ctx);
     } catch (e) { err.textContent = e.message; }
   });
   root.append(

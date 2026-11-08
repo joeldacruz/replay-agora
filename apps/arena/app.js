@@ -1,8 +1,9 @@
 // App de Gestão da Arena — bootstrap: sessão, arena selecionada (validada na API), roteamento e moldura (cabeçalho + navegação).
-import { createApi, createRouter, registerSW } from '/shared/ui.js';
+import { createApi, createRouter, registerSW, GOOGLE_ERR, googleEnabled, googleStart, googleReturnParams, googleExchange } from '/shared/ui.js';
 import { el, icon, brand, toast, fld, input } from './kit.js';
 import { inicio, replays, perfil, resetReplayFilters } from './views.js';
-import { gestao, quadras, patrocinios, musica, equipe, dadosArena } from './gestao.js';
+import { gestao, quadras, patrocinios, musica, dadosArena } from './gestao.js';
+import { equipe } from './equipe.js';
 
 const root = document.getElementById('app');
 const api = createApi('ra_arena_token', () => { S.me = null; location.hash = '#/login'; });
@@ -65,15 +66,25 @@ ctx.page = page;
 const loading = () => { root.className = 'g-app'; root.replaceChildren(el('p', { class: 'g-loading' }, 'Carregando…')); };
 const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p); };
 
-function login() {
+async function googleReturn() {
+  const r = googleReturnParams();
+  if (r.linked) { toast('Google vinculado'); location.hash = '#/perfil'; return; }
+  if (r.err) { if (api.token()) { toast(GOOGLE_ERR[r.err] || 'Falha ao vincular o Google', true); location.hash = '#/perfil'; return; } return login({ err: GOOGLE_ERR[r.err] || 'Falha no login com Google.' }); }
+  if (!r.ticket) return login();
+  try { const j = await googleExchange(r.ticket, 'arena'); api.setToken(j.token); S.me = null; S.arena = null; location.hash = '#/'; } catch (x) { login({ err: x.message }); }
+}
+
+function login(pre = {}) {
+  const gBtn = el('button', { class: 'g-btn g-btn--outline', type: 'button', hidden: true, onclick: () => googleStart('arena') }, 'Entrar com Google');
+  googleEnabled().then((on) => { if (on) gBtn.hidden = false; });
   root.className = 'g-app g-login';
-  const err = el('p', { class: 'g-err', role: 'alert' });
+  const err = el('p', { class: 'g-err', role: 'alert' }, pre.err || '');
   const f = el('form', { class: 'g-card g-form', onsubmit: async (e) => {
     e.preventDefault(); err.textContent = '';
     try { const r = await api.post('/api/auth/arena/login', Object.fromEntries(new FormData(f))); api.setToken(r.token); S.me = null; S.arena = null; location.hash = '#/'; } catch (x) { err.textContent = x.message; }
   } }, el('h2', {}, 'Gestão da Arena'), el('p', { class: 'g-lead' }, 'Acesso para gestores e operadores.'),
   fld('E-mail', input('email', { type: 'email', required: true, autocomplete: 'username' })), fld('Senha', input('password', { type: 'password', required: true, autocomplete: 'current-password' })),
-  err, el('button', { class: 'g-btn g-btn--primary', type: 'submit' }, 'Entrar'));
+  err, el('button', { class: 'g-btn g-btn--primary', type: 'submit' }, 'Entrar'), gBtn);
   root.replaceChildren(el('header', { class: 'g-top' }, el('div', { class: 'g-top-row' }, brand())), el('main', { class: 'g-main' }, f));
 }
 
@@ -81,7 +92,7 @@ document.body.classList.add('g-body');
 document.getElementById('app').innerHTML = '';
 const router = createRouter(root, {
   '/': guarded(inicio), '/replays': guarded(replays), '/gestao': guarded(gestao), '/gestao/quadras': guarded(quadras), '/gestao/patrocinios': guarded(patrocinios),
-  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login,
+  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/google-done': () => { location.hash = '#/'; },
 }, () => { location.hash = '#/'; });
 ctx.router = router;
 router.go();

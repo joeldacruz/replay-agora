@@ -1,4 +1,4 @@
-// Painel Geral, Arenas, Usuários e Permissões, Planos e Cotas, Auditoria e Histórico (módulos administrativos).
+// Painel Geral, Planos e Cotas, Auditoria e Histórico (Arenas e Usuários vivem em views-usuarios.js).
 import { el, icon, fmt, pill, badge, toast, sheet, confirmSheet, fld, input, select, empty, table } from './kit.js';
 
 const kpi = (n, label, kind = '', sub = '') => el('div', { class: 'p-kpi' + (kind ? ' p-kpi--' + kind : '') }, el('b', {}, n), el('span', {}, label), sub ? el('small', {}, sub) : '');
@@ -26,50 +26,6 @@ export async function painel(ctx) {
       el('section', { class: 'p-card' }, el('h2', {}, 'Configurações pendentes de aplicação'),
         o.pendingConfig.length ? el('div', { class: 'p-list' }, o.pendingConfig.map((p) => el('a', { class: 'p-item', href: `#/servidores/${p.serverId}/configuracao` }, pill(p.status),
           el('span', { class: 'p-item-main' }, el('strong', {}, `${p.server} · v${p.version}`), el('small', {}, 'aguardando confirmação do agente')), icon('chevron', { size: 16 })))) : empty('Tudo aplicado.')))) });
-}
-
-// ------------------------------------------------------------------ Arenas
-export async function arenas(ctx) {
-  const [list, plans] = await Promise.all([ctx.api.get('/api/platform/arenas'), ctx.api.get('/api/platform/plans')]);
-  const planSel = (v) => fld('Plano', el('select', { class: 'p-input', name: 'planId' }, el('option', { value: '' }, 'sem plano (sem limites)'), plans.map((p) => el('option', { value: p.id, selected: p.id === v }, p.name))));
-  const create = () => sheet({ title: 'Nova arena', submit: 'Criar', fields: [fld('Nome', input('name', { required: true })),
-    fld('Identificador (a-z, 0-9, hífen)', input('slug', { required: true, pattern: '[a-z0-9][a-z0-9\\-]{1,58}[a-z0-9]' })), planSel(''),
-    fld('Fuso horário', input('timezone', { value: 'America/Sao_Paulo' })), fld('E-mail do gestor responsável (conta existente)', input('adminEmail', { type: 'email' }))],
-  onSubmit: async (fd) => { const o = Object.fromEntries(fd); await ctx.api.post('/api/platform/arenas', { name: o.name, slug: o.slug, planId: o.planId || null, timezone: o.timezone, adminEmail: o.adminEmail || null }); toast('Arena criada'); ctx.go(); } });
-  ctx.shell({ title: 'Arenas', subtitle: 'Cadastro de arenas, planos e responsáveis.', actions: el('button', { class: 'p-btn p-btn--primary', type: 'button', onclick: create }, icon('plus', { size: 18 }), 'Nova arena'),
-    content: el('section', { class: 'p-card' }, table(['Arena', 'Estado', 'Plano', 'Quadras', 'Replays', 'Armazenamento', 'Gestores', ''], list.map((a) => el('tr', {},
-      el('td', {}, el('b', {}, a.name), el('div', { class: 'p-muted' }, a.slug)), el('td', {}, pill(a.status)), el('td', {}, a.plan ? a.plan.name : '—'), el('td', {}, a.courts + (a.plan ? ` / ${a.plan.maxCourts}` : '')),
-      el('td', {}, a.videos), el('td', {}, fmt.bytes(a.storageBytes)), el('td', {}, a.admins.map((x) => x.email).join(', ') || '—'),
-      el('td', {}, el('div', { class: 'p-row' },
-        el('button', { class: 'p-btn p-btn--outline p-btn--sm', type: 'button', onclick: ctx.guard(async () => {
-          if (a.status === 'active' && !(await confirmSheet(`Suspender "${a.name}"? Gestores, jogadores e agentes dessa arena perdem o acesso até a reativação.`, 'Suspender'))) return;
-          await ctx.api.patch('/api/platform/arenas/' + a.id, { status: a.status === 'active' ? 'suspended' : 'active' }); toast(a.status === 'active' ? 'Arena suspensa' : 'Arena reativada'); ctx.go();
-        }) }, a.status === 'active' ? 'Suspender' : 'Reativar'),
-        el('button', { class: 'p-btn p-btn--outline p-btn--sm', type: 'button', onclick: () => sheet({ title: 'Configurar ' + a.name, fields: [fld('Nome', input('name', { value: a.name, required: true })), planSel(a.plan?.id), fld('Fuso horário', input('timezone', { value: a.timezone }))],
-          onSubmit: async (fd) => { const o = Object.fromEntries(fd); await ctx.api.patch('/api/platform/arenas/' + a.id, { name: o.name, planId: o.planId || null, timezone: o.timezone }); ctx.go(); } }) }, 'Configurar'),
-        el('button', { class: 'p-btn p-btn--outline p-btn--sm', type: 'button', onclick: () => sheet({ title: 'Associar responsável', fields: [fld('E-mail (conta existente)', input('email', { type: 'email', required: true })),
-          fld('Papel', select('role', [['arena_admin', 'Gestor'], ['arena_operator', 'Operador']], 'arena_admin'))],
-        onSubmit: async (fd) => { await ctx.api.post(`/api/platform/arenas/${a.id}/administrators`, Object.fromEntries(fd)); toast('Responsável associado'); ctx.go(); } }) }, 'Responsável'))))))) });
-}
-
-// ------------------------------------------------------------------ Usuários e Permissões
-export async function usuarios(ctx) {
-  const q = el('input', { class: 'p-input', type: 'search', placeholder: 'Buscar por nome ou e-mail', 'aria-label': 'Buscar', style: 'max-width:380px' });
-  const out = el('div');
-  async function load() {
-    const list = await ctx.api.get('/api/platform/users?q=' + encodeURIComponent(q.value));
-    out.replaceChildren(table(['Usuário', 'Vínculos', 'MFA', 'Estado', ''], list.map((u) => el('tr', {}, el('td', {}, el('b', {}, u.name), el('div', { class: 'p-muted' }, u.email), u.globalRole ? badge('global_admin', 'warn') : ''),
-      el('td', {}, u.memberships.map((m) => `${m.arena}: ${m.role}`).join('; ') || '—'), el('td', {}, u.mfaEnabled ? '✓' : '—'), el('td', {}, u.active ? pill('active', 'Ativo') : pill('revoked', 'Bloqueado')),
-      el('td', {}, el('button', { class: 'p-btn p-btn--outline p-btn--sm', type: 'button', onclick: ctx.guard(async () => {
-        if (await confirmSheet(u.active ? `Bloquear ${u.email}? As sessões deixam de valer imediatamente.` : `Reativar ${u.email}?`, u.active ? 'Bloquear' : 'Reativar')) {
-          await ctx.api.patch('/api/platform/users/' + u.id, { active: !u.active }); load();
-        }
-      }) }, u.active ? 'Bloquear' : 'Reativar'))))));
-  }
-  let t;
-  q.oninput = () => { clearTimeout(t); t = setTimeout(ctx.guard(load), 300); };
-  ctx.shell({ title: 'Usuários e Permissões', subtitle: 'Contas, vínculos com arenas e bloqueio. Associe gestores às arenas em "Arenas".', content: el('section', { class: 'p-card' }, q, out) });
-  await load();
 }
 
 // ------------------------------------------------------------------ Planos e Cotas

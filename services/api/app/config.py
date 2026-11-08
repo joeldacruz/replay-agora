@@ -87,6 +87,8 @@ class Settings:
         self.smtp_from = os.environ.get("SMTP_FROM", "Replay Agora <nao-responda@replayagora.example>")
         self.invite_ttl_h = _env_int("INVITE_TTL_H", 72)
         self.reset_ttl_min = _env_int("RESET_TTL_MIN", 60)
+        # IdP simulado SOMENTE para E2E local (ignorado fora de development/test): ex.: http://127.0.0.1:9911
+        self.google_test_base = os.environ.get("GOOGLE_OIDC_TEST_BASE", "").rstrip("/") if os.environ.get("APP_ENV", "") in ("development", "test") else ""
         self.google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
         self.google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
         sec_file = os.environ.get("GOOGLE_CLIENT_SECRET_FILE", "")

@@ -7,6 +7,8 @@ PY="${PY:-$ROOT/.venv/bin/python}"
 WORK="$(mktemp -d)"; PORT="${PORT:-8765}"
 export DATABASE_URL="sqlite:///$WORK/e2e.db" STORAGE_DIR="$WORK/storage" SECRET_KEY="e2e-$(head -c 24 /dev/urandom | base64 | tr -dc A-Za-z0-9)-padding-padding" SEED_PASSWORD="E2e-$(head -c 9 /dev/urandom | base64 | tr -dc A-Za-z0-9)-ok1"
 export PYTHONPATH="$ROOT/services/api:$ROOT/services/media-worker" APP_ENV=development
+# IdP Google SIMULADO (iniciado pelo próprio e2e.mjs): só é honrado com APP_ENV=development/test. Nenhuma credencial real.
+export GOOGLE_OIDC_TEST_BASE="http://127.0.0.1:${GOOGLE_FAKE_PORT:-9911}" GOOGLE_FAKE_PORT="${GOOGLE_FAKE_PORT:-9911}" PUBLIC_BASE_URL="http://127.0.0.1:$PORT"
 cleanup() { kill "${API_PID:-}" "${WRK_PID:-}" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 (cd "$ROOT/services/api" && "$PY" -m alembic upgrade head)

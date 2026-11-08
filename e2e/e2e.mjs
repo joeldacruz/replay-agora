@@ -6,6 +6,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { generateKeyPairSync, createSign, randomBytes } from 'node:crypto';
 
 // require() respeita NODE_PATH (playwright instalado globalmente) e node_modules local (npm i em e2e/).
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -26,6 +28,37 @@ const totp = (secret) => {
   return String(((mac.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, '0');
 };
 const probe = (file) => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', file]).toString()).streams.map((s) => s.codec_type);
+
+// ---------- IdP Google SIMULADO (OIDC): aprova automaticamente, assina RS256 com chave local; a API só o usa em APP_ENV=development ----------
+const FAKE = { next: { mode: 'ok', email: '', sub: '', name: 'Pessoa Teste' }, flows: new Map(), codes: new Map() };
+const { publicKey: fakePub, privateKey: fakePriv } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const b64u = (b) => Buffer.from(b).toString('base64url');
+const fakeBase = `http://127.0.0.1:${process.env.GOOGLE_FAKE_PORT || 9911}`;
+const idp = createServer((req, res) => {
+  const u = new URL(req.url, fakeBase);
+  const send = (code, body, type = 'application/json') => { res.writeHead(code, { 'Content-Type': type }); res.end(typeof body === 'string' ? body : JSON.stringify(body)); };
+  if (u.pathname === '/auth') {
+    const q = Object.fromEntries(u.searchParams); const back = new URL(q.redirect_uri);
+    back.searchParams.set('state', q.state);
+    if (FAKE.next.mode === 'cancel') back.searchParams.set('error', 'access_denied');
+    else { const code = randomBytes(8).toString('hex'); FAKE.codes.set(code, { ...q, ...FAKE.next }); back.searchParams.set('code', code); }
+    res.writeHead(302, { Location: back.toString() }); return res.end();
+  }
+  if (u.pathname === '/certs') return send(200, { keys: [{ ...fakePub.export({ format: 'jwk' }), kid: 'k1', alg: 'RS256', use: 'sig' }] });
+  if (u.pathname === '/token' && req.method === 'POST') {
+    let body = ''; req.on('data', (d) => (body += d)); req.on('end', () => {
+      const f = new URLSearchParams(body); const c = FAKE.codes.get(f.get('code')); FAKE.codes.delete(f.get('code'));
+      if (!c) return send(400, { error: 'invalid_grant' });
+      const now = Math.floor(Date.now() / 1000);
+      const claims = { iss: fakeBase, aud: c.mode === 'badaud' ? 'outro-cliente' : c.client_id, sub: c.sub, email: c.email, email_verified: true, name: c.name, nonce: c.nonce, iat: now, exp: now + 300 };
+      const h = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: 'k1' })), pl = b64u(JSON.stringify(claims));
+      const sig = createSign('RSA-SHA256').update(`${h}.${pl}`).sign(fakePriv);
+      send(200, { id_token: `${h}.${pl}.${b64u(sig)}`, token_type: 'Bearer' });
+    }); return;
+  }
+  send(404, {});
+}).listen(Number(process.env.GOOGLE_FAKE_PORT || 9911), '127.0.0.1');
+const googleAs = (email, sub, mode = 'ok', name = 'Pessoa Teste') => { FAKE.next = { mode, email, sub, name }; };
 
 const browser = await chromium.launch();
 console.log('E2E Replay Agora —', BASE);
@@ -456,6 +489,154 @@ await step('portal: auditoria registra as ações globais e de configuração (s
   assert.ok(txt.includes('platform.config_apply') && !txt.includes('Senha-E2E-Camera-123'));
   await p.selectOption('select[name=escopo]', 'todas'); await p.waitForSelector('code:has-text("platform.arena_suspend")');
 });
+
+// =====================================================================================================================
+// Gestão de usuários por arena + login Google (IdP simulado). Sem SSH e sem editar banco: tudo pelas telas.
+// =====================================================================================================================
+const GESTOR = 'gestor.vibe@example.test', OPER = 'operador.vibe@example.test';
+const rowMenu = async (page, rowText, item) => { const r = page.locator('tbody tr', { hasText: rowText }); await r.locator('summary').click(); await r.locator(`button[role=menuitem]:has-text("${item}")`).click(); };
+let vibeUrl = '';
+await step('portal: cria a Arena Vibe Beach com um NOVO gestor na mesma operação (sem conta prévia)', async () => {
+  await nav('Arenas'); await p.waitForSelector('td:has-text("Arena Beta")');
+  await p.click('button:has-text("Nova arena")');
+  await p.fill('dialog input[name=name]', 'Arena Vibe Beach'); await p.fill('dialog input[name=slug]', 'vibe-beach');
+  await p.fill('dialog input[name=mName]', 'Gestor Vibe'); await p.fill('dialog input[name=mEmail]', GESTOR); await p.selectOption('dialog select[name=mAuth]', 'both');
+  await p.click('dialog button[type=submit]');
+  await p.waitForSelector('h1:has-text("Arena Vibe Beach")'); await p.waitForSelector(`tbody tr:has-text("${GESTOR}")`);
+  vibeUrl = p.url();
+  const row = await p.locator('tbody tr', { hasText: GESTOR }).innerText();
+  assert.ok(row.includes('Gestor') && row.includes('convite pendente'), row);
+  for (const t of ['Visão geral', 'Dados da Arena', 'Gestores e Usuários', 'Quadras', 'Equipamentos', 'Configurações', 'Histórico de alterações']) assert.ok((await p.locator('.p-tabs').innerText()).includes(t), 'aba: ' + t);
+});
+await shot(p, 'portal-arena-gestores');
+await step('portal: o último gestor ativo não pode ser rebaixado nem inativado (regra do backend)', async () => {
+  await rowMenu(p, GESTOR, 'Editar dados e perfil'); await p.selectOption('dialog select[name=role]', 'user'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector('dialog .p-err:has-text("pelo menos um gestor")'); await p.click('dialog button:has-text("Cancelar")');
+  await rowMenu(p, GESTOR, 'Inativar nesta arena'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector('.p-toast.is-bad:has-text("pelo menos um gestor")');
+});
+await step('portal: cadastra operador, altera o perfil, inativa e reativa o vínculo (histórico preservado)', async () => {
+  await p.click('button:has-text("Novo usuário")');
+  await p.fill('dialog input[name=name]', 'Operador Vibe'); await p.fill('dialog input[name=email]', OPER); await p.selectOption('dialog select[name=role]', 'arena_operator');
+  await p.click('dialog button[type=submit]'); await p.waitForSelector(`tbody tr:has-text("${OPER}")`);
+  assert.ok((await p.locator('tbody tr', { hasText: OPER }).innerText()).includes('Operador'));
+  await rowMenu(p, OPER, 'Editar dados e perfil'); await p.selectOption('dialog select[name=role]', 'user'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector(`tbody tr:has-text("${OPER}"):has-text("Usuário (jogador)")`);
+  await rowMenu(p, OPER, 'Inativar nesta arena'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector(`tbody tr:has-text("${OPER}"):has-text("Inativo na arena")`);
+  await rowMenu(p, OPER, 'Reativar nesta arena'); await p.waitForSelector(`tbody tr:has-text("${OPER}"):has-text("Ativo")`);
+  await rowMenu(p, OPER, 'Histórico'); await p.waitForSelector('dialog td:has-text("Perfil/situação do vínculo")'); assert.ok((await p.locator('dialog').innerText()).includes('Cadastro'));
+  await p.click('dialog button:has-text("Fechar")');
+});
+await step('portal: e-mail já existente oferece VINCULAR (sem duplicar); filtros por perfil e busca funcionam', async () => {
+  await p.click('button:has-text("Novo usuário")');
+  await p.fill('dialog input[name=name]', 'Nome Diferente'); await p.fill('dialog input[name=email]', 'atleta.alfa@example.test'); await p.click('dialog button[type=submit]');
+  const conf = p.locator('dialog:has(h2:has-text("E-mail já cadastrado"))'); await conf.waitFor(); const t = await conf.innerText();
+  assert.ok(t.includes('atleta.alfa@example.test') && t.includes('A***') && !t.includes('Atleta'), 'oferece vínculo com nome mascarado');
+  await p.click('dialog button:has-text("Vincular conta existente")');
+  await p.waitForSelector('tbody tr:has-text("atleta.alfa@example.test"):has-text("outra(s) arena(s)")');
+  await p.selectOption('select[aria-label="Filtrar por perfil"]', 'arena_admin'); await p.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
+  await p.selectOption('select[aria-label="Filtrar por perfil"]', ''); await p.fill('input[aria-label="Buscar usuário"]', 'operador'); await p.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
+  await p.fill('input[aria-label="Buscar usuário"]', '');
+});
+await step('portal: configura o login Google (segredo write-only) e a caixa de saída mostra o convite só ao admin global', async () => {
+  await nav('Usuários e Permissões'); await p.waitForSelector('summary:has-text("Login com Google")');
+  await p.click('summary:has-text("Login com Google")');
+  await p.fill('input[name=clientId]', 'e2e-client.apps.googleusercontent.com'); await p.fill('input[name=clientSecret]', 'e2e-secret-value-123');
+  await p.click('details[open] button[type=submit]'); await p.waitForSelector('summary:has-text("habilitado")');
+  await p.click('summary:has-text("Login com Google")');
+  assert.ok(!(await p.locator('body').innerHTML()).includes('e2e-secret-value-123'), 'segredo nunca volta ao navegador');
+  await p.click('summary:has-text("Caixa de saída")');
+  assert.ok((await p.locator('details[open]').innerText()).includes(GESTOR));
+});
+const gctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const g = await gctx.newPage();
+await step('gestão: o gestor convidado entra no App Gestão pelo Google (vínculo por sub) e vê só a Arena Vibe Beach', async () => {
+  googleAs(GESTOR, 'sub-gestor-vibe', 'ok', 'Gestor Vibe');
+  await g.goto(BASE + '/arena/#/login'); await g.waitForSelector('button:has-text("Entrar com Google"):visible');
+  await g.click('button:has-text("Entrar com Google")');
+  await g.waitForSelector('.g-top'); await g.waitForFunction(() => !location.hash.includes('ticket'), null, { timeout: 15000 });
+  assert.ok((await g.locator('.g-top').innerText()).includes('Arena Vibe Beach'));
+  assert.ok(!(g.url().includes('ticket=')), 'ticket não fica na barra de endereço');
+  const tk = await g.evaluate(() => localStorage.getItem('ra_arena_token'));
+  const r = await g.evaluate(async (t) => [(await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).json().then((j) => j.memberships.map((m) => m.arenaName))][0], tk);
+  assert.deepEqual(r, ['Arena Vibe Beach']);
+});
+await step('gestão: Equipe da própria arena — cadastra pessoa, edita, inativa; sem acesso a outras arenas nem ao portal', async () => {
+  await g.goto(BASE + '/arena/#/gestao/equipe'); await g.waitForSelector('h1:has-text("Equipe")');
+  await g.waitForSelector(`.g-card:has-text("${OPER}")`);
+  await g.click('button:has-text("Novo usuário")');
+  await g.fill('dialog input[name=name]', 'Atleta Vibe'); await g.fill('dialog input[name=email]', 'atleta.vibe@example.test'); await g.click('dialog button[type=submit]');
+  await g.waitForSelector('.g-card:has-text("atleta.vibe@example.test")');
+  const card = g.locator('.g-card', { hasText: 'atleta.vibe@example.test' });
+  await card.locator('button:has-text("Inativar")').click(); await g.click('dialog button[type=submit]');
+  await g.waitForSelector('.g-card:has-text("atleta.vibe@example.test"):has-text("Inativo na arena")');
+  const opts = await g.locator('dialog, select').allInnerTexts(); assert.ok(!opts.join(' ').includes('Admin global'));
+  const tk = await g.evaluate(() => localStorage.getItem('ra_arena_token'));
+  const codes = await g.evaluate(async (t) => { const H = { Authorization: 'Bearer ' + t }; const me = await (await fetch('/api/auth/arena/me', { headers: H })).json();
+    const alfa = await (await fetch('/api/auth/user/me', { headers: H })).status; return [alfa, (await fetch('/api/platform/users', { headers: H })).status, (await fetch('/api/platform/integrations/google', { headers: H })).status]; }, tk);
+  assert.ok(codes[1] >= 401 && codes[1] <= 403 && codes[2] >= 401 && codes[2] <= 403, 'gestor não acessa o portal: ' + codes);
+});
+await step('gestão: vincular/desvincular Google no Perfil exige outro método seguro', async () => {
+  await g.goto(BASE + '/arena/#/perfil'); await g.waitForSelector('text=Login com Google');
+  assert.ok((await g.locator('main').innerText()).includes('Vinculado'), 'vinculado após o 1º login por convite');
+});
+await step('google: cancelado, token inválido (audience errada) e e-mail igual SEM vínculo são recusados com mensagem clara', async () => {
+  const ctx2 = await browser.newContext(); const q = await ctx2.newPage();
+  googleAs(GESTOR, 'sub-gestor-vibe', 'cancel'); await q.goto(BASE + '/arena/#/login'); await q.click('button:has-text("Entrar com Google")');
+  await q.waitForSelector('.g-err:has-text("cancelado")');
+  googleAs(GESTOR, 'sub-gestor-vibe', 'badaud'); await q.click('button:has-text("Entrar com Google")');
+  await q.waitForSelector('.g-err:has-text("Não foi possível concluir")');
+  googleAs('dev@replayagora.example', 'sub-impostor', 'ok'); await q.click('button:has-text("Entrar com Google")');   // mesmo e-mail do admin global, sem vínculo
+  await q.waitForSelector('.g-err:has-text("Já existe uma conta")');
+  assert.equal(await q.evaluate(() => localStorage.getItem('ra_arena_token')), null);
+  const pp = await ctx2.newPage(); googleAs('dev@replayagora.example', 'sub-impostor', 'ok');
+  await pp.goto(BASE + '/portal/#/login'); await pp.click('button:has-text("Entrar com Google")'); await pp.waitForSelector('.p-err:has-text("Já existe uma conta")');
+  assert.equal(await pp.evaluate(() => localStorage.getItem('ra_portal_token')), null);
+  await ctx2.close();
+});
+await step('google: jogador novo entra pelo Google sem perfil administrativo e não acessa Gestão nem Portal', async () => {
+  const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true }); const j = await ctx3.newPage();
+  googleAs('novo.jogador@example.test', 'sub-novo-jogador', 'ok', 'Novo Jogador');
+  await j.goto(BASE + '/#/login'); await j.click('button:has-text("Continuar com Google")');
+  await j.waitForFunction(() => !location.hash.includes('login') && !location.hash.includes('auth/google'), null, { timeout: 15000 });
+  const tk = await j.evaluate(() => localStorage.getItem('ra_user_token')); assert.ok(tk);
+  const r = await j.evaluate(async (t) => { const H = { Authorization: 'Bearer ' + t }; return [(await fetch('/api/auth/arena/me', { headers: H })).status, (await fetch('/api/platform/users', { headers: H })).status]; }, tk);
+  assert.ok(r.every((c) => c === 403 || c === 401), 'sem acesso administrativo: ' + r);
+  await ctx3.close();
+});
+await step('portal: convite → definição de senha por link de uso único; novo gestor entra por e-mail/senha; redefinição encerra sessões', async () => {
+  await nav('Usuários e Permissões'); await p.click('summary:has-text("Caixa de saída")');
+  const body = await p.locator('details[open] pre', { hasText: 'definir-senha' }).first().innerText();
+  const link = body.match(/https?:\/\/\S+definir-senha\.html\?token=[\w-]+/)[0].replace(/^https?:\/\/[^/]+/, BASE);
+  const c4 = await browser.newContext(); const d = await c4.newPage();
+  await d.goto(link); await d.waitForSelector('h2:has-text("Criar sua senha")');
+  assert.ok(!d.url().includes('token='), 'token removido da barra de endereço');
+  const ins = d.locator('input[type=password]'); await ins.nth(0).fill('Senha-Vibe-Forte-1'); await ins.nth(1).fill('Senha-Vibe-Forte-1'); await d.click('button[type=submit]');
+  await d.waitForSelector('h2:has-text("Senha definida")');
+  await d.goto(link); await d.waitForSelector('h2:has-text("Link inválido")');
+  await d.goto(BASE + '/arena/#/login'); await d.fill('input[name=email]', GESTOR); await d.fill('input[name=password]', 'Senha-Vibe-Forte-1'); await d.click('button[type=submit]');
+  await d.waitForSelector('.g-top:has-text("Arena Vibe Beach")'); await c4.close();
+});
+await step('portal: histórico da arena registra cadastro, perfil, vínculo e inativação com o responsável', async () => {
+  await p.goto(vibeUrl.replace(/\/[^/]*$/, '') + '/historico'); await p.waitForSelector('h3:has-text("Usuários, perfis e vínculos")');
+  const t = await p.locator('main').innerText();
+  for (const k of ['Cadastro', 'Perfil/situação do vínculo', 'Vínculo à arena', 'dev@replayagora.example']) assert.ok(t.includes(k), 'histórico sem: ' + k);
+  assert.ok(!t.includes('Senha-Vibe') && !t.includes('e2e-secret-value-123'), 'sem segredos');
+});
+await step('portal: visão global de usuários (filtros, busca, Novo usuário) e inativação revoga sessão imediatamente', async () => {
+  await nav('Usuários e Permissões'); await p.waitForSelector(`tbody tr:has-text("${OPER}")`);
+  await p.selectOption('select[aria-label="Filtrar por perfil"]', 'arena_operator'); await p.waitForFunction(() => !document.body.innerText.includes('atleta.alfa@example.test'));
+  await p.selectOption('select[aria-label="Filtrar por perfil"]', '');
+  const sess = await browser.newContext(); const o = await sess.newPage();
+  await p.click('button:has-text("Novo usuário")'); await p.fill('dialog input[name=name]', 'Conta Sem Vinculo'); await p.fill('dialog input[name=email]', 'sem.vinculo@example.test'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector('tbody tr:has-text("sem.vinculo@example.test")');
+  await p.fill('input[aria-label=Buscar]', 'Conta Sem'); await p.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
+  await rowMenu(p, 'sem.vinculo@example.test', 'Inativar conta'); await p.click('dialog button[type=submit]');
+  await p.waitForSelector('tbody tr:has-text("sem.vinculo@example.test"):has-text("Inativo")');
+  await sess.close();
+});
+await gctx.close();
 await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
   const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -473,6 +654,7 @@ await step('portal: sessão do portal não vale no app da arena (isolamento entr
 });
 stopAgent();
 
+idp.close();
 await browser.close();
 const bad = results.filter((r) => r[0] !== 'ok');
 console.log(`\nE2E: ${results.length - bad.length}/${results.length} passos OK`);
