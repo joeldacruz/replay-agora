@@ -320,7 +320,7 @@ export async function journeyArena(params, ctx) {
     el('header', { class: 'j-header j-header--arena' }, el('div', { class: 'j-header-row' }, brand())),
     el('div', { class: 'j-arena-body' },
       el('section', { class: 'j-card j-arena-card', 'aria-label': 'Arena selecionada' },
-        el('span', { class: 'j-arena-icon' }, icon('stadium', { size: 40 })),
+        el('span', { class: 'j-arena-icon' }, arena.logoUrl ? el('img', { src: arena.logoUrl, alt: 'Logo de ' + arena.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 40 })),
         el('span', { class: 'j-arena-id' }, el('strong', {}, arena.name), arena.location ? el('small', {}, arena.location) : el('small', {}, `${courts.length} ${courts.length === 1 ? 'quadra' : 'quadras'}`)),
         el('a', { class: 'j-icon-btn', href: '#/', 'aria-label': 'Ler outro QR Code ou trocar de arena' }, icon('qr', { size: 26 }))),
       el('div', { class: 'j-tiles' }, toReplays, toFilters),
