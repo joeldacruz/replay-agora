@@ -645,7 +645,9 @@ await step('portal (celular): menu em gaveta, navegação e sem rolagem horizont
   const m = await mctx.newPage(); await m.goto(BASE + '/portal/#/'); await m.waitForSelector('h1:has-text("Painel Geral")');
   assert.equal(await m.locator('aside.p-side').evaluate((e) => e.getBoundingClientRect().right <= 0), true, 'menu oculto no celular');
   await m.click('button[aria-label="Abrir menu"]'); await m.click('nav.p-nav a:has-text("Câmeras")'); await m.waitForSelector('h1:has-text("Câmeras")');
-  for (const h of ['#/', '#/servidores', '#/cameras', '#/molduras', '#/monitoramento']) { await m.goto(BASE + '/portal/' + h); await m.waitForSelector('h1'); await m.waitForTimeout(400); assert.ok(await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), 'rolagem horizontal em ' + h); }
+  for (const h of ['#/', '#/servidores', '#/cameras', '#/molduras', '#/monitoramento']) { await m.goto(BASE + '/portal/' + h); await m.waitForSelector('h1'); await m.waitForTimeout(400); const diag = await m.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+    elements: [...document.querySelectorAll('body *')].filter(e => { const r=e.getBoundingClientRect(); return r.right > document.documentElement.clientWidth + 1 && r.width > 0 && getComputedStyle(e).position !== 'fixed'; }).slice(0, 12).map(e => ({ tag:e.tagName, className:String(e.className).slice(0,100), text:(e.textContent||'').slice(0,55), right:Math.round(e.getBoundingClientRect().right), width:Math.round(e.getBoundingClientRect().width) })) }));
+    assert.ok(diag.scroll <= diag.width + 1, 'rolagem horizontal em ' + h + ': ' + JSON.stringify(diag)); }
   await shot(m, 'portal-celular'); await mctx.close();
 });
 await step('portal: sessão do portal não vale no app da arena (isolamento entre apps)', async () => {
