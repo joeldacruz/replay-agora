@@ -58,6 +58,7 @@ class Arena(Base):
     plan_id: Mapped[str | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
     timezone: Mapped[str] = mapped_column(String(60), default="America/Sao_Paulo")
     brand_color: Mapped[str] = mapped_column(String(7), default="#0b6bcb")
+    logo_key: Mapped[str | None] = mapped_column(String(300), nullable=True)  # logo da arena, independente dos patrocinadores
     allow_self_join: Mapped[bool] = mapped_column(Boolean, default=True)
     # Política de áudio padrão da arena
     audio_default_mode: Mapped[str] = mapped_column(String(10), default="original")
