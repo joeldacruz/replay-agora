@@ -615,8 +615,9 @@ await step('portal: convite → definição de senha por link de uso único; nov
   const ins = d.locator('input[type=password]'); await ins.nth(0).fill('Senha-Vibe-Forte-1'); await ins.nth(1).fill('Senha-Vibe-Forte-1'); await d.click('button[type=submit]');
   await d.waitForSelector('h2:has-text("Senha definida")');
   await d.goto(link); await d.waitForSelector('h2:has-text("Link inválido")');
+  const seen = []; d.on('response', (r) => { if (r.url().includes('/api/')) seen.push(r.status() + ' ' + r.url().replace(BASE, '')); });
   await d.goto(BASE + '/arena/#/login'); await d.fill('input[name=email]', GESTOR); await d.fill('input[name=password]', 'Senha-Vibe-Forte-1'); await d.click('button[type=submit]');
-  await d.waitForSelector('.g-top:has-text("Arena Vibe Beach")', { timeout: 15000 }).catch(async () => { throw new Error('login por senha falhou: ' + (await d.locator('body').innerText()).slice(0, 300) + ' @ ' + d.url()); }); await c4.close();
+  await d.waitForSelector('.g-top:has-text("Arena Vibe Beach")', { timeout: 15000 }).catch(async () => { throw new Error('login por senha falhou: ' + (await d.locator('body').innerText()).slice(0, 300) + ' @ ' + d.url() + ' | ' + seen.join(', ')); }); await c4.close();
 });
 await step('portal: histórico da arena registra cadastro, perfil, vínculo e inativação com o responsável', async () => {
   await p.goto(vibeUrl.replace(/\/[^/]*$/, '') + '/historico'); await p.waitForSelector('h3:has-text("Usuários, perfis e vínculos")');
