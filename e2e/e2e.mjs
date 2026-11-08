@@ -607,7 +607,7 @@ await step('google: jogador novo entra pelo Google sem perfil administrativo e n
 });
 await step('portal: convite → definição de senha por link de uso único; novo gestor entra por e-mail/senha; redefinição encerra sessões', async () => {
   await nav('Usuários e Permissões'); await p.click('summary:has-text("Caixa de saída")');
-  const body = await p.locator('details:has(summary:has-text("Caixa de saída")) pre', { hasText: 'definir-senha' }).first().textContent();
+  const body = await p.locator('details:has(summary:has-text("Caixa de saída")) tbody tr', { hasText: GESTOR }).locator('pre', { hasText: 'definir-senha' }).first().textContent();
   const link = BASE + '/definir-senha.html?token=' + body.match(/definir-senha\.html\?token=([\w-]+)/)[1];
   const c4 = await browser.newContext(); const d = await c4.newPage();
   await d.goto(link); await d.waitForSelector('h2:has-text("Criar sua senha")');
