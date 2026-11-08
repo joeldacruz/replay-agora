@@ -110,7 +110,7 @@ function arenaRow(a, selectedId) {
   const place = a.location || a.city || '';
   const selected = a.id === selectedId;
   return el('a', { class: 'j-card j-row' + (selected ? ' is-selected' : ''), href: '#/arena/' + encodeURIComponent(a.slug), 'aria-current': selected ? 'true' : null },
-    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, icon('stadium', { size: 28 })),
+    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, a.logoUrl ? el('img', { src: a.logoUrl, alt: 'Logo de ' + a.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 28 })),
     el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, place || (selected ? 'Arena selecionada' : 'Ver quadras e replays'))),
     selected ? el('span', { class: 'j-badge' }, icon('check', { size: 14 }), 'Selecionada') : '',
     el('span', { class: 'j-row-go' }, 'Acessar', icon('chevronRight', { size: 20 })));
