@@ -189,6 +189,18 @@ export async function journeyAddArena(ctx) {
   arenaAccessScreen(ctx, arenas);
 }
 
+/** O link identifica a arena; não contém token nem libera replays privados. */
+async function shareArena(arena) {
+  const url = new URL(location.pathname + '#/arena/' + encodeURIComponent(arena.slug), location.origin).href;
+  const data = { title: arena.name + ' — Replay Agora', text: 'Acesse a arena ' + arena.name + ' no Replay Agora.', url };
+  if (typeof navigator.share === 'function') {
+    try { await navigator.share(data); return; }
+    catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  try { await copy(url); toast('Link da arena copiado para compartilhar'); }
+  catch { toast('Não foi possível copiar o link da arena', true); }
+}
+
 // ------------------------------------------------------------------------------------------ arena: quadras · data · horário · replays
 function shareReplay(ctx, v) {
   return async () => {
@@ -322,7 +334,7 @@ export async function journeyArena(params, ctx) {
       el('section', { class: 'j-card j-arena-card', 'aria-label': 'Arena selecionada' },
         el('span', { class: 'j-arena-icon' }, arena.logoUrl ? el('img', { src: arena.logoUrl, alt: 'Logo de ' + arena.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 40 })),
         el('span', { class: 'j-arena-id' }, el('strong', {}, arena.name), arena.location ? el('small', {}, arena.location) : el('small', {}, `${courts.length} ${courts.length === 1 ? 'quadra' : 'quadras'}`)),
-        el('a', { class: 'j-icon-btn', href: '#/', 'aria-label': 'Ler outro QR Code ou trocar de arena' }, icon('qr', { size: 26 }))),
+        el('button', { class: 'j-icon-btn j-share-arena', type: 'button', 'aria-label': 'Compartilhar arena', title: 'Compartilhar arena', onclick: () => shareArena(arena) }, icon('share', { size: 26 }))),
       el('div', { class: 'j-tiles' }, toReplays, toFilters),
       filters,
       el('section', { class: 'j-replays', id: 'j-replays' },
