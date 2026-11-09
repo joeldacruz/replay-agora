@@ -69,6 +69,10 @@ textarea.p-input { min-height: 80px; resize: vertical; }
 .p-err { color: var(--bad); font-weight: 600; min-height: 1.1em; }
 .p-empty { padding: 28px 16px; text-align: center; color: var(--muted); display: grid; gap: 12px; justify-items: center; }
 .p-kv { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: .9rem; } .p-kv span { color: var(--muted); } .p-kv b { text-align: right; overflow-wrap: anywhere; }
+/* Diagnósticos longos de câmeras não devem aumentar a largura da tela no celular. */
+.p-kv b { min-width: 0; }
+.p-kv .p-pill { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: right; }
+
 .p-table-wrap { overflow-x: auto; }
 .p-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .p-table th { text-align: left; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
