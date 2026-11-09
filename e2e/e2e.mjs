@@ -665,6 +665,22 @@ await step('portal: visão global de usuários (filtros, busca, Novo usuário) e
   await sess.close();
 });
 await gctx.close();
+await step('jogador: a logomarca da arena aparece em Minhas Arenas e na tela da arena selecionada (com fallback sem logo)', async () => {
+  const jc = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); const jp = await jc.newPage();
+  await jp.goto(BASE + '/#/login'); await jp.fill('input[name=email]', 'atleta.alfa@example.test'); await jp.fill('input[name=password]', PASS); await jp.click('button[type=submit]');
+  await jp.waitForSelector('.j-my-arenas');
+  const vibe = jp.locator('a.j-row', { hasText: 'Arena Vibe Beach' }); await vibe.waitFor();
+  const img = vibe.locator('img.j-arena-logo'); await img.waitFor();
+  assert.ok(await img.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada em Minhas Arenas');
+  assert.ok((await img.getAttribute('src')).includes('/api/arenas/'));
+  assert.equal(await jp.locator('a.j-row', { hasText: 'Arena Alfa' }).locator('img.j-arena-logo').count(), 0, 'arena sem logo mantém o ícone padrão');
+  await shot(jp, 'jogador-minhas-arenas-logo');
+  await vibe.click(); await jp.waitForSelector('.j-arena-card');
+  const hdr = jp.locator('.j-arena-card img.j-arena-logo'); await hdr.waitFor();
+  assert.ok(await hdr.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada na tela da arena');
+  await shot(jp, 'jogador-arena-logo');
+  await jc.close();
+});
 await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
   const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
