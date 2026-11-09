@@ -499,7 +499,9 @@ let vibeUrl = '';
 await step('portal: cria a Arena Vibe Beach com um NOVO gestor na mesma operação (sem conta prévia)', async () => {
   await nav('Arenas'); await p.waitForSelector('td:has-text("Arena Beta")');
   await p.click('button:has-text("Nova arena")');
-  await p.fill('dialog input[name=name]', 'Arena Vibe Beach'); await p.fill('dialog input[name=slug]', 'vibe-beach');
+  await p.fill('dialog input[name=name]', 'Arena Vibe Beach');
+   assert.equal(await p.locator('dialog input[name=slug]').inputValue(), 'arena-vibe-beach', 'slug automático');
+   await p.fill('dialog input[name=slug]', 'vibe-beach'); // preserva o identificador do teste existente
   await p.fill('dialog input[name=mName]', 'Gestor Vibe'); await p.fill('dialog input[name=mEmail]', GESTOR); await p.selectOption('dialog select[name=mAuth]', 'both');
   await p.click('dialog button[type=submit]');
   await p.waitForSelector('h1:has-text("Arena Vibe Beach")'); await p.waitForSelector(`tbody tr:has-text("${GESTOR}")`);
@@ -509,6 +511,31 @@ await step('portal: cria a Arena Vibe Beach com um NOVO gestor na mesma operaç�
   for (const t of ['Visão geral', 'Dados da Arena', 'Gestores e Usuários', 'Quadras', 'Equipamentos', 'Configurações', 'Histórico de alterações']) assert.ok((await p.locator('.p-tabs').innerText()).includes(t), 'aba: ' + t);
 });
 await shot(p, 'portal-arena-gestores');
+await step('portal: upload de logomarca da arena aparece no App Jogador', async () => {
+  await p.click('a.p-tab:has-text("Dados da Arena")');
+  await p.waitForSelector('h2:has-text("Logomarca da arena")');
+  const b64 = await p.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
+    canvas.getContext('2d').fillRect(0, 0, 100, 100);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await p.locator('input[type=file][accept*="png"]').setInputFiles({
+    name: 'vibe.png', mimeType: 'image/png', buffer: Buffer.from(b64, 'base64'),
+  });
+  await p.click('button:has-text("Enviar logomarca")');
+  await p.waitForSelector('img[alt="Logomarca de Arena Vibe Beach"]');
+  const src = await p.locator('img[alt="Logomarca de Arena Vibe Beach"]').getAttribute('src');
+  assert.ok(src.includes('/api/arenas/') && src.includes('/logo'), src);
+  const response = await p.request.get(new URL(src, BASE).href);
+  assert.equal(response.status(), 200, 'logo pública precisa responder HTTP 200');
+  assert.ok((response.headers()['content-type'] || '').includes('image/png'));
+  const t = await p.evaluate(async () => (await fetch('/api/arenas', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('ra_user_token') }
+  })).status);
+  assert.ok([200, 401, 403].includes(t)); // sessão do Portal não dá privilégio ao jogador
+  await p.goto(vibeUrl);
+  await p.waitForSelector('tbody tr:has-text("gestor.vibe@example.test")');
+});
 await step('portal: o último gestor ativo não pode ser rebaixado nem inativado (regra do backend)', async () => {
   await rowMenu(p, GESTOR, 'Editar dados e perfil'); await p.selectOption('dialog select[name=role]', 'user'); await p.click('dialog button[type=submit]');
   await p.waitForSelector('dialog .p-err:has-text("pelo menos um gestor")'); await p.click('dialog button:has-text("Cancelar")');
