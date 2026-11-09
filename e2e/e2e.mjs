@@ -86,15 +86,20 @@ await step('usuário: "Adicionar outra arena" abre QR/código e a entrada por c�
   await u.waitForSelector('.j-replay'); assert.match(u.url(), /#\/arena\/arena-alfa/);
   assert.ok((await u.locator('body').innerText()).includes('Arena Alfa'));
 });
-await step('usuário: botão Compartilhar arena substitui QR no cabeçalho de Replays', async () => {
+await step('usuário: Compartilhar arena substitui QR no cabeçalho de Replays', async () => {
   const share = u.locator('.j-arena-card button[aria-label="Compartilhar arena"]');
   await share.waitFor();
   assert.equal(await u.locator('.j-arena-card a[aria-label*="QR Code"]').count(), 0);
-  await u.evaluate(() => { Object.defineProperty(navigator, 'share', { configurable: true, value: undefined }); });
+  await u.evaluate(() => {
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (link) => { window.__arenaSharedLink = link; }
+    } });
+  });
   await share.click();
   await u.waitForSelector('text=Link da arena copiado para compartilhar');
-  const url = await u.evaluate(async () => navigator.clipboard.readText());
-  assert.match(url, /#\\/arena\\/arena-alfa$/);
+  const url = await u.evaluate(() => window.__arenaSharedLink);
+  assert.ok(url && url.endsWith('#/arena/arena-alfa'), 'link de arena incorreto: ' + url);
 });
 await step('usuário: lista só os replays publicados e filtra por quadra', async () => {
   assert.equal(await u.locator('.j-replay').count(), 2, 'esperava 2 publicados (privados ocultos)');
