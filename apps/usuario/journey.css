@@ -122,8 +122,8 @@ body.j-body {
 .j-card { background: var(--j-card); border-radius: var(--j-radius-lg); box-shadow: var(--j-shadow-card); }
 .j-pad { padding: 18px; }
 .j-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-decoration: none; }
-.j-row-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; overflow: hidden; }
-.j-arena-logo { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 4px; border-radius: inherit; }
+.j-row-icon { flex: none; display: grid; place-items: center; width: 72px; height: 72px; border-radius: 16px; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; overflow: hidden; }
+.j-arena-logo { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; background: transparent; padding: 0; border-radius: inherit; }
 .j-row-text { flex: 1; min-width: 0; display: grid; }
 .j-row-text strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .j-row-text small { color: var(--j-muted); }
@@ -224,7 +224,7 @@ body.j-body {
 .j-header--arena { padding-bottom: 62px; }
 .j-arena-body { position: relative; margin-top: -42px; }
 .j-arena-card { display: flex; align-items: center; gap: 14px; padding: 16px; }
-.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; color: var(--j-ink); border-radius: 12px; overflow: hidden; }
+.j-arena-icon { flex: none; display: grid; place-items: center; width: 84px; height: 84px; color: var(--j-ink); border-radius: 14px; overflow: hidden; }
 .j-arena-id { flex: 1; min-width: 0; display: grid; padding-left: 14px; border-left: 1.5px solid var(--j-line); }
 .j-arena-id strong { font-size: 1.3rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
 .j-arena-id small { color: var(--j-muted); font-size: .95rem; }
@@ -372,14 +372,14 @@ body.j-body {
   .j-arena-grid[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 330px)); }
   .j-arena-grid[data-count="4"] { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 330px)); }
   .j-my-arenas .j-row { padding: 22px; gap: 18px; }
-  .j-my-arenas .j-row-icon { width: 64px; height: 64px; border-radius: 18px; }
+  .j-my-arenas .j-row-icon { width: 84px; height: 84px; border-radius: 18px; }
   .j-my-arenas .j-row-text strong { font-size: 1.2rem; }
   .j-my-arenas .j-row-text small { font-size: .95rem; }
   /* 3+ arenas: cartão em duas linhas (identificação · ação) para o nome nunca ficar espremido */
-  .j-arena-grid[data-count="3"] .j-row, .j-arena-grid[data-count="4"] .j-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: center; row-gap: 14px; }
+  .j-arena-grid[data-count="3"] .j-row, .j-arena-grid[data-count="4"] .j-row { display: grid; grid-template-columns: 84px minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: center; row-gap: 14px; }
   .j-arena-grid[data-count="3"] .j-row-go, .j-arena-grid[data-count="4"] .j-row-go { grid-column: 1 / -1; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--j-line); }
   .j-arena-grid[data-count="1"] .j-row { padding: 28px 30px; gap: 24px; }
-  .j-arena-grid[data-count="1"] .j-row-icon { width: 80px; height: 80px; border-radius: 22px; }
+  .j-arena-grid[data-count="1"] .j-row-icon { width: 96px; height: 96px; border-radius: 22px; }
   .j-arena-grid[data-count="1"] .j-row-text strong { font-size: 1.5rem; }
   .j-row-go { font-size: .95rem; }
   .j-add-arena { margin-top: 36px; min-width: 320px; align-self: center; }
@@ -413,4 +413,14 @@ body.j-body {
 @media (min-width: 1600px) {
   body.j-body { --j-col: 1240px; }
   .j-thumb { width: 200px; }
+}
+
+/* Logomarca em destaque e ação de compartilhamento no cabeçalho da arena. */
+.j-share-arena { border: 0; cursor: pointer; color: var(--j-ink); }
+.j-share-arena:focus-visible { outline: 3px solid var(--j-coral); outline-offset: 3px; }
+@media (max-width: 360px) {
+  .j-arena-icon { width: 68px; height: 68px; }
+  .j-row-icon { width: 64px; height: 64px; }
+  .j-arena-card { gap: 10px; padding: 12px; }
+  .j-arena-id { padding-left: 8px; }
 }
