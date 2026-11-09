@@ -1,5 +1,5 @@
 // Cache apenas do "app shell". Nunca intercepta /api, /media nem as outras aplicações. Rede primeiro; cache só como reserva offline.
-const CACHE = 'replay-usuario-v15';
+const CACHE = 'replay-usuario-v16';
 const SHELL = ['/', '/app.js', '/journey.js', '/definir-senha.js', '/kit.js', '/journey.css', '/brand/logo-horizontal-480.webp', '/brand/logo-horizontal-960.webp', '/manifest.webmanifest', '/shared/ui.js'];
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
