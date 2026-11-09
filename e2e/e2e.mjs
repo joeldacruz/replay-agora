@@ -100,6 +100,8 @@ await step('usuário: Compartilhar arena substitui QR no cabeçalho de Replays',
   await u.waitForSelector('text=Link da arena copiado para compartilhar');
   const url = await u.evaluate(() => window.__arenaSharedLink);
   assert.ok(url && url.endsWith('#/arena/arena-alfa'), 'link de arena incorreto: ' + url);
+  // Nao contaminar o teste posterior de compartilhamento de replay.
+  await u.evaluate(() => { delete navigator.share; delete navigator.clipboard; });
 });
 await step('usuário: lista só os replays publicados e filtra por quadra', async () => {
   assert.equal(await u.locator('.j-replay').count(), 2, 'esperava 2 publicados (privados ocultos)');
