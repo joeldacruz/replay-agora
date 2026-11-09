@@ -110,7 +110,7 @@ function arenaRow(a, selectedId) {
   const place = a.location || a.city || '';
   const selected = a.id === selectedId;
   return el('a', { class: 'j-card j-row' + (selected ? ' is-selected' : ''), href: '#/arena/' + encodeURIComponent(a.slug), 'aria-current': selected ? 'true' : null },
-    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, icon('stadium', { size: 28 })),
+    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, a.logoUrl ? el('img', { src: a.logoUrl, alt: 'Logo de ' + a.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 28 })),
     el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, place || (selected ? 'Arena selecionada' : 'Ver quadras e replays'))),
     selected ? el('span', { class: 'j-badge' }, icon('check', { size: 14 }), 'Selecionada') : '',
     el('span', { class: 'j-row-go' }, 'Acessar', icon('chevronRight', { size: 20 })));
@@ -320,7 +320,7 @@ export async function journeyArena(params, ctx) {
     el('header', { class: 'j-header j-header--arena' }, el('div', { class: 'j-header-row' }, brand())),
     el('div', { class: 'j-arena-body' },
       el('section', { class: 'j-card j-arena-card', 'aria-label': 'Arena selecionada' },
-        el('span', { class: 'j-arena-icon' }, icon('stadium', { size: 40 })),
+        el('span', { class: 'j-arena-icon' }, arena.logoUrl ? el('img', { src: arena.logoUrl, alt: 'Logo de ' + arena.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 40 })),
         el('span', { class: 'j-arena-id' }, el('strong', {}, arena.name), arena.location ? el('small', {}, arena.location) : el('small', {}, `${courts.length} ${courts.length === 1 ? 'quadra' : 'quadras'}`)),
         el('a', { class: 'j-icon-btn', href: '#/', 'aria-label': 'Ler outro QR Code ou trocar de arena' }, icon('qr', { size: 26 }))),
       el('div', { class: 'j-tiles' }, toReplays, toFilters),

@@ -499,7 +499,9 @@ let vibeUrl = '';
 await step('portal: cria a Arena Vibe Beach com um NOVO gestor na mesma operação (sem conta prévia)', async () => {
   await nav('Arenas'); await p.waitForSelector('td:has-text("Arena Beta")');
   await p.click('button:has-text("Nova arena")');
-  await p.fill('dialog input[name=name]', 'Arena Vibe Beach'); await p.fill('dialog input[name=slug]', 'vibe-beach');
+  await p.fill('dialog input[name=name]', 'Arena Vibe Beach');
+   assert.equal(await p.locator('dialog input[name=slug]').inputValue(), 'arena-vibe-beach', 'slug automático');
+   await p.fill('dialog input[name=slug]', 'vibe-beach'); // preserva o identificador do teste existente
   await p.fill('dialog input[name=mName]', 'Gestor Vibe'); await p.fill('dialog input[name=mEmail]', GESTOR); await p.selectOption('dialog select[name=mAuth]', 'both');
   await p.click('dialog button[type=submit]');
   await p.waitForSelector('h1:has-text("Arena Vibe Beach")'); await p.waitForSelector(`tbody tr:has-text("${GESTOR}")`);
@@ -509,6 +511,31 @@ await step('portal: cria a Arena Vibe Beach com um NOVO gestor na mesma operaç�
   for (const t of ['Visão geral', 'Dados da Arena', 'Gestores e Usuários', 'Quadras', 'Equipamentos', 'Configurações', 'Histórico de alterações']) assert.ok((await p.locator('.p-tabs').innerText()).includes(t), 'aba: ' + t);
 });
 await shot(p, 'portal-arena-gestores');
+await step('portal: upload de logomarca da arena aparece no App Jogador', async () => {
+  await p.click('a.p-tab:has-text("Dados da Arena")');
+  await p.waitForSelector('h2:has-text("Logomarca da arena")');
+  const b64 = await p.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
+    canvas.getContext('2d').fillRect(0, 0, 100, 100);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  await p.locator('input[type=file][accept*="png"]').setInputFiles({
+    name: 'vibe.png', mimeType: 'image/png', buffer: Buffer.from(b64, 'base64'),
+  });
+  await p.click('button:has-text("Enviar logomarca")');
+  await p.waitForSelector('img[alt="Logomarca de Arena Vibe Beach"]');
+  const src = await p.locator('img[alt="Logomarca de Arena Vibe Beach"]').getAttribute('src');
+  assert.ok(src.includes('/api/arenas/') && src.includes('/logo'), src);
+  const response = await p.request.get(new URL(src, BASE).href);
+  assert.equal(response.status(), 200, 'logo pública precisa responder HTTP 200');
+  assert.ok((response.headers()['content-type'] || '').includes('image/png'));
+  const t = await p.evaluate(async () => (await fetch('/api/arenas', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('ra_user_token') }
+  })).status);
+  assert.ok([200, 401, 403].includes(t)); // sessão do Portal não dá privilégio ao jogador
+  await p.goto(vibeUrl);
+  await p.waitForSelector('tbody tr:has-text("gestor.vibe@example.test")');
+});
 await step('portal: o último gestor ativo não pode ser rebaixado nem inativado (regra do backend)', async () => {
   await rowMenu(p, GESTOR, 'Editar dados e perfil'); await p.selectOption('dialog select[name=role]', 'user'); await p.click('dialog button[type=submit]');
   await p.waitForSelector('dialog .p-err:has-text("pelo menos um gestor")'); await p.click('dialog button:has-text("Cancelar")');
@@ -638,6 +665,22 @@ await step('portal: visão global de usuários (filtros, busca, Novo usuário) e
   await sess.close();
 });
 await gctx.close();
+await step('jogador: a logomarca da arena aparece em Minhas Arenas e na tela da arena selecionada (com fallback sem logo)', async () => {
+  const jc = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); const jp = await jc.newPage();
+  await jp.goto(BASE + '/#/login'); await jp.fill('input[name=email]', 'atleta.alfa@example.test'); await jp.fill('input[name=password]', PASS); await jp.click('button[type=submit]');
+  await jp.waitForSelector('.j-my-arenas');
+  const vibe = jp.locator('a.j-row', { hasText: 'Arena Vibe Beach' }); await vibe.waitFor();
+  const img = vibe.locator('img.j-arena-logo'); await img.waitFor();
+  assert.ok(await img.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada em Minhas Arenas');
+  assert.ok((await img.getAttribute('src')).includes('/api/arenas/'));
+  assert.equal(await jp.locator('a.j-row', { hasText: 'Arena Alfa' }).locator('img.j-arena-logo').count(), 0, 'arena sem logo mantém o ícone padrão');
+  await shot(jp, 'jogador-minhas-arenas-logo');
+  await vibe.click(); await jp.waitForSelector('.j-arena-card');
+  const hdr = jp.locator('.j-arena-card img.j-arena-logo'); await hdr.waitFor();
+  assert.ok(await hdr.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada na tela da arena');
+  await shot(jp, 'jogador-arena-logo');
+  await jc.close();
+});
 await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
   const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -645,7 +688,9 @@ await step('portal (celular): menu em gaveta, navegação e sem rolagem horizont
   const m = await mctx.newPage(); await m.goto(BASE + '/portal/#/'); await m.waitForSelector('h1:has-text("Painel Geral")');
   assert.equal(await m.locator('aside.p-side').evaluate((e) => e.getBoundingClientRect().right <= 0), true, 'menu oculto no celular');
   await m.click('button[aria-label="Abrir menu"]'); await m.click('nav.p-nav a:has-text("Câmeras")'); await m.waitForSelector('h1:has-text("Câmeras")');
-  for (const h of ['#/', '#/servidores', '#/cameras', '#/molduras', '#/monitoramento']) { await m.goto(BASE + '/portal/' + h); await m.waitForSelector('h1'); await m.waitForTimeout(400); assert.ok(await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), 'rolagem horizontal em ' + h); }
+  for (const h of ['#/', '#/servidores', '#/cameras', '#/molduras', '#/monitoramento']) { await m.goto(BASE + '/portal/' + h); await m.waitForSelector('h1'); await m.waitForTimeout(400); const diag = await m.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+    elements: [...document.querySelectorAll('body *')].filter(e => { const r=e.getBoundingClientRect(); return r.right > document.documentElement.clientWidth + 1 && r.width > 0 && getComputedStyle(e).position !== 'fixed'; }).slice(0, 12).map(e => ({ tag:e.tagName, className:String(e.className).slice(0,100), text:(e.textContent||'').slice(0,55), right:Math.round(e.getBoundingClientRect().right), width:Math.round(e.getBoundingClientRect().width) })) }));
+    assert.ok(diag.scroll <= diag.width + 1, 'rolagem horizontal em ' + h + ': ' + JSON.stringify(diag)); }
   await shot(m, 'portal-celular'); await mctx.close();
 });
 await step('portal: sessão do portal não vale no app da arena (isolamento entre apps)', async () => {
