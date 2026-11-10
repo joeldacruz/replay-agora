@@ -13,9 +13,9 @@ ARENA_STAFF = ("arena_admin", "arena_operator")
 
 # Permissões POR OPERAÇÃO (o papel sozinho não basta). global_admin (sessão de plataforma + MFA) possui todas.
 # Operações que só o Portal/administrador global executa não aparecem em nenhum papel de arena.
-OPERATOR_PERMS = frozenset({"arena.view", "video.view", "video.play", "sponsor.view", "music.view", "preview", "diagnostics.view", "qr.view"})
+OPERATOR_PERMS = frozenset({"arena.view", "video.view", "video.play", "sponsor.view", "music.view", "preview", "diagnostics.view", "qr.view", "capture.test"})
 ADMIN_PERMS = OPERATOR_PERMS | {"audio.manage", "music.manage", "sponsor.manage", "arena.info.edit", "members.manage"}
-GLOBAL_ONLY_PERMS = frozenset({"court.manage", "agent.manage", "policy.manage", "video.moderate", "video.delete", "capture.test", "audit.view"})
+GLOBAL_ONLY_PERMS = frozenset({"court.manage", "agent.manage", "policy.manage", "video.moderate", "video.delete", "audit.view"})
 ROLE_PERMS = {"arena_operator": OPERATOR_PERMS, "arena_admin": ADMIN_PERMS}
 
 

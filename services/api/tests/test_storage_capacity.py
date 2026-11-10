@@ -76,7 +76,7 @@ def test_effective_limit_plan_vs_override_and_permissions(client, world, H):
 
 
 def test_court_limit_policy_validation_and_idor(client, world, H):
-    ha, hb = H("a_admin_arena"), H("b_admin_arena")
+    ha, hb = H("root"), H("b_admin_arena")
     url = f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy"
     assert client.put(url, headers=ha, json={"storageLimitMb": 400, "retentionDays": 10}).status_code == 200
     assert client.put(url, headers=ha, json={"storageLimitMb": 5000, "retentionDays": 10}).status_code == 422  # > limite da arena
@@ -95,7 +95,7 @@ def test_court_limit_policy_validation_and_idor(client, world, H):
 def test_usage_levels_reflect_synced_metadata_and_config_reaches_agent(client, world, H):
     setup_agent(client, world)
     client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 100})
-    client.put(f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy", headers=H("a_admin_arena"), json={"storageLimitMb": 60, "retentionDays": 7})
+    client.put(f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy", headers=H("root"), json={"storageLimitMb": 60, "retentionDays": 7})
     base = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()["usedBytes"]  # vídeos semeados pela fixture
     put_replays(client, world, 82 - base // MB, size=MB)  # ~82 MB de 100 => warning (80%); A_01 acima de 60 MB => full
     st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
@@ -110,7 +110,7 @@ def test_usage_levels_reflect_synced_metadata_and_config_reaches_agent(client, w
     # configVersion muda quando a política muda (agentes detectam pelo heartbeat)
     hb = client.post(f"{BASE}/heartbeat", headers=ah(world), json={"configVersion": cfg["configVersion"]}).json()
     assert hb["configChanged"] is False
-    client.put(f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy", headers=H("a_admin_arena"), json={"storageLimitMb": 50, "retentionDays": 7})
+    client.put(f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy", headers=H("root"), json={"storageLimitMb": 50, "retentionDays": 7})
     assert client.post(f"{BASE}/heartbeat", headers=ah(world), json={"configVersion": cfg["configVersion"]}).json()["configChanged"] is True
 
 
@@ -134,7 +134,7 @@ def test_retention_plan_is_dry_run_and_respects_protection(client, world, H):
     setup_agent(client, world)
     old = put_replays(client, world, 3, age_days=60)
     put_replays(client, world, 2, age_days=1)
-    ha = H("a_admin_arena")
+    ha = H("root")
     assert client.post(f"/api/arena/{world.A.id}/videos/{old[0]}/protection", headers=ha, json={"protected": True}).json()["protected"] is True
     plan = client.get(f"/api/arena/{world.A.id}/retention/plan", headers=ha).json()
     ids = {c["videoId"] for c in plan["candidates"]}
@@ -160,7 +160,7 @@ def test_retention_pressure_reclaims_oldest_unprotected_until_below_warn(client,
     setup_agent(client, world)
     client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 100})
     ids = put_replays(client, world, 5, age_days=5, size=20 * MB, prefix="pa") + put_replays(client, world, 1, age_days=2, size=2 * MB, prefix="pb")
-    ha = H("a_admin_arena")
+    ha = H("root")
     client.post(f"/api/arena/{world.A.id}/videos/{ids[0]}/protection", headers=ha, json={"protected": True})
     plan = client.get(f"/api/arena/{world.A.id}/retention/plan", headers=ha).json()  # usado 102 MB de 100 => full
     assert plan["level"] == "full" and ids[0] not in {c["videoId"] for c in plan["candidates"]}
@@ -173,7 +173,7 @@ def test_retention_pressure_reclaims_oldest_unprotected_until_below_warn(client,
 def test_protection_idor(client, world, H):
     setup_agent(client, world)
     vid = put_replays(client, world, 1)[0]
-    assert client.post(f"/api/arena/{world.B.id}/videos/{vid}/protection", headers=H("b_admin_arena"), json={"protected": True}).status_code == 404
+    assert client.post(f"/api/arena/{world.B.id}/videos/{vid}/protection", headers=H("b_admin_arena"), json={"protected": True}).status_code in (403, 404)
     assert client.post(f"/api/arena/{world.A.id}/videos/{vid}/protection", headers=H("b_admin_arena"), json={"protected": True}).status_code == 404
     assert client.post(f"/api/arena/{world.A.id}/videos/{vid}/protection", headers=H("a_user"), json={"protected": True}).status_code in (401, 403)
 

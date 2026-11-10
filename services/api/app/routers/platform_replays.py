@@ -28,7 +28,7 @@ def _row(v: Video, court: Court | None, track: MusicTrack | None) -> dict:
             "music": {"id": track.id, "title": track.title} if track else None, "musicReason": v.music_reason}
 
 
-@router.get("/replays")
+@router.get("/catalog")
 def list_replays(arena_id: str, state: str | None = Query(None, pattern=r"^(published|pending|moderated|removed)$"),
                  limit: int = Query(100, ge=1, le=300), a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     _arena(db, arena_id)
@@ -52,11 +52,11 @@ class Moderate(BaseModel):
     reason: str = Field("", max_length=200)
 
 
-@router.post("/replays/{video_id}/moderate")
-def moderate(arena_id: str, video_id: str, body: Moderate, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+@router.post("/catalog/{item_id}/moderate")
+def moderate(arena_id: str, item_id: str, body: Moderate, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     """Moderação excepcional. hide/block/remove exigem motivo e impedem qualquer republicação automática."""
     _arena(db, arena_id)
-    v = db.get(Video, video_id)
+    v = db.get(Video, item_id)
     if not v or v.arena_id != arena_id:
         raise HTTPException(404, "replay não encontrado nesta arena")
     if body.action != "restore" and len(body.reason.strip()) < 3:
@@ -76,7 +76,7 @@ class PublishPending(BaseModel):
     dryRun: bool = True
 
 
-@router.post("/replays/publish-pending")
+@router.post("/catalog/publish-pending")
 def publish_pending(arena_id: str, body: PublishPending, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     """Regulariza replays sincronizados como 'private' ANTES da regra automática: publica apenas os válidos DESTA arena que nunca
     foram publicados, moderados ou removidos, em quadras sem retenção administrativa. dryRun (padrão) só lista."""

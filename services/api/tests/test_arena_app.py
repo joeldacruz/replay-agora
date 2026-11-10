@@ -17,7 +17,7 @@ def test_operator_vs_admin_permissions(client, world, H):
     op, base = H("a_op_arena"), A(world)
     assert client.get(f"{base}/dashboard", headers=op).status_code == 200
     assert client.get(f"{base}/courts", headers=op).status_code == 200
-    assert client.patch(f"{base}/videos/{world.A.priv}", headers=op, json={"visibility": "arena"}).status_code == 200  # publica
+    assert client.patch(f"{base}/videos/{world.A.priv}", headers=op, json={"visibility": "arena"}).status_code == 403  # publicação é automática: sem aprovação manual
     # operador NÃO administra
     assert client.post(f"{base}/sponsors", headers=op, data={"name": "Nova Marca"}, files={"logo": ("l.png", png(), "image/png")}).status_code == 403
     assert client.post(f"{base}/courts", headers=op, json={"label": "Q3", "localCourtKey": "A_03"}).status_code == 403
@@ -35,7 +35,8 @@ def test_dashboard_metrics(client, world, H):
 
 
 def test_courts_crud_and_plan_limit_and_no_credentials(client, world, H):
-    h, base = H("a_admin_arena"), A(world)
+    assert client.post(f"{A(world)}/courts", headers=H("a_admin_arena"), json={"label": "Q9", "localCourtKey": "A_09"}).status_code == 403   # gestor não cadastra quadras
+    h, base = H("root"), A(world)    # quadras: administração global (Portal / sessão de plataforma + MFA)
     bad = client.post(f"{base}/courts", headers=h, json={"label": "Q3", "localCourtKey": "A_03", "cameraRef": "rtsp://user:senha@10.0.0.1/stream"})
     assert bad.status_code == 422
     ok = client.post(f"{base}/courts", headers=h, json={"label": "Q3", "localCourtKey": "A_03", "cameraRef": "camera-03"})
@@ -196,7 +197,8 @@ def test_delete_video_requires_confirm_and_removes_files(client, world, H):
     from app import storage
     from app.db import SessionLocal
     from app.models import Video
-    h, base = H("a_admin_arena"), A(world)
+    assert client.delete(f"{A(world)}/videos/{world.A.priv}?confirm=true", headers=H("a_admin_arena")).status_code == 403   # gestor não exclui replays
+    h, base = H("root"), A(world)
     db = SessionLocal()
     key = db.get(Video, world.A.priv).storage_key
     db.close()
@@ -208,23 +210,26 @@ def test_delete_video_requires_confirm_and_removes_files(client, world, H):
 
 
 def test_audit_trail_records_sponsor_music_and_video_removal(client, world, H, media):
-    h, base = H("a_admin_arena"), A(world)
+    h, base, g = H("a_admin_arena"), A(world), H("root")
     client.post(f"{base}/sponsors", headers=h, data={"name": "Auditada"}, files={"logo": ("l.png", png(), "image/png")})
     client.patch(f"{base}/campaigns/{world.A.campaign}", headers=h, json={"priority": 3})
     client.patch(f"{base}/music/{world.A.tracks['ok']}", headers=h, json={"rightsDeclared": False})
-    client.delete(f"{base}/videos/{world.A.priv}?confirm=true", headers=h)
-    client.post(f"{base}/agents", headers=h, json={"label": "agente novo"})
-    log = client.get(f"{base}/audit", headers=h).json()
+    client.delete(f"{base}/videos/{world.A.priv}?confirm=true", headers=g)
+    client.post(f"{base}/agents", headers=g, json={"label": "agente novo"})
+    assert client.get(f"{base}/audit", headers=h).status_code == 403     # auditoria: administrador global
+    log = client.get(f"{base}/audit", headers=g).json()
     actions = {e["action"] for e in log}
     assert {"sponsor.create", "campaign.update", "music.update", "video.delete", "agent.create"} <= actions
-    assert all(e["actor"] == "A Admin" for e in log if e["action"].startswith(("sponsor", "video")))
+    assert all(e["actor"] == "A Admin" for e in log if e["action"].startswith("sponsor"))
+    assert all(e["actor"] == "Root" for e in log if e["action"] == "video.delete")
     assert "SEGREDO" not in str(log) and "rag_" not in str(log)  # nenhum segredo/token em auditoria
     # auditoria da arena B não mistura
-    assert not any(e["resourceId"] == world.A.priv for e in client.get(f"/api/arena/{world.B.id}/audit", headers=H("b_admin_arena")).json())
+    assert not any(e["resourceId"] == world.A.priv for e in client.get(f"/api/arena/{world.B.id}/audit", headers=g).json())
 
 
 def test_agent_token_shown_once_and_revocable(client, world, H):
-    h, base = H("a_admin_arena"), A(world)
+    assert client.post(f"{A(world)}/agents", headers=H("a_admin_arena"), json={"label": "x"}).status_code == 403   # gestor não cria credenciais de agente
+    h, base = H("root"), A(world)
     t = client.post(f"{base}/agents", headers=h, json={"label": "motor da quadra"}).json()
     assert t["token"].startswith("rag_")
     assert all("token" not in a for a in client.get(f"{base}/agents", headers=h).json())

@@ -75,7 +75,7 @@ def test_moderated_or_removed_replay_is_never_republished_by_sync(client, world)
     root = platform_login(client, world.emails["root"])
     sync(client, world, [item("REPLAY-L-5"), item("REPLAY-L-6")])
     v5, v6 = vid("REPLAY-L-5"), vid("REPLAY-L-6")
-    base = f"/api/platform/arenas/{world.A.id}/replays"
+    base = f"/api/platform/arenas/{world.A.id}/catalog"
     assert client.post(f"{base}/{v5.id}/moderate", json={"action": "hide"}, headers=root).status_code == 422          # exige motivo
     assert client.post(f"{base}/{v5.id}/moderate", json={"action": "hide", "reason": "privacidade"}, headers=root).status_code == 200
     assert client.post(f"{base}/{v6.id}/moderate", json={"action": "remove", "reason": "conteúdo indevido"}, headers=root).status_code == 200
@@ -117,7 +117,7 @@ def test_regularization_publishes_only_valid_private_replays_of_that_arena(clien
             vv.visibility, vv.published_at = "private", None
     hidden = db.get(Video, world.A.pub); hidden.moderation_state = "blocked"
     db.commit(); db.close()
-    base = f"/api/platform/arenas/{world.A.id}/replays/publish-pending"
+    base = f"/api/platform/arenas/{world.A.id}/catalog/publish-pending"
     dry = client.post(base, json={}, headers=root).json()           # dryRun padrão
     assert dry["dryRun"] and dry["published"] == [] and world.A.pub not in {e["id"] for e in dry["eligible"]}
     r = client.post(base, json={"dryRun": False}, headers=root).json()

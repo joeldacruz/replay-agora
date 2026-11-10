@@ -17,7 +17,7 @@ BASE = "/api/agent/v1"
 
 
 def new_signed_agent(client, world, H, label="ag-signed"):
-    r = client.post(f"/api/arena/{world.A.id}/agents", headers=H("a_admin_arena"), json={"label": label})
+    r = client.post(f"/api/arena/{world.A.id}/agents", headers=H("root"), json={"label": label})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -163,9 +163,9 @@ def test_forced_rotation_by_manager_invalidates_old_immediately_and_is_scoped(cl
     a = new_signed_agent(client, world, H)
     c = sclient(client, a["token"], a["signingKey"])
     c.call("POST", "/register", {"nodeId": "node-sig-0001"})
-    assert client.post(f"/api/arena/{world.B.id}/agents/{a['id']}/rotate", headers=H("b_admin_arena")).status_code == 404  # IDOR
+    assert client.post(f"/api/arena/{world.B.id}/agents/{a['id']}/rotate", headers=H("b_admin_arena")).status_code in (403, 404)  # IDOR (gestor nem tem a permissão)
     assert client.post(f"/api/arena/{world.A.id}/agents/{a['id']}/rotate", headers=H("a_op_arena")).status_code == 403
-    r = client.post(f"/api/arena/{world.A.id}/agents/{a['id']}/rotate", headers=H("a_admin_arena")).json()
+    r = client.post(f"/api/arena/{world.A.id}/agents/{a['id']}/rotate", headers=H("root")).json()
     try:
         c.call("POST", "/heartbeat", {})
         raise AssertionError("antiga deveria cair na hora")
@@ -219,7 +219,7 @@ def test_revoked_agent_and_other_arena_tokens(client, world, H):
     a = new_signed_agent(client, world, H)
     c = sclient(client, a["token"], a["signingKey"])
     c.call("POST", "/register", {"nodeId": "node-sig-0001"})
-    client.delete(f"/api/arena/{world.A.id}/agents/{a['id']}", headers=H("a_admin_arena"))
+    client.delete(f"/api/arena/{world.A.id}/agents/{a['id']}", headers=H("root"))
     try:
         c.call("POST", "/heartbeat", {})
         raise AssertionError
@@ -253,8 +253,8 @@ def test_mtls_modes(client, world, H, monkeypatch):
     c = sclient(client, a["token"], a["signingKey"])
     c.call("POST", "/register", {"nodeId": "node-sig-0001"})
     fp = "ab" * 32
-    assert client.put(f"/api/arena/{world.A.id}/agents/{a['id']}/certificate", headers=H("a_admin_arena"), json={"fingerprint": fp}).json()["certificateBound"]
-    assert client.put(f"/api/arena/{world.A.id}/agents/{a['id']}/certificate", headers=H("a_admin_arena"), json={"fingerprint": "xyz"}).status_code == 422
+    assert client.put(f"/api/arena/{world.A.id}/agents/{a['id']}/certificate", headers=H("root"), json={"fingerprint": fp}).json()["certificateBound"]
+    assert client.put(f"/api/arena/{world.A.id}/agents/{a['id']}/certificate", headers=H("root"), json={"fingerprint": "xyz"}).status_code == 422
     body = b"{}"
     hdr = settings.agent_mtls_header
     # modo desligado: cabeçalho ignorado
@@ -298,6 +298,6 @@ def test_secrets_never_reach_logs_or_audit_or_listings(client, world, H, caplog)
     db.close()
     for secret in (a["token"], a["signingKey"], new["token"], new["signingKey"]):
         assert secret not in dump
-    listing = json.dumps(client.get(f"/api/arena/{world.A.id}/agents", headers=H("a_admin_arena")).json())
+    listing = json.dumps(client.get(f"/api/arena/{world.A.id}/agents", headers=H("root")).json())
     assert all(s not in listing for s in (a["token"], a["signingKey"], new["token"], new["signingKey"]))
     assert "agent.rotate" in dump

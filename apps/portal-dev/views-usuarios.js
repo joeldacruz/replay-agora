@@ -318,7 +318,7 @@ async function outboxPanel(ctx) {
 
 // ------------------------------------------------------------------ Replays da arena: publicação automática, moderação excepcional e regularização
 async function replaysPanel(ctx, a) {
-  const base = `${P}/arenas/${a.id}/replays`;
+  const base = `${P}/arenas/${a.id}/catalog`;
   const st = select('state', [['', 'Todos'], ['published', 'Publicados'], ['pending', 'Não publicados'], ['moderated', 'Moderados'], ['removed', 'Removidos']], '', { 'aria-label': 'Filtrar replays' });
   const out = el('div');
   const reason = (title) => new Promise((resolve) => { let done = false; const s = sheet({ title, submit: 'Confirmar', danger: true, fields: [fld('Motivo (registrado na auditoria)', input('reason', { required: true, minlength: 3, maxlength: 200 }))], onSubmit: async (fd) => { done = true; resolve(String(fd.get('reason'))); } }); s.dlg.addEventListener('close', () => { if (!done) resolve(null); }, { once: true }); });

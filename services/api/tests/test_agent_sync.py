@@ -57,7 +57,7 @@ def test_register_reports_unknown_courts_and_is_audited_once(client, world, H):
     r = client.post(f"{BASE}/register", headers=ah(world), json={"nodeId": "node-A-0001", "courts": ["A_01", "B_01", "X"]}).json()
     assert r["unknownCourts"] == ["B_01", "X"]  # quadra de outra arena é desconhecida
     reg(client, world)
-    logs = client.get(f"/api/arena/{world.A.id}/audit", headers=H("a_admin_arena")).json()
+    logs = client.get(f"/api/arena/{world.A.id}/audit", headers=H("root")).json()
     assert sum(1 for x in logs if x["action"] == "agent.register") == 1
 
 
@@ -90,7 +90,7 @@ def test_sync_is_idempotent_and_metadata_only(client, world):
     assert [x["status"] for x in r2] == ["duplicate", "duplicate"] and [x["videoId"] for x in r2] == [x["videoId"] for x in r1]
     db = SessionLocal()
     vids = db.query(Video).filter(Video.local_id.like("sim-A-%")).all()
-    assert len(vids) == 2 and all(v.storage_location == "agent" and v.storage_key == "" and v.visibility == "private" for v in vids)
+    assert len(vids) == 2 and all(v.storage_location == "agent" and v.storage_key == "" and v.visibility == "arena" for v in vids)   # publicação automática
     assert {v.court_id for v in vids} == {world.A.c1, world.A.c2}
     db.close()
 

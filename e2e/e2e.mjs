@@ -201,44 +201,36 @@ await step('usuário (computador): barra superior Arenas/Replays/Perfil, replays
 const desk = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 const a = await desk.newPage();
 const LOGIN = async (pg, email) => { await pg.goto(BASE + '/arena/'); await pg.waitForURL(/#\/login/); await pg.fill('input[name=email]', email); await pg.fill('input[name=password]', PASS); await pg.click('button[type=submit]'); await pg.waitForSelector('.g-kpis'); };
-await step('arena: gestor entra no Início com 4 indicadores e menu só com Início/Replays/Gestão/Perfil', async () => {
+await step('arena: gestor entra no Início com 4 indicadores e menu Início/Áudio/Patrocínio/Replays/Perfil', async () => {
   await LOGIN(a, 'gestor.alfa@example.test');
   const txt = await a.locator('.g-kpis').innerText();
   for (const t of ['Total de replays', 'Publicados', 'Downloads', 'Quadras']) assert.ok(txt.includes(t), 'faltou KPI: ' + t);
-  assert.deepEqual(await a.locator('nav.g-nav a').allTextContents(), ['Início', 'Replays', 'Gestão', 'Perfil']);
+  assert.deepEqual(await a.locator('nav.g-nav a').allTextContents(), ['Início', 'Áudio', 'Patrocínio', 'Replays', 'Perfil']);
   assert.ok((await a.locator('.g-arena-tag').innerText()).includes('Arena Alfa'));
   assert.equal(await a.locator('.g-switch select').count(), 0, 'um único vínculo: sem seletor de arena');
-  assert.ok(Number((await a.locator('.g-alert').innerText()).match(/\d+/)[0]) >= 4, '2 privados do seed + 2 enviados pelo motor simulado');
+  assert.ok((await a.locator('main').innerText()).includes('publicados automaticamente'), 'publicação automática informada');
   assert.ok(!(await a.locator('body').innerText()).match(/Diagnóstico|Motor local|RTSP/i), 'sem monitoramento técnico no app da arena');
 });
 await shot(a, 'arena-inicio');
-await step('arena: publica replay pendente pela aba Replays', async () => {
-  await a.click('nav.g-nav a:has-text("Replays")'); await a.click('.g-chip:has-text("Aguardando")');
-  await a.waitForSelector('button:has-text("Publicar")');
-  const before = await a.locator('.g-replay').count(); assert.ok(before >= 1);
-  await a.locator('.g-replay button:has-text("Publicar")').first().click();
-  await a.waitForFunction((n) => document.querySelectorAll('.g-replay').length === n - 1 || document.querySelector('.g-empty'), before);
+await step('arena: Replays é consulta — sem Publicar/Excluir; mostra a música atribuída e a personalização aplicada', async () => {
+  await a.click('nav.g-nav a:has-text("Replays")'); await a.waitForSelector('.g-replay');
+  assert.equal(await a.locator('button:has-text("Publicar"), button:has-text("Despublicar"), button[aria-label^="Excluir"]').count(), 0, 'gestor não publica nem exclui');
+  await a.locator('.g-replay button:has-text("Personalização")').first().click(); await a.waitForSelector('dialog:has-text("Música:")');
+  assert.ok((await a.locator('dialog').innerText()).includes('Patrocinadores:')); await a.click('dialog button:has-text("Fechar")');
 });
 await shot(a, 'arena-replays');
-await step('arena: Gestão reúne Quadras, Patrocínios, Música, Equipe, QR e Dados; QR é gerado só para a própria arena', async () => {
-  await a.click('nav.g-nav a:has-text("Gestão")'); await a.waitForSelector('.g-link-row');
-  const txt = await a.locator('main').innerText();
-  for (const t of ['Quadras', 'Patrocínios', 'Música e áudio', 'Equipe', 'QR Code da arena', 'Dados da arena']) assert.ok(txt.includes(t), 'faltou: ' + t);
-  await a.click('.g-link-row:has-text("QR Code da arena")'); await a.waitForSelector('dialog img.g-qr');
+await step('arena: Início traz o resumo e o QR Code (gerado só para a própria arena); não há Quadras/Dados no app', async () => {
+  await a.click('nav.g-nav a:has-text("Início")'); await a.waitForSelector('button:has-text("QR Code da arena")');
+  assert.ok(!(await a.locator('nav.g-nav').innerText()).includes('Gestão'), 'sem menu Gestão');
+  await a.click('button:has-text("QR Code da arena")'); await a.waitForSelector('dialog img.g-qr');
   await a.waitForFunction(() => document.querySelector('dialog img.g-qr').naturalWidth > 100);
   await a.click('dialog button:has-text("Fechar")');
 });
 await shot(a, 'arena-gestao');
-await step('arena: Quadras respeita o limite do plano com mensagem clara', async () => {
-  await a.click('.g-link-row:has-text("Quadras")'); await a.waitForSelector('.g-link-row:has-text("Quadra 01")');
-  await a.click('button:has-text("Nova quadra")'); await a.fill('dialog input[name=label]', 'Quadra E2E'); await a.click('dialog button[type=submit]');
-  await a.waitForFunction(() => /limite de \d+ quadras/.test(document.querySelector('dialog .g-err')?.textContent || ''));
-  await a.click('dialog button:has-text("Cancelar")');
-});
 await step('arena: cadastra patrocinador com logo PNG, cria campanha e vê a prévia', async () => {
   const logo = join(tmp, 'logo.png');
   execFileSync(PY, ['-I', '-c', `from PIL import Image; Image.new("RGBA",(400,160),(255,120,0,255)).save(${JSON.stringify(logo)})`]);
-  await a.goto(BASE + '/arena/#/gestao/patrocinios'); await a.click('button:has-text("Novo patrocinador")');
+  await a.goto(BASE + '/arena/#/patrocinadores'); await a.click('button:has-text("Novo patrocinador")');
   await a.fill('dialog input[name=name]', 'Marca E2E'); await a.setInputFiles('dialog input[type=file]', logo); await a.click('dialog button[type=submit]');
   await a.waitForSelector('strong:has-text("Marca E2E")');
   await a.click('.g-chip:has-text("Campanhas")'); await a.click('button:has-text("Nova campanha")');
@@ -249,7 +241,7 @@ await step('arena: cadastra patrocinador com logo PNG, cria campanha e vê a pr�
 });
 await shot(a, 'arena-campanhas');
 await step('arena: biblioteca de música exige licença e mostra situação', async () => {
-  await a.goto(BASE + '/arena/#/gestao/musica'); await a.waitForSelector('text=Disponível');
+  await a.goto(BASE + '/arena/#/audio'); await a.waitForSelector('text=Disponível');
   await a.click('button:has-text("Nova faixa")');
   const mp3 = join(tmp, 't.mp3'); execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=500:duration=3', mp3]);
   await a.fill('dialog input[name=title]', 'Faixa E2E'); await a.setInputFiles('dialog input[type=file]', mp3);
@@ -269,10 +261,9 @@ await step('arena: gestor não alcança o portal nem a arena Beta', async () => 
 const op = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
 await step('arena: operador não vê Equipe nem ações de gestor', async () => {
   await LOGIN(op, 'operador.alfa@example.test');
-  await op.click('nav.g-nav a:has-text("Gestão")'); await op.waitForSelector('.g-link-row');
-  const txt = await op.locator('main').innerText();
-  assert.ok(!txt.includes('Equipe') && !txt.includes('Dados da arena'), 'operador não administra equipe nem dados');
-  await op.goto(BASE + '/arena/#/gestao/patrocinios'); await op.waitForSelector('.g-chips'); assert.equal(await op.locator('button:has-text("Novo patrocinador")').count(), 0);
+  assert.ok(!(await op.locator('main').innerText()).includes('Equipe'), 'operador não administra equipe');
+  await op.goto(BASE + '/arena/#/audio'); await op.waitForSelector('text=Músicas licenciadas'); assert.equal(await op.locator('button:has-text("Nova faixa")').count(), 0, 'operador não altera a biblioteca');
+  await op.goto(BASE + '/arena/#/patrocinadores'); await op.waitForSelector('.g-chips'); assert.equal(await op.locator('button:has-text("Novo patrocinador")').count(), 0);
   await op.goto(BASE + '/arena/#/gestao/equipe'); await op.waitForSelector('text=Somente gestores');
 });
 await step('arena: gestor com 2 arenas usa seletor; Início e Replays mostram só a arena selecionada e a escolha persiste', async () => {
@@ -305,8 +296,6 @@ await step('arena: gestor com 2 arenas usa seletor; Início e Replays mostram s�
   assert.ok((await m.locator('.g-switch select').evaluate((s) => s.selectedOptions[0].textContent)).includes('Beta'), 'seleção persiste após recarregar');
   await m.click('nav.g-nav a:has-text("Início")'); await m.waitForSelector('.g-kpis');
   assert.notEqual(await m.locator('.g-kpis').innerText(), alfaKpis, 'KPIs da Beta diferem da Alfa');
-  await m.click('nav.g-nav a:has-text("Gestão")'); await m.waitForSelector('.g-link-row');
-  assert.ok(!(await m.locator('main').innerText()).includes('Equipe'), 'na Beta o usuário é só operador');
   await ctx2.close();
 });
 
@@ -700,6 +689,18 @@ await step('jogador: a logomarca da arena aparece em Minhas Arenas e na tela da 
   assert.ok(await hdr.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada na tela da arena');
   await shot(jp, 'jogador-arena-logo');
   await jc.close();
+});
+await step('portal: Replays da arena — regulariza replays privados antigos, modera (ocultar com motivo) e o replay moderado fica fora do App', async () => {
+  const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => /Alfa/.test(x.name)).id; });
+  await p.goto(BASE + '/portal/#/arenas/' + alfa + '/replays'); await p.waitForSelector('h2:has-text("Replays e moderação")');
+  await p.click('button:has-text("Regularizar replays pendentes")');
+  const dlg = p.locator('dialog:has-text("Regularizar replays")');
+  if (await dlg.count()) { await dlg.locator('button[type=submit]').click(); await p.waitForSelector('.p-toast:has-text("publicado")'); }
+  await p.selectOption('select[aria-label="Filtrar replays"]', 'published'); await p.waitForSelector('tbody tr');
+  const code = (await p.locator('tbody tr').first().locator('td').first().innerText()).trim();
+  await rowMenu(p, code, 'Ocultar da arena'); await p.fill('dialog input[name=reason]', 'teste de moderação'); await p.click('dialog button[type=submit]');
+  await p.selectOption('select[aria-label="Filtrar replays"]', 'moderated'); await p.waitForSelector(`tbody tr:has-text("${code}"):has-text("Moderado")`);
+  assert.ok((await p.locator('tbody tr', { hasText: code }).innerText()).includes('teste de moderação'));
 });
 await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
   const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
