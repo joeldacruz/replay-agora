@@ -20,6 +20,7 @@ export async function showQr(ctx) {
   s.dlg.addEventListener('close', () => URL.revokeObjectURL(url), { once: true });
 }
 
+let patTab = 'sponsors';
 export async function patrocinios(ctx) {
   const [sponsors, camps, courts, vids] = await Promise.all([ctx.api.get(ctx.base() + '/sponsors'), ctx.api.get(ctx.base() + '/campaigns'), ctx.api.get(ctx.base() + '/courts'), ctx.api.get(ctx.base() + '/videos?limit=1')]);
   const admin = ctx.isAdmin();

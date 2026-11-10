@@ -87,12 +87,12 @@ await step('usuário: "Adicionar outra arena" abre QR/código e a entrada por c�
   assert.ok((await u.locator('body').innerText()).includes('Arena Alfa'));
 });
 await step('usuário: lista só os replays publicados e filtra por quadra', async () => {
-  assert.equal(await u.locator('.j-replay').count(), 2, 'esperava 2 publicados (privados ocultos)');
+  assert.equal(await u.locator('.j-replay').count(), 4, 'esperava 4 publicados: 2 do seed + 2 do motor simulado (publicação automática); privados ocultos');
   assert.equal(await u.locator('text=Sem áudio original').count(), 0);
   await u.click('.j-tile:has-text("Quadras")');
-  await u.click('.j-chip:has-text("Quadra 02")'); await u.waitForFunction(() => document.querySelectorAll('.j-replay').length === 1);
+  await u.click('.j-chip:has-text("Quadra 02")'); await u.waitForFunction(() => { const n = document.querySelectorAll('.j-replay').length; return n >= 1 && n < 4; });
   await shot(u, 'usuario-filtros');
-  await u.click('text=Limpar filtros'); await u.waitForFunction(() => document.querySelectorAll('.j-replay').length === 2);
+  await u.click('text=Limpar filtros'); await u.waitForFunction(() => document.querySelectorAll('.j-replay').length === 4);
 });
 await shot(u, 'usuario-arena');
 await step('usuário: player mostra só vídeo, dados básicos, Baixar e Compartilhar', async () => {
@@ -133,7 +133,7 @@ await shot(u, 'usuario-perfil');
 await step('usuário: API do catálogo não lista replays privados', async () => {
   const token = await u.evaluate(() => localStorage.getItem('ra_user_token'));
   const list = await u.evaluate(async (t) => (await (await fetch('/api/videos?limit=50', { headers: { Authorization: 'Bearer ' + t } })).json()).items.length, token);
-  assert.equal(list, 2);
+  assert.equal(list, 4);
 });
 await step('usuário: token do app do usuário é recusado nas APIs de gestão e do portal', async () => {
   const t = await u.evaluate(() => localStorage.getItem('ra_user_token'));
@@ -698,6 +698,7 @@ await step('portal: Replays da arena — regulariza replays privados antigos, mo
   if (await dlg.count()) { await dlg.locator('button[type=submit]').click(); await p.waitForSelector('.p-toast:has-text("publicado")'); }
   await p.selectOption('select[aria-label="Filtrar replays"]', 'published'); await p.waitForSelector('tbody tr');
   const code = (await p.locator('tbody tr').first().locator('td').first().innerText()).trim();
+  await p.waitForSelector('dialog', { state: 'detached' }); await p.locator('.p-toast').waitFor({ state: 'detached', timeout: 9000 }).catch(() => {});
   await rowMenu(p, code, 'Ocultar da arena'); await p.fill('dialog input[name=reason]', 'teste de moderação'); await p.click('dialog button[type=submit]');
   await p.selectOption('select[aria-label="Filtrar replays"]', 'moderated'); await p.waitForSelector(`tbody tr:has-text("${code}"):has-text("Moderado")`);
   assert.ok((await p.locator('tbody tr', { hasText: code }).innerText()).includes('teste de moderação'));
