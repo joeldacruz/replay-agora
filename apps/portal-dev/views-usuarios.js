@@ -125,7 +125,7 @@ async function membersPanel(ctx, arena) {
 }
 
 // ------------------------------------------------------------------ página da Arena
-const TABS = [['visao-geral', 'Visão geral'], ['dados', 'Dados da Arena'], ['usuarios', 'Gestores e Usuários'], ['quadras', 'Quadras'], ['equipamentos', 'Equipamentos'], ['configuracoes', 'Configurações'], ['historico', 'Histórico de alterações']];
+const TABS = [['visao-geral', 'Visão geral'], ['dados', 'Dados da Arena'], ['usuarios', 'Gestores e Usuários'], ['replays', 'Replays'], ['quadras', 'Quadras'], ['equipamentos', 'Equipamentos'], ['configuracoes', 'Configurações'], ['historico', 'Histórico de alterações']];
 
 /** Abre a Gestão da arena em nova aba SEM token na URL: a aba pede, por postMessage same-origin, um ticket de uso único (60 s)
  *  que o Portal obtém com a sessão de plataforma (MFA) e entrega à aba; ela o troca por uma sessão limitada a ESTA arena. */
@@ -193,6 +193,8 @@ export async function arenaDetalhe(ctx, params) {
     body = el('div', { class: 'p-list' }, section('Dados da Arena', f), section('Logomarca da arena', logoForm));
   } else if (tab === 'usuarios') {
     body = section('Gestores e Usuários', await membersPanel(ctx, a));
+  } else if (tab === 'replays') {
+    body = section('Replays e moderação', await replaysPanel(ctx, a));
   } else if (tab === 'quadras') {
     const courts = await ctx.api.get(`${P}/arenas/${a.id}/courts`);
     body = section('Quadras', courts.length ? el('div', { class: 'p-list' }, courts.map((c) => el('div', { class: 'p-item' }, el('span', { class: 'p-item-main' }, el('strong', {}, c.label), el('small', {}, `Quadra ${c.number}`)), pill(c.status === 'active' ? 'active' : 'atencao', c.status === 'active' ? 'Ativa' : c.status)))) : empty('Nenhuma quadra cadastrada.'),
@@ -312,4 +314,36 @@ async function outboxPanel(ctx) {
     el('p', { class: 'p-muted' }, 'Sem SMTP configurado, convites e redefinições ficam aqui, visíveis somente à equipe da plataforma. Entregue o link ao destinatário por canal seguro. Gestores de arena não veem estes links.'),
     rows.length ? table(['Quando', 'Para', 'Assunto', 'Estado', 'Mensagem'], rows.map((r) => el('tr', {}, el('td', {}, fmt.dt(r.createdAt)), el('td', {}, r.to), el('td', {}, r.subject), el('td', {}, r.status),
       el('td', {}, el('details', {}, el('summary', {}, 'ver'), el('pre', { class: 'p-pre' }, r.body)))))) : empty('Nenhuma mensagem.'));
+}
+
+// ------------------------------------------------------------------ Replays da arena: publicação automática, moderação excepcional e regularização
+async function replaysPanel(ctx, a) {
+  const base = `${P}/arenas/${a.id}/replays`;
+  const st = select('state', [['', 'Todos'], ['published', 'Publicados'], ['pending', 'Não publicados'], ['moderated', 'Moderados'], ['removed', 'Removidos']], '', { 'aria-label': 'Filtrar replays' });
+  const out = el('div');
+  const reason = (title) => new Promise((resolve) => { let done = false; const s = sheet({ title, submit: 'Confirmar', danger: true, fields: [fld('Motivo (registrado na auditoria)', input('reason', { required: true, minlength: 3, maxlength: 200 }))], onSubmit: async (fd) => { done = true; resolve(String(fd.get('reason'))); } }); s.dlg.addEventListener('close', () => { if (!done) resolve(null); }, { once: true }); });
+  const act = (v, action, label) => async () => {
+    const r = action === 'restore' ? '' : await reason(label + ' — ' + v.code); if (r === null) return;
+    await ctx.api.post(`${base}/${v.id}/moderate`, { action, reason: r }); toast('Replay atualizado'); await load();
+  };
+  async function load() {
+    const rows = await ctx.api.get(`${base}${st.value ? '?state=' + st.value : ''}`);
+    out.replaceChildren(rows.length ? table(['Replay', 'Quadra', 'Quando', 'Estado', 'Música', 'Ações'], rows.map((v) => el('tr', {}, el('td', {}, el('b', {}, v.code)), el('td', {}, v.court || '—'), el('td', {}, fmt.dt(v.capturedAt)),
+      el('td', {}, v.deleted ? badge('Removido', 'bad') : v.moderationState !== 'none' ? badge('Moderado: ' + v.moderationState, 'warn') : v.visibility === 'arena' ? badge('Publicado', 'ok') : badge(v.valid ? 'Não publicado' : 'Arquivo não validado'), v.moderationReason ? el('div', { class: 'p-muted' }, v.moderationReason) : ''),
+      el('td', {}, v.music ? '♪ ' + v.music.title : (v.musicReason ? 'Som ambiente' : '—')),
+      el('td', {}, v.deleted ? '' : menu('Ações', [v.visibility === 'arena' ? ['Ocultar da arena', ctx.guard(act(v, 'hide', 'Ocultar'))] : null, v.moderationState !== 'none' ? ['Restaurar publicação', ctx.guard(act(v, 'restore', 'Restaurar'))] : null,
+        ['Bloquear', ctx.guard(act(v, 'block', 'Bloquear'))], ['Remover (irreversível)', ctx.guard(act(v, 'remove', 'Remover')), true]]))))) : empty('Nenhum replay neste filtro.'));
+  }
+  st.onchange = ctx.guard(load);
+  const regularize = ctx.guard(async () => {
+    const d = await ctx.api.post(`${base}/publish-pending`, { dryRun: true });
+    if (!d.eligible.length) { toast('Nenhum replay pendente elegível.'); return; }
+    if (await confirmSheet(`Publicar ${d.eligible.length} replay(s) válido(s) desta arena que ficaram privados antes da publicação automática (${d.eligible.map((e) => e.code).join(', ')})? Moderados, removidos e inválidos não são alterados.`, 'Publicar', 'Regularizar replays', false)) {
+      const r = await ctx.api.post(`${base}/publish-pending`, { dryRun: false }); toast(`${r.published.length} replay(s) publicado(s)`); await load();
+    }
+  });
+  const box = el('div', { class: 'p-list' }, el('p', { class: 'p-muted' }, 'Os replays válidos são publicados automaticamente. Aqui ficam apenas a moderação excepcional e a regularização de replays antigos ainda privados.'),
+    el('div', { class: 'p-row p-filters' }, st, el('button', { class: 'p-btn p-btn--outline', type: 'button', onclick: regularize }, 'Regularizar replays pendentes')), out);
+  await load();
+  return box;
 }

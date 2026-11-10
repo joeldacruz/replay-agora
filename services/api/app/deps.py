@@ -11,6 +11,13 @@ from .security import decode_access_token
 
 ARENA_STAFF = ("arena_admin", "arena_operator")
 
+# Permissões POR OPERAÇÃO (o papel sozinho não basta). global_admin (sessão de plataforma + MFA) possui todas.
+# Operações que só o Portal/administrador global executa não aparecem em nenhum papel de arena.
+OPERATOR_PERMS = frozenset({"arena.view", "video.view", "video.play", "sponsor.view", "music.view", "preview", "diagnostics.view", "qr.view"})
+ADMIN_PERMS = OPERATOR_PERMS | {"audio.manage", "music.manage", "sponsor.manage", "arena.info.edit", "members.manage"}
+GLOBAL_ONLY_PERMS = frozenset({"court.manage", "agent.manage", "policy.manage", "video.moderate", "video.delete", "capture.test", "audit.view"})
+ROLE_PERMS = {"arena_operator": OPERATOR_PERMS, "arena_admin": ADMIN_PERMS}
+
 
 @dataclass
 class Auth:
@@ -96,8 +103,10 @@ def arena_context(db: Session, user: User, arena_id: str, roles: tuple[str, ...]
 class ArenaGate:
     """Dependência para rotas /api/arena/{arena_id}/... com papéis permitidos."""
 
-    def __init__(self, *roles: str):
-        self.roles = roles or ARENA_STAFF
+    def __init__(self, *roles: str, perm: str | None = None):
+        # perm: autorização por operação (preferida). roles: forma legada, só por papel.
+        self.perm = perm
+        self.roles = tuple(r for r, ps in ROLE_PERMS.items() if perm in ps) if perm else (roles or ARENA_STAFF)
 
     def __call__(self, arena_id: str, request: Request, a: Auth = Depends(arena_or_platform_auth), db: Session = Depends(get_db)):
         if a.app == "platform" or a.arena_id:

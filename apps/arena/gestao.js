@@ -9,21 +9,7 @@ const addBtn = (label, fn) => el('button', { class: 'g-btn g-btn--primary', type
 const rowBtn = (label, fn, kind = 'outline') => el('button', { class: `g-btn g-btn--${kind} g-btn--sm`, type: 'button', onclick: guard(fn) }, label);
 const onlyAdmin = (ctx) => ctx.isAdmin() ? null : el('div', { class: 'g-card g-empty' }, 'Somente gestores podem alterar estas configurações.');
 
-// ------------------------------------------------------------------ hub
-export async function gestao(ctx) {
-  const [courts, sponsors, team] = await Promise.all([ctx.api.get(ctx.base() + '/courts'), ctx.api.get(ctx.base() + '/sponsors'), ctx.isAdmin() ? ctx.api.get(ctx.base() + '/members') : Promise.resolve(null)]);
-  const item = (i, title, sub, href, onclick, coral) => el(href ? 'a' : 'button', { class: 'g-link-row', href: href ? '#' + href : null, type: href ? null : 'button', onclick, style: href ? '' : 'border:0;width:100%;text-align:left;cursor:pointer' },
-    el('span', { class: 'g-tile' + (coral ? ' g-tile--coral' : '') }, icon(i, { size: 24 })), el('span', { class: 'g-row-text' }, el('strong', {}, title), el('small', {}, sub)), icon('chevronRight', { size: 20 }));
-  ctx.page({ title: 'Gestão', content: el('div', { class: 'g-stack' },
-    item('court', 'Quadras', `${courts.length} ${courts.length === 1 ? 'quadra cadastrada' : 'quadras cadastradas'}`, '/gestao/quadras'),
-    item('megaphone', 'Patrocínios', `${sponsors.length} ${sponsors.length === 1 ? 'patrocinador' : 'patrocinadores'} · logos e campanhas`, '/gestao/patrocinios', null, true),
-    item('music', 'Música e áudio', 'Faixas licenciadas e opções de áudio dos atletas', '/gestao/musica'),
-    team ? item('users', 'Equipe', `${team.length} ${team.length === 1 ? 'pessoa' : 'pessoas'} com acesso`, '/gestao/equipe', null, true) : '',
-    item('qr', 'QR Code da arena', 'Imprima para os jogadores acessarem seus replays', null, guard(() => showQr(ctx))),
-    ctx.isAdmin() ? item('building', 'Dados da arena', 'Nome, cor e entrada de jogadores', '/gestao/arena', null, true) : '') });
-}
-
-async function showQr(ctx) {
+export async function showQr(ctx) {
   const r = await fetch(ctx.base() + '/access-qr', { headers: { Authorization: 'Bearer ' + ctx.api.token() } });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Não foi possível gerar o QR Code.');
   const url = URL.createObjectURL(await r.blob());
@@ -34,34 +20,6 @@ async function showQr(ctx) {
   s.dlg.addEventListener('close', () => URL.revokeObjectURL(url), { once: true });
 }
 
-// ------------------------------------------------------------------ quadras
-export async function quadras(ctx) {
-  const list = await ctx.api.get(ctx.base() + '/courts');
-  const STATUS = { active: ['Ativa', 'ok'], maintenance: ['Manutenção', 'warn'], inactive: ['Inativa', ''] };
-  const form = (c) => {
-    const fields = [fld('Nome da quadra', input('label', { required: true, value: c?.label || '', maxlength: 80 })),
-      fld('Situação', select('status', [['active', 'Ativa'], ['maintenance', 'Em manutenção'], ['inactive', 'Inativa']], c?.status || 'active')),
-      el('details', {}, el('summary', {}, 'Avançado (equipe técnica)'), el('div', { class: 'g-stack', style: 'margin-top:10px' },
-        fld('Número', input('number', { type: 'number', min: 1, max: 99, value: c?.number ?? list.length + 1 })),
-        c ? '' : fld('Chave local', input('localCourtKey', { value: '', pattern: '[A-Za-z0-9_\\-]*', placeholder: 'gerada automaticamente' }), 'Identificador usado pelo equipamento da arena. Deixe vazio para gerar.'),
-        fld('Botoeira', input('buttonRef', { value: c?.buttonRef || '', maxlength: 20 })), fld('Referência da câmera', input('cameraRef', { value: c?.cameraRef || '' }), 'Apenas um nome; nunca URL nem senha.'),
-        fld('Retenção (dias)', input('retentionDays', { type: 'number', min: 1, value: c?.retentionDays ?? 30 }))))];
-    sheet({ title: c ? 'Editar quadra' : 'Nova quadra', fields, onSubmit: async (fd) => {
-      const o = Object.fromEntries(fd);
-      const body = { label: o.label.trim(), status: o.status, number: +o.number, buttonRef: o.buttonRef || null, cameraRef: o.cameraRef || null, retentionDays: +o.retentionDays };
-      if (c) await ctx.api.patch(`${ctx.base()}/courts/${c.id}`, body);
-      else await ctx.api.post(ctx.base() + '/courts', { ...body, localCourtKey: o.localCourtKey || `QUADRA_${String(body.number).padStart(2, '0')}_${Math.random().toString(36).slice(2, 6).toUpperCase()}` });
-      toast('Quadra salva'); ctx.go();
-    } });
-  };
-  ctx.page({ title: 'Quadras', back: '/gestao', content: [ctx.isAdmin() ? addBtn('Nova quadra', () => form(null)) : '',
-    list.length ? el('div', { class: 'g-stack' }, list.map((c) => el('div', { class: 'g-link-row' }, el('span', { class: 'g-tile' }, icon('court', { size: 24 })),
-      el('span', { class: 'g-row-text' }, el('strong', {}, c.label), el('small', {}, `Quadra ${c.number}`)), pill(...STATUS[c.status] || [c.status]),
-      ctx.isAdmin() ? el('button', { class: 'g-icon-btn', type: 'button', 'aria-label': 'Editar ' + c.label, onclick: () => form(c) }, icon('edit', { size: 20 })) : ''))) : el('div', { class: 'g-card g-empty' }, 'Nenhuma quadra cadastrada.')] });
-}
-
-// ------------------------------------------------------------------ patrocínios
-let patTab = 'sponsors';
 export async function patrocinios(ctx) {
   const [sponsors, camps, courts, vids] = await Promise.all([ctx.api.get(ctx.base() + '/sponsors'), ctx.api.get(ctx.base() + '/campaigns'), ctx.api.get(ctx.base() + '/courts'), ctx.api.get(ctx.base() + '/videos?limit=1')]);
   const admin = ctx.isAdmin();
@@ -99,7 +57,7 @@ export async function patrocinios(ctx) {
         camps.length ? el('div', { class: 'g-stack' }, camps.map((c) => el('div', { class: 'g-card g-stack' }, el('div', { class: 'g-row' }, el('div', { class: 'g-row-text' }, el('strong', {}, c.sponsorName), el('small', {}, `${courts.find((x) => x.id === c.courtId)?.label || 'Todas as quadras'} · ${POS.find(([v]) => v === c.position)?.[1] || c.position} · ${c.sizePct}%`)), c.active ? pill('Ativa', 'ok') : pill('Pausada')),
           admin ? el('div', { class: 'g-more', style: 'margin:0' }, rowBtn('Editar', () => campForm(c)), rowBtn(c.active ? 'Pausar' : 'Ativar', async () => { await ctx.api.patch(`${ctx.base()}/campaigns/${c.id}`, { active: !c.active }); ctx.go(); }),
             rowBtn('Excluir', async () => { if (await confirmSheet('Excluir esta campanha?', 'Excluir')) { await ctx.api.del(`${ctx.base()}/campaigns/${c.id}`); ctx.go(); } }, 'ghost')) : ''))) : (sponsors.length ? el('div', { class: 'g-card g-empty' }, 'Nenhuma campanha criada.') : '')];
-    ctx.page({ title: 'Patrocínios', back: '/gestao', content: [el('div', { class: 'g-card' }, tabs), ...body] });
+    ctx.page({ title: 'Patrocinadores', content: [el('div', { class: 'g-card' }, tabs), ...body] });
   };
   draw();
 }
@@ -123,7 +81,8 @@ export async function musica(ctx) {
   const defMode = select('m', Object.entries(MODES), a.defaultMode); const defMusic = select('t', [['', '—'], ...tracks.filter((t) => t.usable).map((t) => [t.id, t.title])], a.defaultMusicId || '');
   const ov = input('o', { type: 'number', min: 0, max: 1.5, step: 0.05, value: a.originalVolume }); const mv = input('v', { type: 'number', min: 0, max: 1.5, step: 0.05, value: a.musicVolume });
   if (!admin) for (const c of [defMode, defMusic, ov, mv]) c.disabled = true;
-  ctx.page({ title: 'Música e áudio', back: '/gestao', content: [
+  const usage = await ctx.api.get(ctx.base() + '/music/usage').catch(() => null);
+  ctx.page({ title: 'Áudio e músicas', content: [
     el('section', { class: 'g-card g-stack' }, el('h2', {}, 'Opções oferecidas aos atletas'), el('p', { class: 'g-lead' }, 'Defina o áudio padrão dos downloads. Apenas faixas licenciadas e válidas são usadas.'), el('div', {}, modeChecks),
       el('div', { class: 'g-grid2' }, fld('Modo padrão', defMode), fld('Música padrão', defMusic), fld('Volume original', ov), fld('Volume da música', mv)),
       admin ? el('button', { class: 'g-btn g-btn--primary', type: 'button', onclick: guard(async () => {
@@ -134,17 +93,10 @@ export async function musica(ctx) {
       t.usable ? pill('Disponível', 'ok') : pill(!t.rightsDeclared ? 'Sem direitos' : t.status === 'disabled' ? 'Desabilitada' : 'Licença inválida', 'warn')),
     el('audio', { src: t.audioUrl, controls: true, preload: 'none', style: 'width:100%' }),
     admin ? el('div', { class: 'g-more', style: 'margin:0' }, rowBtn(t.status === 'enabled' ? 'Desabilitar' : 'Habilitar', async () => { await ctx.api.patch(`${ctx.base()}/music/${t.id}`, { status: t.status === 'enabled' ? 'disabled' : 'enabled' }); ctx.go(); }),
-      rowBtn('Excluir', async () => { if (await confirmSheet('Excluir a faixa?', 'Excluir')) { await ctx.api.del(`${ctx.base()}/music/${t.id}`); ctx.go(); } }, 'ghost')) : ''))) : el('div', { class: 'g-card g-empty' }, 'Nenhuma faixa cadastrada.')] });
+      rowBtn('Excluir', async () => { if (await confirmSheet('Excluir a faixa?', 'Excluir')) { await ctx.api.del(`${ctx.base()}/music/${t.id}`); ctx.go(); } }, 'ghost')) : ''))) : el('div', { class: 'g-card g-empty' }, 'Nenhuma faixa cadastrada.')    ,usage ? el('section', { class: 'g-card g-stack' }, el('h2', {}, 'Histórico de músicas utilizadas'),
+      el('p', { class: 'g-lead' }, 'Cada replay recebe automaticamente uma faixa da biblioteca (em rotação, sem repetir a anterior). A faixa fica registrada no replay.'),
+      ...usage.tracks.map((u) => el('div', { class: 'g-row-text' }, el('strong', {}, u.title), el('small', {}, `${u.replays} ${u.replays === 1 ? 'replay' : 'replays'}${u.lastUsedAt ? ' · último uso ' + fmt.dt(u.lastUsedAt) : ''}${u.usable ? '' : ' · indisponível'}`))),
+      usage.ambientFallbacks ? el('small', {}, `${usage.ambientFallbacks} replay(s) ficaram com o som ambiente por falta de faixa válida.`) : '') : ''
+  ] });
 }
 
-// ------------------------------------------------------------------ dados da arena
-export async function dadosArena(ctx) {
-  if (!ctx.isAdmin()) { ctx.page({ title: 'Dados da arena', back: '/gestao', content: onlyAdmin(ctx) }); return; }
-  const a = await ctx.api.get(ctx.base());
-  const f = el('form', { class: 'g-card g-form', onsubmit: guard(async (e) => {
-    e.preventDefault(); const o = Object.fromEntries(new FormData(f));
-    await ctx.api.patch(ctx.base(), { name: o.name.trim(), brandColor: o.brandColor, allowSelfJoin: o.allowSelfJoin === 'on' }); toast('Dados salvos'); await ctx.refreshMe(); ctx.go();
-  }) }, fld('Nome da arena', input('name', { required: true, minlength: 2, maxlength: 120, value: a.name })), fld('Cor da arena', input('brandColor', { type: 'color', value: a.brandColor || '#0a78d4' })),
-  check('allowSelfJoin', 'Permitir que jogadores entrem pelo QR Code ou código', a.allowSelfJoin), el('button', { class: 'g-btn g-btn--primary', type: 'submit' }, 'Salvar'));
-  ctx.page({ title: 'Dados da arena', back: '/gestao', content: f });
-}

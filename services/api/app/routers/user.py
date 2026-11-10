@@ -380,7 +380,11 @@ def export_options(db: Session, v: Video) -> dict:
     tracks = policy.usable_tracks(db, v.arena_id)
     modes = policy.allowed_modes(arena, v.has_audio, bool(tracks))
     return {"modes": modes, "hasOriginalAudio": v.has_audio, "defaultMode": arena.audio_default_mode if arena.audio_default_mode in modes else (modes[0] if modes else None),
-            "defaultMusicId": arena.audio_default_music_id if any(t.id == arena.audio_default_music_id for t in tracks) else (tracks[0].id if tracks else None),
+            # a música ATRIBUÍDA ao replay vale em reprodução e exportações; só sem atribuição (ou se a faixa deixou de ser válida)
+            # cai na faixa padrão/primeira válida da própria arena
+            "assignedMusicId": v.music_id if any(t.id == v.music_id for t in tracks) else None,
+            "defaultMusicId": (v.music_id if any(t.id == v.music_id for t in tracks) else
+                               (arena.audio_default_music_id if any(t.id == arena.audio_default_music_id for t in tracks) else (tracks[0].id if tracks else None))),
             "originalVolume": arena.audio_original_volume, "musicVolume": arena.audio_music_volume,
             "tracks": [{"id": t.id, "title": t.title, "artist": t.artist, "duration": round(t.duration, 1)} for t in tracks]}
 
@@ -418,7 +422,7 @@ def create_export(video_id: str, body: ExportReq, a: Auth = Depends(user_auth), 
         raise HTTPException(422, "modo de áudio não disponível nesta arena")
     music_id = None
     if mode in ("music", "mix"):
-        music_id = body.musicId or opts["defaultMusicId"]
+        music_id = opts["assignedMusicId"] or body.musicId or opts["defaultMusicId"]   # faixa atribuída ao replay tem prioridade
         t = db.get(MusicTrack, music_id) if music_id else None
         # a faixa precisa ser da MESMA arena e estar licenciada/habilitada
         if not t or t.arena_id != v.arena_id or not policy.track_usable(t):

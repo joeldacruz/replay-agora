@@ -20,7 +20,7 @@ function formFields(m = {}) {
 }
 
 export async function equipe(ctx) {
-  if (!ctx.isAdmin()) { ctx.page({ title: 'Equipe', back: '/gestao', content: el('div', { class: 'g-card g-empty' }, 'Somente gestores podem administrar a equipe.') }); return; }
+  if (!ctx.isAdmin()) { ctx.page({ title: 'Equipe', back: '/perfil', content: el('div', { class: 'g-card g-empty' }, 'Somente gestores podem administrar a equipe.') }); return; }
   const base = () => ctx.base() + '/members';
   const q = el('input', { class: 'g-input', type: 'search', placeholder: 'Buscar por nome ou e-mail', 'aria-label': 'Buscar' });
   const role = el('select', { class: 'g-input', 'aria-label': 'Filtrar por perfil' }, [['', 'Todos os perfis'], ...ROLES].map(([v, t]) => el('option', { value: v }, t)));
@@ -81,7 +81,7 @@ export async function equipe(ctx) {
   }
 
   let t; q.oninput = () => { clearTimeout(t); t = setTimeout(guard(load), 300); }; role.onchange = st.onchange = guard(load);
-  ctx.page({ title: 'Equipe', back: '/gestao', content: [
+  ctx.page({ title: 'Equipe', back: '/perfil', content: [
     el('button', { class: 'g-btn g-btn--primary', type: 'button', onclick: add }, icon('plus', { size: 20 }), 'Novo usuário'),
     el('div', { class: 'g-stack' }, q, role, st), out] });
   await load();

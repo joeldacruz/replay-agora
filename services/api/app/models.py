@@ -63,6 +63,7 @@ class Arena(Base):
     # Política de áudio padrão da arena
     audio_default_mode: Mapped[str] = mapped_column(String(10), default="original")
     audio_default_music_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    music_last_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # cursor da rotação de músicas (última faixa atribuída)
     audio_original_volume: Mapped[float] = mapped_column(Float, default=1.0)
     audio_music_volume: Mapped[float] = mapped_column(Float, default=0.6)
     # modos que a arena oferece ao atleta (csv de AUDIO_MODES); o atleta escolhe dentro deles
@@ -267,6 +268,15 @@ class Video(Base):
     local_id: Mapped[str | None] = mapped_column(String(120), nullable=True)  # id estável gerado pelo motor local (idempotência)
     protected: Mapped[bool] = mapped_column(Boolean, default=False)  # protegido contra qualquer exclusão/retenção
     media_state: Mapped[str] = mapped_column(String(12), default="ok")  # ok|missing (o agente não achou o arquivo)
+    # --- publicação automática / moderação (migração 0013) ---
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # quando a regra automática (ou a regularização) publicou
+    moderation_state: Mapped[str] = mapped_column(String(10), default="none")      # none|hidden|blocked: só o Portal altera; nunca é republicado
+    moderation_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    moderated_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # --- música atribuída ao replay (persistida; usada em reprodução e exportações) ---
+    music_id: Mapped[str | None] = mapped_column(ForeignKey("music_tracks.id", ondelete="SET NULL"), nullable=True, index=True)
+    music_reason: Mapped[str] = mapped_column(String(60), default="")  # rotation|single_track|fallback_ambient:<motivo>
 
 
 class VideoAccess(Base):

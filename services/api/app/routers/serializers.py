@@ -17,7 +17,8 @@ def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False, 
     if avail is not None:  # nunca anunciar como reproduzível o que não pode ser entregue agora
         out |= avail
     if admin:
-        out |= {"visibility": v.visibility, "bytes": v.bytes, "createdAt": iso(v.created_at)}
+        out |= {"visibility": v.visibility, "bytes": v.bytes, "createdAt": iso(v.created_at), "publishedAt": iso(v.published_at),
+                "moderationState": v.moderation_state, "musicId": v.music_id, "musicReason": v.music_reason}
     return out
 
 

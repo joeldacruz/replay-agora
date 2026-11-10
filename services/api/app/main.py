@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .logsafe import install_redaction
-from .routers import (agent, agent_remote, arena, arena_capacity, auth, google_auth, ingest, media, platform, platform_capacity, portal_config, portal_frames,
+from .routers import (agent, agent_remote, arena, arena_capacity, auth, google_auth, ingest, platform_replays, media, platform, platform_capacity, portal_config, portal_frames,
                       portal_monitor, user)
 
 CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
             resp.headers.setdefault("Content-Security-Policy", CSP)
         return resp
 
-    for r in (auth.router, google_auth.router, google_auth.portal, user.router, arena.router, arena_capacity.router, platform.router, platform_capacity.router,
+    for r in (auth.router, google_auth.router, google_auth.portal, platform_replays.router, user.router, arena.router, arena_capacity.router, platform.router, platform_capacity.router,
               ingest.router, agent.router, agent_remote.router, portal_config.router, portal_frames.router, portal_monitor.router, media.router):
         app.include_router(r)
 

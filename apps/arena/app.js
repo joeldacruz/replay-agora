@@ -2,7 +2,7 @@
 import { createApi, createRouter, registerSW, GOOGLE_ERR, googleEnabled, googleStart, googleReturnParams, googleExchange } from '/shared/ui.js';
 import { el, icon, brand, toast, fld, input } from './kit.js';
 import { inicio, replays, perfil, resetReplayFilters } from './views.js';
-import { gestao, quadras, patrocinios, musica, dadosArena } from './gestao.js';
+import { patrocinios, musica } from './gestao.js';
 import { equipe } from './equipe.js';
 
 const root = document.getElementById('app');
@@ -40,7 +40,7 @@ function switchArena(id) {
   ls.set('arena', id); resetReplayFilters(); router.go();
 }
 
-const NAV = [['/', 'Início', 'home'], ['/replays', 'Replays', 'replays'], ['/gestao', 'Gestão', 'manage'], ['/perfil', 'Perfil', 'user']];
+const NAV = [['/', 'Início', 'home'], ['/audio', 'Áudio', 'music'], ['/patrocinadores', 'Patrocínio', 'megaphone'], ['/replays', 'Replays', 'replays'], ['/perfil', 'Perfil', 'user']];
 function nav() {
   const cur = location.hash.slice(1).split('?')[0] || '/';
   const active = (p) => (p === '/' ? cur === '/' : cur === p || cur.startsWith(p + '/'));
@@ -111,8 +111,7 @@ function login(pre = {}) {
 document.body.classList.add('g-body');
 document.getElementById('app').innerHTML = '';
 const router = createRouter(root, {
-  '/': guarded(inicio), '/replays': guarded(replays), '/gestao': guarded(gestao), '/gestao/quadras': guarded(quadras), '/gestao/patrocinios': guarded(patrocinios),
-  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
+  '/': guarded(inicio), '/replays': guarded(replays), '/audio': guarded(musica), '/patrocinadores': guarded(patrocinios), '/gestao/equipe': guarded(equipe), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
 }, () => { location.hash = '#/'; });
 ctx.router = router;
 router.go();
