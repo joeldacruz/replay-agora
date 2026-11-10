@@ -129,3 +129,5 @@ dialog.g-sheet::backdrop { background: rgba(2, 12, 38, .6); }
 }
 
 .g-chips--3 { display: grid; grid-template-columns: repeat(3, 1fr); overflow: visible; } .g-chips--3 .g-chip { padding-inline: 6px; text-align: center; }
+
+.g-global-banner { padding: 8px 14px; background: #fff4d6; color: #7a4b00; font-weight: 700; font-size: .88rem; text-align: center; }

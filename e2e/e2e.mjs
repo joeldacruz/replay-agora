@@ -638,6 +638,26 @@ await step('portal: visão global de usuários (filtros, busca, Novo usuário) e
   await sess.close();
 });
 await gctx.close();
+await step('portal: "Abrir Gestão da arena" entra na Gestão como administrador global, sem token na URL, limitada àquela arena', async () => {
+  await p.goto(vibeUrl.replace(/\/[^/]*$/, '') + '/visao-geral'); await p.waitForSelector('button:has-text("Abrir Gestão da arena")');
+  const [pop] = await Promise.all([pctx.waitForEvent('page'), p.click('button:has-text("Abrir Gestão da arena")')]);
+  await pop.waitForSelector('.g-global-banner', { timeout: 20000 });
+  assert.ok((await pop.locator('.g-global-banner').innerText()).includes('Arena Vibe Beach'));
+  assert.ok(!/token|ticket/i.test(pop.url()), 'nenhum token/ticket na URL: ' + pop.url());
+  assert.ok((await pop.locator('.g-top').innerText()).includes('Arena Vibe Beach'));
+  await pop.goto(BASE + '/arena/#/gestao/equipe'); await pop.waitForSelector('h1:has-text("Equipe")'); await pop.waitForSelector('.g-card:has-text("gestor.vibe@example.test")');
+  await pop.goto(BASE + '/arena/#/perfil'); await pop.waitForSelector('text=Administrador global');
+  const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => x.name === 'Arena Alfa').id; });
+  const st = await pop.evaluate(async (id) => { const t = localStorage.getItem('ra_arena_token'); const H = { Authorization: 'Bearer ' + t };
+    return [(await fetch('/api/arena/' + id, { headers: H })).status, (await fetch('/api/platform/arenas', { headers: H })).status]; }, alfa);
+  assert.deepEqual(st, [403, 403], 'sessão da Gestão vale só para a arena aberta e não para o Portal');
+  await shot(pop, 'gestao-administrador-global'); await pop.close();
+});
+await step('gestão: abrir a Gestão sem passar pelo Portal não concede acesso (sem opener)', async () => {
+  const c = await browser.newContext(); const q = await c.newPage();
+  await q.goto(BASE + '/arena/#/auth/portal'); await q.waitForSelector('.g-err:has-text("Portal do Desenvolvedor")');
+  assert.equal(await q.evaluate(() => localStorage.getItem('ra_arena_token')), null); await c.close();
+});
 await step('portal (celular): menu em gaveta, navegação e sem rolagem horizontal', async () => {
   const token = await p.evaluate(() => localStorage.getItem('ra_portal_token'));
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

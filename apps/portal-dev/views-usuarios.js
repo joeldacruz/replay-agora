@@ -120,6 +120,22 @@ async function membersPanel(ctx, arena) {
 // ------------------------------------------------------------------ página da Arena
 const TABS = [['visao-geral', 'Visão geral'], ['dados', 'Dados da Arena'], ['usuarios', 'Gestores e Usuários'], ['quadras', 'Quadras'], ['equipamentos', 'Equipamentos'], ['configuracoes', 'Configurações'], ['historico', 'Histórico de alterações']];
 
+/** Abre a Gestão da arena em nova aba SEM token na URL: a aba pede, por postMessage same-origin, um ticket de uso único (60 s)
+ *  que o Portal obtém com a sessão de plataforma (MFA) e entrega à aba; ela o troca por uma sessão limitada a ESTA arena. */
+function abrirGestao(ctx, a) {
+  const win = window.open('/arena/#/auth/portal', '_blank');
+  if (!win) { toast('Permita pop-ups para abrir a Gestão da arena.', true); return; }
+  const done = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); };
+  const timer = setTimeout(done, 30000);
+  const onMsg = async (e) => {
+    if (e.origin !== location.origin || e.source !== win || e.data?.type !== 'ra-gestao-ready') return;
+    done();
+    try { const r = await ctx.api.post(`${P}/arenas/${a.id}/gestao-ticket`); win.postMessage({ type: 'ra-gestao-ticket', ticket: r.ticket }, location.origin); }
+    catch (x) { toast(x.message, true); win.close(); }
+  };
+  window.addEventListener('message', onMsg);
+}
+
 export async function arenaDetalhe(ctx, params) {
   const { S } = ctx;
   const tab = TABS.some(([k]) => k === params.tab) ? params.tab : 'visao-geral';
@@ -164,7 +180,7 @@ export async function arenaDetalhe(ctx, params) {
     el('h3', { style: 'margin-top:18px' }, 'Demais alterações da arena'), table(['Quando', 'Quem', 'Ação', 'Recurso'], audit.filter((e) => !e.action.startsWith('userman.')).map((e) => el('tr', {}, el('td', {}, fmt.dt(e.createdAt)), el('td', {}, e.actor || 'sistema/agente'), el('td', {}, el('code', {}, e.action)), el('td', {}, e.resourceType)))));
   }
   ctx.shell({ title: a.name, subtitle: `Arena · ${a.slug}`, hideCtx: true,
-    actions: el('a', { class: 'p-btn p-btn--outline', href: '#/arenas' }, 'Todas as arenas'),
+    actions: [a.status === 'active' ? el('button', { class: 'p-btn p-btn--primary', type: 'button', onclick: () => abrirGestao(ctx, a) }, 'Abrir Gestão da arena') : '', el('a', { class: 'p-btn p-btn--outline', href: '#/arenas' }, 'Todas as arenas')],
     content: el('div', { class: 'p-list' }, el('div', { class: 'p-tabs', role: 'tablist' }, TABS.map(([k, l]) => el('a', { class: 'p-tab' + (tab === k ? ' is-on' : ''), role: 'tab', 'aria-selected': tab === k ? 'true' : 'false', href: `#/arenas/${a.id}/${k}` }, l))), body) });
 }
 

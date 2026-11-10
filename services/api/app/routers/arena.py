@@ -42,7 +42,7 @@ def _arena_out(a: Arena, role: str) -> dict:
 
 @router.get("")
 def get_arena(c: ArenaCtx = Depends(staff)):
-    return _arena_out(c.arena, c.membership.role)
+    return _arena_out(c.arena, c.role)
 
 
 class ArenaPatch(BaseModel):
@@ -82,7 +82,7 @@ def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(admin), db: Session = De
             setattr(a, attr, ch[k])
     audit.record(db, c.user.id, a.id, "arena.update", "arena", a.id, ch)
     db.commit()
-    return _arena_out(a, c.membership.role)
+    return _arena_out(a, c.role)
 
 
 # QR identifica a arena, mas nao concede acesso a replays privados.
@@ -256,6 +256,8 @@ def patch_video(video_id: str, body: VideoPatch, c: ArenaCtx = Depends(staff), d
 
 @router.get("/videos/{video_id}/play")
 def staff_play(video_id: str, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+    if c.is_global:  # administrar metadados não exige ver conteúdo privado; acesso excepcional exigiria política/consentimento
+        raise HTTPException(403, "o administrador global gerencia os replays, mas não reproduz conteúdo privado por esta rota")
     v = _video(db, c, video_id)
     av = delivery.availability(db, v)
     if not av["playable"]:
@@ -622,7 +624,7 @@ def delete_music(track_id: str, c: ArenaCtx = Depends(admin), db: Session = Depe
 
 # ---------------- equipe ----------------
 def _actor(c: "ArenaCtx") -> userman.Actor:
-    return userman.Actor("arena", c.user, {c.arena.id})
+    return userman.Actor("platform", c.user) if c.is_global else userman.Actor("arena", c.user, {c.arena.id})
 
 
 @router.get("/members")
