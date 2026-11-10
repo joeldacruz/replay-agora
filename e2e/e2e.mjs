@@ -674,7 +674,7 @@ await step('portal: "Abrir Gestão da arena" entra na Gestão como administrador
   assert.ok((await pop.locator('.g-top').innerText()).includes('Arena Vibe Beach'));
   await pop.goto(BASE + '/arena/#/gestao/equipe'); await pop.waitForSelector('h1:has-text("Equipe")'); await pop.waitForSelector('.g-card:has-text("gestor.vibe@example.test")');
   await pop.goto(BASE + '/arena/#/perfil'); await pop.waitForSelector('text=Administrador global');
-  const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => x.name === 'Arena Alfa').id; });
+  const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => /Alfa/.test(x.name)).id; });
   const st = await pop.evaluate(async (id) => { const t = localStorage.getItem('ra_arena_token'); const H = { Authorization: 'Bearer ' + t };
     return [(await fetch('/api/arena/' + id, { headers: H })).status, (await fetch('/api/platform/arenas', { headers: H })).status]; }, alfa);
   assert.deepEqual(st, [403, 403], 'sessão da Gestão vale só para a arena aberta e não para o Portal');
