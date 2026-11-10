@@ -1,18 +1,23 @@
 """API do Portal do Desenvolvedor (global_admin + MFA). Gerencia metadados de TODAS as arenas.
 Deliberadamente NÃO há endpoint para reproduzir/baixar mídia privada (acesso excepcional = pendência documentada)."""
 import re
+from pathlib import Path
+
+from fastapi import File, UploadFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, capacity, mailer, userman
+from .. import audit, capacity, mailer, userman, storage
 from ..db import get_db, utcnow
 from ..deps import Auth, platform_auth
 from ..models import (AuditLog, Arena, ArenaAgent, Court, ExportJob, Membership, OutboxMail, Plan, ReplayEvent, User, Video)
 from ..security import hash_password
 from ..userschemas import MemberChange, NewMember
+from ..config import settings
+from ..uploads import process_logo, to_temp
 from .arena import storage_used
 from .serializers import iso
 
@@ -102,6 +107,7 @@ def _arena_out(db: Session, ar: Arena) -> dict:
             "courts": db.query(func.count(Court.id)).filter_by(arena_id=ar.id).scalar(),
             "videos": db.query(func.count(Video.id)).filter(Video.arena_id == ar.id, Video.deleted_at.is_(None)).scalar(),
             "storageBytes": storage_used(db, ar.id), "createdAt": iso(ar.created_at),
+            "logoUrl": f"/api/arenas/{ar.id}/logo" if ar.logo_key else None,
             "admins": [{"id": u.id, "name": u.name, "email": u.email} for u in
                        db.query(User).join(Membership, Membership.user_id == User.id).filter(
                            Membership.arena_id == ar.id, Membership.role == "arena_admin", Membership.status == "active")]}
@@ -180,6 +186,45 @@ def gestao_ticket(arena_id: str, a: Auth = Depends(platform_auth), db: Session =
     audit.record(db, a.user.id, ar.id, "platform.gestao_ticket", "arena", ar.id, {})
     db.commit()
     return {"ticket": ticket, "expiresIn": 60}
+
+@router.post("/arenas/{arena_id}/logo")
+async def update_arena_logo(arena_id: str, logo: UploadFile = File(...),
+                            a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    """Somente admin global com MFA pode atualizar a identidade principal da arena."""
+    ar = db.get(Arena, arena_id)
+    if not ar:
+        raise HTTPException(404, "arena não encontrada")
+    tmp = await to_temp(logo, settings.max_logo_bytes, ".png")
+    try:
+        content, _, _ = process_logo(tmp)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    from ..db import new_id
+    key = storage.make_key(ar.id, "branding", f"logo-{new_id()}.png")
+    storage.ensure_parent(key).write_bytes(content)
+    old = ar.logo_key
+    try:
+        ar.logo_key = key
+        audit.record(db, a.user.id, ar.id, "platform.arena_logo_update", "arena", ar.id, {"logo": "updated"})
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(key)
+        raise
+    storage.delete(old)
+    return {"logoUrl": f"/api/arenas/{ar.id}/logo"}
+
+
+@router.delete("/arenas/{arena_id}/logo", status_code=204)
+def delete_arena_logo(arena_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    ar = db.get(Arena, arena_id)
+    if not ar:
+        raise HTTPException(404, "arena não encontrada")
+    old = ar.logo_key
+    ar.logo_key = None
+    audit.record(db, a.user.id, ar.id, "platform.arena_logo_delete", "arena", ar.id, {"logo": "removed"})
+    db.commit()
+    storage.delete(old)
 
 
 @router.get("/arenas/{arena_id}")

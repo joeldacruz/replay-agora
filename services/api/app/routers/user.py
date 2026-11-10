@@ -59,14 +59,32 @@ def _where(v: Video) -> str:
 @router.get("/arenas")
 def my_arenas(a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     rows = db.query(Arena).filter(Arena.id.in_(_member_arenas(db, a.user.id))).order_by(Arena.name).all()
-    return [{"id": r.id, "slug": r.slug, "name": r.name, "brandColor": r.brand_color} for r in rows]
+    return [{"id": r.id, "slug": r.slug, "name": r.name, "brandColor": r.brand_color,
+             "logoUrl": f"/api/arenas/{r.id}/logo" if r.logo_key else None} for r in rows]
 
 
 @router.get("/arenas/directory")
 def directory(a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     rows = db.query(Arena).filter_by(status="active", allow_self_join=True).order_by(Arena.name).all()
     mine = set(_member_arenas(db, a.user.id))
-    return [{"id": r.id, "slug": r.slug, "name": r.name, "joined": r.id in mine} for r in rows]
+    return [{"id": r.id, "slug": r.slug, "name": r.name, "joined": r.id in mine,
+             "logoUrl": f"/api/arenas/{r.id}/logo" if r.logo_key else None} for r in rows]
+
+
+@router.get("/arenas/{arena_id}/logo")
+def arena_public_logo(arena_id: str, db: Session = Depends(get_db)):
+    """Imagem pública de identidade visual; somente arenas ativas. Nunca expõe mídia privada."""
+    ar = db.get(Arena, arena_id)
+    if not ar or ar.status != "active" or not ar.logo_key:
+        raise HTTPException(404, "logomarca não encontrada")
+    try:
+        path = storage.path_for(ar.logo_key)
+    except ValueError:
+        raise HTTPException(404, "logomarca não encontrada")
+    if not path.is_file():
+        raise HTTPException(404, "logomarca não encontrada")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store",
+                                                               "X-Content-Type-Options": "nosniff"})
 
 
 @router.post("/arenas/{arena_id}/join", status_code=201)

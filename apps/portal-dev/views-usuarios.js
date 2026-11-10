@@ -13,6 +13,13 @@ const ACTION = {
 const roleOpts = [['arena_admin', 'Gestor'], ['arena_operator', 'Operador'], ['user', 'Usuário (jogador)']];
 const authOpts = Object.entries(AUTH);
 
+// Sugestão de identificador, editável manualmente.
+export function slugFromName(name) {
+  return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    .slice(0, 60).replace(/-+$/g, '');
+}
+
 function authCell(u) {
   const bits = [el('div', {}, AUTH[u.authMethod] || u.authMethod)];
   const st = [];
@@ -159,7 +166,31 @@ export async function arenaDetalhe(ctx, params) {
     el('div', { class: 'p-fields' }, fld('Plano', select('planId', [['', 'sem plano (sem limites)'], ...plans.map((p) => [p.id, p.name])], a.plan?.id || '')),
       fld('Fuso horário', input('timezone', { value: a.timezone })), fld('Estado', select('status', [['active', 'Ativa'], ['suspended', 'Suspensa']], a.status))),
     el('div', { class: 'p-actions' }, el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Salvar')));
-    body = section('Dados da Arena', f);
+    const logoPreview = a.logoUrl ? el('img', { src: a.logoUrl + '?v=' + Date.now(),
+      alt: 'Logomarca de ' + a.name, style: 'max-width:200px;max-height:120px;object-fit:contain' })
+      : el('p', { class: 'p-muted' }, 'A arena ainda não possui uma logomarca.');
+    const logoInput = el('input', { type: 'file', accept: '.png,image/png', required: true, 'aria-label': 'Selecionar logo PNG da arena' });
+    const logoForm = el('form', { class: 'p-form', onsubmit: ctx.guard(async (e) => {
+      e.preventDefault();
+      if (!logoInput.files?.[0]) throw new Error('Selecione um arquivo PNG.');
+      const fd = new FormData();
+      fd.append('logo', logoInput.files[0]);
+      const res = await fetch(`${P}/arenas/${a.id}/logo`, {
+        method: 'POST', headers: { Authorization: 'Bearer ' + ctx.api.token() }, body: fd,
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))).detail;
+        throw new Error(typeof detail === 'string' ? detail : 'Falha no envio da logomarca');
+      }
+      toast('Logomarca atualizada'); ctx.go();
+    }) }, logoPreview, fld('Logo principal (PNG, até 1 MB; de 32 a 2000 pixels)', logoInput),
+    el('div', { class: 'p-actions' },
+      el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Enviar logomarca'),
+      a.logoUrl ? el('button', { class: 'p-btn p-btn--outline', type: 'button', onclick: ctx.guard(async () => {
+        if (!(await confirmSheet('Remover a logomarca principal da arena?', 'Remover'))) return;
+        await ctx.api.del(`${P}/arenas/${a.id}/logo`); toast('Logomarca removida'); ctx.go();
+      }) }, 'Remover logomarca') : ''));
+    body = el('div', { class: 'p-list' }, section('Dados da Arena', f), section('Logomarca da arena', logoForm));
   } else if (tab === 'usuarios') {
     body = section('Gestores e Usuários', await membersPanel(ctx, a));
   } else if (tab === 'quadras') {
@@ -188,14 +219,19 @@ export async function arenaDetalhe(ctx, params) {
 export async function arenas(ctx) {
   const [list, plans] = await Promise.all([ctx.api.get(`${P}/arenas`), ctx.api.get(`${P}/plans`)]);
   const create = () => {
+    const arenaName = input('name', { required: true, maxlength: 120 });
+    const arenaSlug = input('slug', { required: true, maxlength: 60, pattern: '[a-z0-9][a-z0-9\\-]{1,58}[a-z0-9]' });
+    let slugManual = false;
+    arenaName.addEventListener('input', () => { if (!slugManual) arenaSlug.value = slugFromName(arenaName.value); });
+    arenaSlug.addEventListener('input', () => { slugManual = true; });
     const mode = select('mode', [['new', 'Cadastrar um novo gestor'], ['existing', 'Selecionar um gestor já cadastrado'], ['none', 'Definir o gestor depois']], 'new');
     const boxNew = el('div', { class: 'p-list' }, fld('Nome completo do gestor', input('mName', { maxlength: 120 })), el('div', { class: 'p-fields' }, fld('E-mail do gestor', input('mEmail', { type: 'email' })), fld('Telefone (opcional)', input('mPhone', { type: 'tel' }))),
       fld('Método de autenticação', select('mAuth', authOpts, 'password')), check('mInvite', 'Enviar convite por e-mail', true));
     const boxEx = el('div', { class: 'p-list', hidden: true }, fld('E-mail da conta existente', input('exEmail', { type: 'email' }), 'Digite o e-mail de um usuário já cadastrado; ele será vinculado como gestor.'));
     const sync = () => { boxNew.hidden = mode.value !== 'new'; boxEx.hidden = mode.value !== 'existing'; };
     mode.onchange = sync;
-    sheet({ title: 'Nova arena', submit: 'Criar arena', wide: true, fields: [fld('Nome da arena', input('name', { required: true })),
-      fld('Identificador (a-z, 0-9, hífen)', input('slug', { required: true, pattern: '[a-z0-9][a-z0-9\\-]{1,58}[a-z0-9]' })),
+    sheet({ title: 'Nova arena', submit: 'Criar arena', wide: true, fields: [fld('Nome da arena', arenaName),
+      fld('Identificador (gerado automaticamente; editável)', arenaSlug),
       el('div', { class: 'p-fields' }, fld('Plano', select('planId', [['', 'sem plano (sem limites)'], ...plans.map((p) => [p.id, p.name])], '')), fld('Fuso horário', input('timezone', { value: 'America/Sao_Paulo' }))),
       el('h3', {}, 'Gestor responsável'), fld('Como definir o gestor', mode), boxNew, boxEx],
     onSubmit: async (fd) => {
