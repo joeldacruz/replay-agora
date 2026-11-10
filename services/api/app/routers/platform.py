@@ -161,6 +161,27 @@ def create_arena(body: ArenaIn, a: Auth = Depends(platform_auth), db: Session = 
     return _arena_out(db, ar)
 
 
+@router.post("/arenas/{arena_id}/gestao-ticket")
+def gestao_ticket(arena_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
+    """Ticket de uso único (60 s) para abrir a Gestão desta arena. NÃO é token de acesso: só é trocado, por POST, por uma
+    sessão de arena com escopo de UMA arena. Exige sessão de plataforma com MFA (platform_auth)."""
+    import hashlib
+    import secrets
+    from datetime import timedelta
+    from ..models import OAuthFlow
+    ar = _arena_or_404(db, arena_id)
+    if ar.status != "active":
+        raise HTTPException(409, "arena suspensa: reative-a antes de abrir a Gestão")
+    ticket = secrets.token_urlsafe(32)
+    now = utcnow()
+    db.add(OAuthFlow(state=secrets.token_urlsafe(24), app="arena", intent="portal", nonce=ar.id, code_verifier="-", user_id=a.user.id,
+                     expires_at=now + timedelta(seconds=60), ticket_hash=hashlib.sha256(ticket.encode()).hexdigest(),
+                     ticket_user_id=a.user.id, ticket_expires_at=now + timedelta(seconds=60)))
+    audit.record(db, a.user.id, ar.id, "platform.gestao_ticket", "arena", ar.id, {})
+    db.commit()
+    return {"ticket": ticket, "expiresIn": 60}
+
+
 @router.get("/arenas/{arena_id}")
 def get_arena(arena_id: str, a: Auth = Depends(platform_auth), db: Session = Depends(get_db)):
     ar = db.get(Arena, arena_id)

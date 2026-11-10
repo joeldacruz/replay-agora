@@ -50,12 +50,13 @@ def _decode(token: str, typ: str) -> dict | None:
 APPS = ("user", "arena", "platform")
 
 
-def create_access_token(user_id: str, app: str, mfa: bool = False, scope: str = "full") -> str:
+def create_access_token(user_id: str, app: str, mfa: bool = False, scope: str = "full", extra: dict | None = None,
+                        ttl_s: int | None = None) -> str:
     """Token por aplicação (`app`): um token do app do usuário não vale na API da arena nem do portal.
     scope='mfa' é um token curto que só permite concluir o MFA."""
     assert app in APPS
-    ttl = 300 if scope != "full" else (3600 if app == "platform" else settings.access_token_ttl_s)
-    return _encode({"typ": "access", "sub": user_id, "app": app, "mfa": mfa, "scope": scope}, ttl)
+    ttl = ttl_s or (300 if scope != "full" else (3600 if app == "platform" else settings.access_token_ttl_s))
+    return _encode({**(extra or {}), "typ": "access", "sub": user_id, "app": app, "mfa": mfa, "scope": scope}, ttl)
 
 
 def decode_access_token(token: str) -> dict | None:

@@ -82,7 +82,7 @@ async function googleCard(ctx) {
 export async function perfil(ctx) {
   const me = ctx.me, a = ctx.arena;
   const gcard = await googleCard(ctx);
-  const role = { arena_admin: 'Gestor', arena_operator: 'Operador' };
+  const role = { arena_admin: 'Gestor', arena_operator: 'Operador', global_admin: 'Administrador global' };
   ctx.page({ title: 'Perfil', content: [
     el('section', { class: 'g-card' }, el('div', { class: 'g-profile-id' }, el('span', { class: 'g-avatar', 'aria-hidden': 'true' }, (me.name || '?').trim().charAt(0).toUpperCase())),
       el('dl', {}, el('div', { class: 'g-dl' }, el('dt', {}, 'Nome'), el('dd', {}, me.name)), el('div', { class: 'g-dl' }, el('dt', {}, 'E-mail da conta'), el('dd', {}, me.email)),

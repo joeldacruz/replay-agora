@@ -39,12 +39,14 @@ def test_arena_token_blocked_from_platform_and_user_app_and_vice_versa(client, w
         assert r.status_code == 403, (method, path)
     for path in ("/api/videos", "/api/exports", "/api/arenas"):
         assert client.get(path, headers=H("a_admin_arena")).status_code == 403
-        assert client.get(path, headers=H("root")).status_code == 403
-    assert client.get(f"/api/arena/{world.A.id}", headers=H("root")).status_code == 403  # global admin não é gestor
+        assert client.get(path, headers=H("root")).status_code == 403   # a sessão de plataforma não vale no app do usuário
+    assert client.get(f"/api/arena/{world.A.id}", headers=H("root")).json()["myRole"] == "global_admin"  # acesso global, sem Membership
 
 
-def test_platform_token_cannot_reach_arena_data_even_for_global_admin(client, world, H):
-    assert client.get(f"/api/arena/{world.A.id}/videos", headers=H("root")).status_code == 403
+def test_platform_session_with_mfa_reaches_arena_data_as_global_admin(client, world, H):
+    """Regra definitiva: global_admin (sessão de plataforma + MFA) administra qualquer arena, sem vínculo."""
+    assert client.get(f"/api/arena/{world.A.id}/videos", headers=H("root")).status_code == 200
+    assert client.get(f"/api/arena/{world.B.id}/videos", headers=H("root")).status_code == 200
 
 
 def test_logins_are_separate(client, world):

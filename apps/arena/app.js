@@ -14,7 +14,7 @@ const S = { me: null, arena: null, checkedAt: 0 };
 const ctx = {
   root, api, el, toast,
   get me() { return S.me; }, get arena() { return S.arena; },
-  isAdmin: () => S.arena?.role === 'arena_admin',
+  isAdmin: () => ['arena_admin', 'global_admin'].includes(S.arena?.role),
   base: () => `/api/arena/${S.arena.arenaId}`,
   go: () => router.go(),
   refreshMe: async () => { S.me = null; S.checkedAt = 0; return ensure(); },
@@ -57,6 +57,7 @@ function page({ title, back, content }) {
     : el('span', { class: 'g-arena-tag' }, S.arena.arenaName);
   root.className = 'g-app';
   root.replaceChildren(
+    S.arena.role === 'global_admin' ? el('div', { class: 'g-global-banner', role: 'status' }, 'Administrador global · acesso auditado a ' + S.arena.arenaName) : '',
     el('header', { class: 'g-top' }, el('div', { class: 'g-top-row' }, brand(), arenaCtl),
       el('div', { class: 'g-top-title' }, back ? el('a', { class: 'g-back', href: '#' + back, 'aria-label': 'Voltar' }, icon('chevronLeft', { size: 22 })) : '', el('h1', {}, title))),
     el('main', { class: 'g-main' }, content), nav());
@@ -65,6 +66,25 @@ function page({ title, back, content }) {
 ctx.page = page;
 const loading = () => { root.className = 'g-app'; root.replaceChildren(el('p', { class: 'g-loading' }, 'Carregando…')); };
 const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p); };
+
+/** Entrada vinda do Portal DEV: recebe o ticket por postMessage same-origin (nunca por URL) e o troca por sessão desta arena. */
+async function portalHandoff() {
+  const opener = window.opener;
+  if (!opener) return login({ err: 'Abra a Gestão pelo Portal do Desenvolvedor (botão “Abrir Gestão da arena”).' });
+  root.className = 'g-app'; root.replaceChildren(el('p', { class: 'g-loading' }, 'Conectando ao Portal…'));
+  try {
+    const ticket = await new Promise((resolve, reject) => {
+      const t = setTimeout(() => { removeEventListener('message', h); reject(new Error('Tempo esgotado aguardando o Portal. Abra novamente pelo botão.')); }, 15000);
+      const h = (e) => { if (e.origin !== location.origin || e.source !== opener || e.data?.type !== 'ra-gestao-ticket') return; removeEventListener('message', h); clearTimeout(t); resolve(e.data.ticket); };
+      addEventListener('message', h);
+      opener.postMessage({ type: 'ra-gestao-ready' }, location.origin);
+    });
+    const j = await api.post('/api/auth/arena/portal-exchange', { ticket });
+    api.setToken(j.token); S.me = null; S.arena = null; ls.set('arena', j.arenaId);
+    try { window.opener = null; } catch { /* já desvinculado */ }
+    location.hash = '#/';
+  } catch (x) { login({ err: x.message }); }
+}
 
 async function googleReturn() {
   const r = googleReturnParams();
@@ -92,7 +112,7 @@ document.body.classList.add('g-body');
 document.getElementById('app').innerHTML = '';
 const router = createRouter(root, {
   '/': guarded(inicio), '/replays': guarded(replays), '/gestao': guarded(gestao), '/gestao/quadras': guarded(quadras), '/gestao/patrocinios': guarded(patrocinios),
-  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/google-done': () => { location.hash = '#/'; },
+  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
 }, () => { location.hash = '#/'; });
 ctx.router = router;
 router.go();
