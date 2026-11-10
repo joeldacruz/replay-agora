@@ -77,6 +77,24 @@ Alterações candidatas (não presumir incorporadas no GitHub ou serviço):
 - Verificar especialmente resolução de dependências FastAPI, escopo dos tokens, validação de usuário ativo, auditoria, proteção contra acesso entre arenas e tratamento de contexto global; a implementação de candidato deve ser revisada antes de merge.
 - **A branch `main` do GitHub consultada em 10/11/2026 não continha `services/api/app/deps.py` nem `routers/arena.py`**; o código está distribuído em branches/PRs. Não copiar arquivos isolados da instância para a `main` sem reconciliação de versões.
 
+## 6.1 Atualização operacional confirmada — deploy técnico de 10/11/2026
+
+Depois da primeira tentativa, a API falhou ao importar `routers/arena.py` com `PermissionError: [Errno 13]`. O script de implantação anterior usou `cp -a` e preservou o modo restritivo do candidato. O rollback restaurou os arquivos originais e a API recuperou HTTP 200.
+
+Uma **segunda implantação corrigida** foi executada no `cmtb-srv01` com preservação explícita dos metadados dos arquivos de destino (`usuario=joel`, `grupo=joel`, `modo=600`). Evidência reportada pelo terminal:
+
+- `deps.py` e `arena.py` passaram nas verificações de sintaxe e estrutura;
+- instalação dos dois arquivos com integridade conferida;
+- reinicialização **somente** de `replayagora-novo-stage.service`;
+- `GET http://127.0.0.1:18082/api/health` retornou **HTTP 200**;
+- acesso anônimo a `/api/arena/{arena_id}/videos` retornou **HTTP 401**;
+- `systemctl is-active` resultou em **active**;
+- backup de reversão: `/srv/projetos/replay-agora-novo-stage/backups/global-admin-deploy2-20261110-192449`.
+
+**Status atualizado:** código candidato implantado com serviço saudável, mas a **autorização real de um `global_admin` com token de plataforma e MFA ainda não foi testada**. Os testes 10/10 continuam sendo apenas isolados com objetos simulados. Não há confirmação de publicação nem playback dos dois replays. Não fazer novos deploys até validar a sessão real e o funcionamento de endpoints.
+
+**Importante:** o fato de a API central estar atualizada **não significa que essa alteração de código foi integrada ao GitHub**. Versionar código e testes no ramo Git correspondente permanece pendente.
+
 ## 7. Pendências e ordem recomendada
 
 1. Identificar a branch Git que corresponde **exatamente** à versão em execução no `cmtb-srv01` e reconciliar os PRs pendentes; não sobrescrever trabalho existente.
