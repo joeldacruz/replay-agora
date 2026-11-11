@@ -694,6 +694,7 @@ await step('portal: Replays da arena — regulariza replays privados antigos, mo
   const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => /Alfa/.test(x.name)).id; });
   await p.goto(BASE + '/portal/#/arenas/' + alfa + '/replays'); await p.waitForSelector('h2:has-text("Replays e moderação")');
   await p.click('button:has-text("Regularizar replays pendentes")');
+  await p.waitForSelector('dialog:has-text("Regularizar replays"), .p-toast:has-text("Nenhum replay pendente")');
   const dlg = p.locator('dialog:has-text("Regularizar replays")');
   if (await dlg.count()) { await dlg.locator('button[type=submit]').click(); await p.waitForSelector('.p-toast:has-text("publicado")'); }
   await p.selectOption('select[aria-label="Filtrar replays"]', 'published'); await p.waitForSelector('tbody tr');

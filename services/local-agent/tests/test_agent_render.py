@@ -52,7 +52,7 @@ def rig(client, world, media, tmp_path, monkeypatch, H):
     r.ids = {}
     for k, (lid, _) in r.src.items():
         r.ids[k] = db.query(Video).filter_by(arena_id=world.A.id, local_id=lid).one().id
-        client.patch(f"/api/arena/{world.A.id}/videos/{r.ids[k]}", headers=H("a_admin_arena"), json={"visibility": "arena"})
+        client.patch(f"/api/arena/{world.A.id}/videos/{r.ids[k]}", headers=H("root"), json={"visibility": "arena"})
     db.close()
     mk = lambda: CentralClient(TestClient(app), world.A.token, "node-A")  # noqa: E731
     r.render = RenderWorker(mk(), r.agent.store, tmp_path / "A" / "renders", nice=0, allowed_source_roots=[tmp_path / "A" / "replays"])
