@@ -303,6 +303,13 @@ p.on('pageerror', (e) => diag.push('pageerror: ' + e.message.slice(0, 160)));
 p.on('console', (m) => { if (m.type() === 'error') diag.push('console: ' + m.text().slice(0, 160)); });
 p.on('response', (r) => { if (r.status() >= 400 && r.url().includes('/api/')) diag.push(r.status() + ' ' + r.request().method() + ' ' + r.url().replace(BASE, '').slice(0, 110)); });
 const nav = (label) => p.click(`nav.p-nav a:has-text("${label}")`);
+// Abre a aba do servidor srv-e2e. O seletor aponta para o LINK do cartão da lista (a.p-card[href]) e espera a lista renderizar:
+// `.p-card:has-text(...)` também casava com cartões da tela anterior (detalhe do servidor) e o clique caía na tela antiga.
+const openServerTab = async (tab) => {
+  await nav('Servidores Locais'); await p.waitForSelector('h1:has-text("Servidores Locais")');
+  await p.click('a.p-card[href^="#/servidores/"]:has-text("srv-e2e")'); await p.waitForSelector('a.p-tab:has-text("Configuração")');
+  if (tab) await p.click(`a.p-tab:has-text("${tab}")`);
+};
 const waitFor = async (fn, ms = 60000, every = 1500) => { const t0 = Date.now(); for (;;) { if (await fn()) return; if (Date.now() - t0 > ms) throw new Error('tempo esgotado aguardando condição'); await p.waitForTimeout(every); } };
 await step('portal: login exige MFA (cadastro TOTP no 1º acesso) e abre o Painel Geral com a marca oficial', async () => {
   await p.goto(BASE + '/portal/'); await p.waitForURL(/#\/login/);
@@ -356,8 +363,8 @@ await step('portal: cadastra servidor local, baixa credenciais (mostradas uma ú
   const card = p.locator('.p-card', { hasText: 'srv-e2e' });
   await card.waitFor(); assert.ok((await card.innerText()).includes('Nunca conectou'), 'cadastro não é conexão');
   startAgent(cred);
-  await waitFor(async () => { await p.reload(); await p.waitForSelector('.p-card:has-text("srv-e2e")'); return (await p.locator('.p-card:has-text("srv-e2e")').innerText()).includes('Conectado'); });
-  await p.click('.p-card:has-text("srv-e2e")'); await p.waitForSelector('h1:has-text("srv-e2e")');
+  await waitFor(async () => { await p.reload(); await p.waitForSelector('a.p-card[href^="#/servidores/"]:has-text("srv-e2e")'); return (await p.locator('a.p-card[href^="#/servidores/"]:has-text("srv-e2e")').innerText()).includes('Conectado'); });
+  await p.click('a.p-card[href^="#/servidores/"]:has-text("srv-e2e")'); await p.waitForSelector('h1:has-text("srv-e2e")');
   assert.ok(!(await p.content()).includes(JSON.parse(readFileSync(cred, 'utf8')).token), 'token nunca reaparece');
 });
 await step('portal: vincula quadras ao servidor', async () => {
@@ -434,7 +441,7 @@ await step('portal: associa molduras à Quadra 01 (horizontal e vertical)', asyn
   await p.click('button:has-text("Salvar configuração")'); await p.waitForSelector('.p-banner:has-text("pendentes de aplicação")');
 });
 await step('portal: salva e aplica — o agente confirma a versão ativa (salvo ≠ aplicado)', async () => {
-  await nav('Servidores Locais'); await p.click('.p-card:has-text("srv-e2e")'); await p.click('a.p-tab:has-text("Configuração")');
+  await openServerTab('Configuração');
   await p.waitForSelector('text=Alterações ainda não aplicadas');
   assert.ok((await p.locator('.p-diff').innerText()).includes('Quadra'), 'diferenças listadas');
   await p.click('button:has-text("Salvar e aplicar")'); await p.click('dialog button[type=submit]');
@@ -450,7 +457,7 @@ await step('portal: controlador e quadra aparecem como aplicados; teste de comun
 await step('portal: servidor desconectado — alteração fica pendente (não finge aplicada) e é entregue na reconexão', async () => {
   stopAgent();
   await nav('Replay e Captura'); await p.waitForSelector('input[name=preS]'); await p.fill('input[name=preS]', '5'); await p.click('button:has-text("Salvar configuração")'); await p.waitForSelector('.p-banner:has-text("pendentes de aplicação")');
-  await nav('Servidores Locais'); await p.click('.p-card:has-text("srv-e2e")'); await p.click('a.p-tab:has-text("Configuração")');
+  await openServerTab('Configuração');
   await p.click('button:has-text("Salvar e aplicar")'); await p.click('dialog button[type=submit]'); await p.waitForSelector('text=Aguardando');
   await p.reload(); await p.waitForSelector('.p-banner:has-text("Pendente de aplicação")', { timeout: 15000 }).catch(() => {});
   assert.ok(!(await p.locator('body').innerText()).includes('Versão aplicada e confirmada pelo agente: v2'), 'não pode parecer aplicada');
