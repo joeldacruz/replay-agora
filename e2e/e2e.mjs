@@ -200,7 +200,9 @@ await step('usuário (computador): barra superior Arenas/Replays/Perfil, replays
 
 // ---------- App da Arena (desktop) ----------
 const desk = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
-const a = await desk.newPage();
+const a = await desk.newPage(); failPage = a;
+a.on('pageerror', (e) => diag.push('arena pageerror: ' + e.message.slice(0, 160)));
+a.on('response', (r) => { if (r.status() >= 400 && r.url().includes('/api/')) diag.push('arena ' + r.status() + ' ' + r.request().method() + ' ' + r.url().replace(BASE, '').slice(0, 110)); });
 const LOGIN = async (pg, email) => { await pg.goto(BASE + '/arena/'); await pg.waitForURL(/#\/login/); await pg.fill('input[name=email]', email); await pg.fill('input[name=password]', PASS); await pg.click('button[type=submit]'); await pg.waitForSelector('.g-kpis'); };
 await step('arena: gestor entra no Início com 4 indicadores e menu Início/Áudio/Patrocínio/Replays/Perfil', async () => {
   await LOGIN(a, 'gestor.alfa@example.test');

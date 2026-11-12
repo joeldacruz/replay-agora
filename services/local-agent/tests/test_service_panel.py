@@ -48,7 +48,7 @@ def test_real_agent_data_reaches_the_panel_and_manual_test_makes_a_labeled_repla
     st = svc.stack
     assert wait(lambda: st.recorders["A_01"].index.stats(3.5)["availableSeconds"] >= 6 and st.recorders["A_02"].state == "down")
     assert svc.link.tick()["online"] and svc.link.tick()["online"]          # o estado do link vai no heartbeat seguinte
-    ha = H("a_admin_arena")
+    ha = H("root")
     d = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=ha).json()
     c1 = next(x for x in d["courts"] if x["courtId"] == world.A.c1)["diag"]
     c2 = next(x for x in d["courts"] if x["courtId"] == world.A.c2)["diag"]

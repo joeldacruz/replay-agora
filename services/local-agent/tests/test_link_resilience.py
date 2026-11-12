@@ -194,12 +194,12 @@ def test_heartbeat_reports_court_metrics_and_failures_to_central(client, world, 
     a.renderer.camera_up["A_02"] = False
     fire(a, n=2)
     a.link.tick()
-    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()
+    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()
     by = {c["courtId"]: c for c in rt["courts"]}
     assert by[world.A.c1]["completed"] == 2 and by[world.A.c1]["state"] == "ok"
     assert by[world.A.c2]["failed"] == 2 and by[world.A.c2]["state"] == "camera_down"
     assert rt["agents"][0]["system"]["diskTotalBytes"] and rt["agents"][0]["state"] == "online"
-    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
+    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()
     assert any(c["courtId"] == world.A.c1 for c in st["courts"])
     a.engine.stop()
 
