@@ -59,10 +59,10 @@ def test_sample_throttle(client, world):
 # ---------- limites ----------
 def test_effective_limit_plan_vs_override_and_permissions(client, world, H):
     # plano de teste: 1024 MB
-    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
+    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()
     assert st["limitBytes"] == 1024 * MB and st["limitSource"] == "plan" and st["autoDelete"] is False
     # a arena NÃO altera o limite global: sem rota; o portal altera e audita
-    assert client.put(f"/api/arena/{world.A.id}/storage-limit", headers=H("a_admin_arena"), json={"storageLimitMb": 99999}).status_code in (404, 405)
+    assert client.put(f"/api/arena/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 99999}).status_code in (404, 405)
     assert client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("a_admin_arena"), json={"storageLimitMb": 500}).status_code in (401, 403)
     r = client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 500})
     assert r.status_code == 200 and r.json()["limitBytes"] == 500 * MB and r.json()["limitSource"] == "arena"
@@ -70,7 +70,7 @@ def test_effective_limit_plan_vs_override_and_permissions(client, world, H):
     assert db.query(AuditLog).filter_by(action="platform.storage_limit", arena_id=world.A.id).count() == 1
     db.close()
     # a arena B não é afetada
-    assert client.get(f"/api/arena/{world.B.id}/storage", headers=H("b_admin_arena")).json()["limitBytes"] == 1024 * MB
+    assert client.get(f"/api/arena/{world.B.id}/storage", headers=H("root")).json()["limitBytes"] == 1024 * MB
     # remover override volta ao plano
     assert client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": None}).json()["limitSource"] == "plan"
 
@@ -89,16 +89,16 @@ def test_court_limit_policy_validation_and_idor(client, world, H):
     assert (st["warnPct"], st["criticalPct"]) == (50, 70)
     c1 = next(c for c in st["courts"] if c["courtId"] == world.A.c1)
     assert c1["limitBytes"] == 400 * MB and c1["retentionDays"] == 10
-    assert client.get(f"/api/arena/{world.B.id}/storage", headers=hb).json()["warnPct"] == 80
+    assert client.get(f"/api/arena/{world.B.id}/storage", headers=H("root")).json()["warnPct"] == 80
 
 
 def test_usage_levels_reflect_synced_metadata_and_config_reaches_agent(client, world, H):
     setup_agent(client, world)
     client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 100})
     client.put(f"/api/arena/{world.A.id}/courts/{world.A.c1}/storage-policy", headers=H("root"), json={"storageLimitMb": 60, "retentionDays": 7})
-    base = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()["usedBytes"]  # vídeos semeados pela fixture
+    base = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()["usedBytes"]  # vídeos semeados pela fixture
     put_replays(client, world, 82 - base // MB, size=MB)  # ~82 MB de 100 => warning (80%); A_01 acima de 60 MB => full
-    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
+    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()
     assert st["level"] == "warning" and st["usedBytes"] > 80 * MB
     assert next(c for c in st["courts"] if c["courtId"] == world.A.c1)["level"] == "full"
     cfg = client.get(f"{BASE}/config", headers=ah(world)).json()
@@ -124,7 +124,7 @@ def test_forecast_endpoint_from_heartbeat_samples(client, world, H):
                              disk_free_bytes=(1000 - d * 100) * MB, disk_total_bytes=1000 * MB))
     db.commit()
     db.close()
-    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
+    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()
     assert st["forecast"]["status"] == "growing" and abs(st["forecast"]["daysToFull"] - 7.24) < 0.2  # (1024-300)/100
     assert st["diskForecast"]["status"] == "growing" and abs(st["diskForecast"]["daysToFull"] - 7.0) < 0.2
 

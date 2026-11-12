@@ -9,6 +9,9 @@ from app.security import _encode
 from conftest import login, platform_login
 
 
+NEWM = {"email": "n@t.test", "role": "user"}
+
+
 def png():
     b = io.BytesIO(); Image.new("RGBA", (64, 64), (0, 0, 0, 255)).save(b, "PNG"); return b.getvalue()
 
@@ -17,13 +20,16 @@ def hdr(client, w, who):
     return platform_login(client, w.emails["root"]) if who == "root" else login(client, w.emails[who], "user" if who.endswith("user") else "arena")
 
 
-def test_operator_can_only_read_and_test_the_button_chain(client, world):
+def test_operator_can_only_read(client, world):
     op, B = hdr(client, world, "a_op"), f"/api/arena/{world.A.id}"
-    for path in ("", "/dashboard", "/courts", "/videos", "/sponsors", "/campaigns", "/music", "/music/usage", "/diagnostics", "/runtime"):
+    for path in ("", "/dashboard", "/courts", "/videos", "/sponsors", "/campaigns", "/music", "/music/usage"):
         assert client.get(B + path, headers=op).status_code == 200, path
+    for path in ("/diagnostics", "/runtime", "/storage", "/agent-resources"):                # técnico: só o administrador global
+        assert client.get(B + path, headers=op).status_code == 403, path
+    assert client.post(f"{B}/courts/{world.A.c1}/test-trigger", headers=op).status_code == 403
     denied = [("patch", "", {"json": {"name": "X Y Z"}}), ("post", "/courts", {"json": {"label": "Q9", "localCourtKey": "A_09"}}),
               ("post", "/sponsors", {"data": {"name": "N"}, "files": {"logo": ("l.png", png(), "image/png")}}), ("post", "/music", {}),
-              ("get", "/members", {}), ("get", "/agents", {}), ("post", "/agents", {"json": {"label": "x"}}), ("get", "/audit", {}),
+              ("get", "/agents", {}), ("post", "/agents", {"json": {"label": "x"}}), ("get", "/audit", {}),
               ("patch", f"/videos/{world.A.pub}", {"json": {"visibility": "private"}}), ("delete", f"/videos/{world.A.pub}?confirm=true", {}),
               ("put", "/agent-resources", {"json": {"maxFfmpeg": 2}}), ("put", f"/courts/{world.A.c1}/storage-policy", {"json": {"storageLimitMb": 10}})]
     for m, path, kw in denied:
@@ -41,9 +47,11 @@ def test_manager_scope_audio_music_sponsors_consultation_only(client, world):
     for m, path, kw in [("post", "/courts", {"json": {"label": "Q9", "localCourtKey": "A_09"}}), ("patch", f"/courts/{world.A.c1}", {"json": {"label": "Z Z"}}),
                         ("post", "/agents", {"json": {"label": "x"}}), ("get", "/agents", {}), ("get", "/audit", {}),
                         ("patch", f"/videos/{world.A.priv}", {"json": {"visibility": "arena"}}), ("delete", f"/videos/{world.A.priv}?confirm=true", {}),
+                        ("get", "/diagnostics", {}), ("get", "/runtime", {}), ("get", "/storage", {}), ("post", f"/courts/{world.A.c1}/test-trigger", {}),
+                        ("get", "/members", {}), ("post", "/members", {"json": NEWM}),
                         ("put", "/agent-resources", {"json": {"maxFfmpeg": 2}}), ("put", f"/courts/{world.A.c1}/storage-policy", {"json": {"storageLimitMb": 10}}),
                         ("post", f"/videos/{world.A.pub}/protection", {"json": {"protected": True}})]:
-        assert getattr(client, m)(B + path, headers=ga, **kw).status_code == 403, (m, path)
+        assert getattr(client, m)(B + path, headers=ga, **kw).status_code in (403, 404, 405), (m, path)
     # nem enxerga outra arena
     assert client.get(f"/api/arena/{world.B.id}/music", headers=ga).status_code == 404
     assert client.get(f"/api/arena/{world.B.id}/videos/{world.B.pub}/personalization", headers=ga).status_code == 404

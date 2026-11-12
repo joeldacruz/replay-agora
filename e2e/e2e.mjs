@@ -17,8 +17,9 @@ const tmp = mkdtempSync(join(tmpdir(), 'e2e-'));
 const results = [];
 const SHOTS = process.env.SHOTS_DIR;
 const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, name + '.png') }); };
+const diag = [];      // últimos eventos do navegador do Portal (erros de JS, respostas HTTP >= 400, console de erro): impresso quando um passo falha
 let failPage = null;   // página a fotografar quando um passo falha (diagnóstico)
-const step = async (name, fn) => { try { await fn(); results.push(['ok', name]); console.log('  ✓', name); } catch (e) { results.push(['FALHA', name]); console.error('  ✗', name, '\n    ', e.message.split('\n').filter((l) => l.trim()).slice(0, 4).join(' | ')); process.exitCode = 1; if (failPage && SHOTS) { try { await failPage.screenshot({ path: join(SHOTS, 'FALHA-' + name.slice(0, 40).replace(/\W+/g, '_') + '.png') }); } catch { /* sem captura */ } } } };
+const step = async (name, fn) => { try { await fn(); results.push(['ok', name]); console.log('  ✓', name); } catch (e) { results.push(['FALHA', name]); console.error('  ✗', name, '\n    ', e.message.split('\n').filter((l) => l.trim()).slice(0, 4).join(' | ')); process.exitCode = 1; if (diag.length) console.error('     diag:', diag.slice(-8).join(' || ')); if (failPage) { try { console.error('     url:', failPage.url(), '| texto:', (await failPage.locator('main').innerText({ timeout: 2000 })).replace(/\s+/g, ' ').slice(0, 260)); } catch { /* sem main */ } } if (failPage && SHOTS) { try { await failPage.screenshot({ path: join(SHOTS, 'FALHA-' + name.slice(0, 40).replace(/\W+/g, '_') + '.png') }); } catch { /* sem captura */ } } } };
 
 const totp = (secret) => {
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = ''; for (const c of secret.replace(/=+$/, '')) bits += A.indexOf(c).toString(2).padStart(5, '0');
@@ -248,10 +249,21 @@ await step('arena: biblioteca de música exige licença e mostra situação', as
   await a.fill('dialog textarea[name=license_info]', 'Faixa sintética gerada no teste, uso livre.'); await a.check('dialog input[name=rights_declared]'); await a.click('dialog button[type=submit]');
   await a.waitForSelector('strong:has-text("Faixa E2E")');
 });
-await step('arena: Equipe lista pessoas e Perfil mostra só dados da conta e Sair', async () => {
-  await a.goto(BASE + '/arena/#/gestao/equipe'); await a.waitForSelector('text=operador.alfa@example.test');
-  await a.click('nav.g-nav a:has-text("Perfil")'); await a.waitForSelector('.g-avatar');
-  const txt = await a.locator('main').innerText(); assert.ok(txt.includes('gestor.alfa@example.test') && txt.includes('Sair da conta'));
+await step('arena: Perfil edita só os próprios dados e a senha; não existe tela Equipe (nem por link nem por rota)', async () => {
+  await a.goto(BASE + '/arena/#/perfil'); await a.waitForSelector('.g-avatar');
+  const txt = await a.locator('main').innerText(); assert.ok(txt.includes('gestor.alfa@example.test') && txt.includes('Sair da conta') && txt.includes('Meus dados'));
+  assert.ok(!/Equipe/i.test(txt) && !/Equipe/i.test(await a.locator('nav.g-nav').innerText()), 'sem Equipe no Perfil nem no menu');
+  await a.goto(BASE + '/arena/#/gestao/equipe'); await a.waitForFunction(() => location.hash === '#/' || location.hash === '');   // rota removida: volta ao Início
+  assert.ok(!(await a.locator('body').innerText()).includes('Somente gestores'));
+  await a.goto(BASE + '/arena/#/perfil'); await a.waitForSelector('.g-avatar');
+  await a.click('button:has-text("Editar nome e telefone")'); await a.fill('dialog input[name=name]', 'Gestor Alfa Editado'); await a.fill('dialog input[name=phone]', '(47) 99999-1111'); await a.click('dialog button[type=submit]');
+  await a.waitForSelector('main :text("Gestor Alfa Editado")');
+  // troca de senha pela interface e volta à original (o resto da suíte usa a senha de seed)
+  const NEW = PASS + '-Nova1';
+  await a.click('button:has-text("Alterar senha")'); await a.fill('dialog input[name=current]', PASS); await a.fill('dialog input[name=new]', NEW); await a.click('dialog button[type=submit]'); await a.waitForSelector('[role=status]:has-text("Senha alterada")');
+  await a.click('button:has-text("Alterar senha")'); await a.fill('dialog input[name=current]', NEW); await a.fill('dialog input[name=new]', PASS); await a.click('dialog button[type=submit]'); await a.waitForSelector('[role=status]:has-text("Senha alterada")');
+  const st = await a.evaluate(async () => (await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('ra_arena_token') } })).status);
+  assert.equal(st, 200, 'a sessão que trocou a senha continua válida');
 });
 await step('arena: gestor não alcança o portal nem a arena Beta', async () => {
   const t = await a.evaluate(() => localStorage.getItem('ra_arena_token'));
@@ -259,44 +271,12 @@ await step('arena: gestor não alcança o portal nem a arena Beta', async () => 
   assert.deepEqual(codes, [403, 403, 403]);
 });
 const op = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
-await step('arena: operador não vê Equipe nem ações de gestor', async () => {
+await step('arena: operador só consulta (sem Equipe, sem nova faixa/patrocinador)', async () => {
   await LOGIN(op, 'operador.alfa@example.test');
   assert.ok(!(await op.locator('main').innerText()).includes('Equipe'), 'operador não administra equipe');
   await op.goto(BASE + '/arena/#/audio'); await op.waitForSelector('text=Músicas licenciadas'); assert.equal(await op.locator('button:has-text("Nova faixa")').count(), 0, 'operador não altera a biblioteca');
   await op.goto(BASE + '/arena/#/patrocinadores'); await op.waitForSelector('.g-chips'); assert.equal(await op.locator('button:has-text("Novo patrocinador")').count(), 0);
-  await op.goto(BASE + '/arena/#/gestao/equipe'); await op.waitForSelector('text=Somente gestores');
-});
-await step('arena: gestor com 2 arenas usa seletor; Início e Replays mostram só a arena selecionada e a escolha persiste', async () => {
-  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  const m = await ctx2.newPage(); await m.goto(BASE + '/arena/');
-  // gestor da Beta concede a gestor.alfa acesso de operador na Beta (via API, com a credencial do próprio gestor da Beta)
-  await m.evaluate(async ([pw]) => {
-    const j = (r) => r.json(); const post = (p, b, t) => fetch(p, { method: 'POST', headers: { 'content-type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: JSON.stringify(b) });
-    const tk = (await j(await post('/api/auth/arena/login', { email: 'gestor.beta@example.test', password: pw }))).token;
-    const me = await j(await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + tk } }));
-    const r = await post(`/api/arena/${me.memberships[0].arenaId}/members`, { email: 'gestor.alfa@example.test', role: 'arena_operator' }, tk);
-    if (!r.ok) throw new Error('vínculo Beta falhou ' + r.status);
-  }, [PASS]);
-  await LOGIN(m, 'gestor.alfa@example.test');
-  const nomes = await m.locator('.g-switch option').allTextContents(); assert.equal(nomes.length, 2);
-  const alfaKpis = await m.locator('.g-kpis').innerText();
-  await m.selectOption('.g-switch select', { label: nomes.find((n) => n.includes('Beta')) });
-  await m.waitForFunction(() => document.querySelector('.g-switch select')?.selectedOptions[0].textContent.includes('Beta'));
-  await m.waitForTimeout(600);
-  const arenaIdsShown = async () => m.evaluate(async () => {
-    const t = localStorage.getItem('ra_arena_token'); const me = await (await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).json();
-    const ids = [...document.querySelectorAll('.g-replay')].length; const out = [];
-    for (const ms of me.memberships) { const l = await (await fetch(`/api/arena/${ms.arenaId}/videos?limit=100`, { headers: { Authorization: 'Bearer ' + t } })).json(); out.push([ms.arenaName, l.length]); }
-    return { shown: ids, out };
-  });
-  await m.click('nav.g-nav a:has-text("Replays")'); await m.waitForSelector('.g-replay'); await m.waitForTimeout(500);
-  const beta = (await arenaIdsShown()); const betaTotal = beta.out.find(([n]) => n.includes('Beta'))[1];
-  assert.equal(beta.shown, Math.min(20, betaTotal), 'Replays lista somente vídeos da Beta');
-  await m.reload(); await m.waitForSelector('.g-switch');
-  assert.ok((await m.locator('.g-switch select').evaluate((s) => s.selectedOptions[0].textContent)).includes('Beta'), 'seleção persiste após recarregar');
-  await m.click('nav.g-nav a:has-text("Início")'); await m.waitForSelector('.g-kpis');
-  assert.notEqual(await m.locator('.g-kpis').innerText(), alfaKpis, 'KPIs da Beta diferem da Alfa');
-  await ctx2.close();
+  await op.goto(BASE + '/arena/#/gestao/equipe'); await op.waitForFunction(() => location.hash === '#/' || location.hash === '');   // sem tela Equipe
 });
 
 // ---------- Portal do Desenvolvedor ----------
@@ -309,6 +289,9 @@ const startAgent = (cred) => { agentProc = spawn(PY, [join(ROOT, 'scripts/simula
 const stopAgent = () => { if (agentProc) { agentProc.kill('SIGTERM'); agentProc = null; } };
 const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 const p = await pctx.newPage(); failPage = p;
+p.on('pageerror', (e) => diag.push('pageerror: ' + e.message.slice(0, 160)));
+p.on('console', (m) => { if (m.type() === 'error') diag.push('console: ' + m.text().slice(0, 160)); });
+p.on('response', (r) => { if (r.status() >= 400 && r.url().includes('/api/')) diag.push(r.status() + ' ' + r.request().method() + ' ' + r.url().replace(BASE, '').slice(0, 110)); });
 const nav = (label) => p.click(`nav.p-nav a:has-text("${label}")`);
 const waitFor = async (fn, ms = 60000, every = 1500) => { const t0 = Date.now(); for (;;) { if (await fn()) return; if (Date.now() - t0 > ms) throw new Error('tempo esgotado aguardando condição'); await p.waitForTimeout(every); } };
 await step('portal: login exige MFA (cadastro TOTP no 1º acesso) e abre o Painel Geral com a marca oficial', async () => {
@@ -578,20 +561,17 @@ await step('gestão: o gestor convidado entra no App Gestão pelo Google (víncu
   const r = await g.evaluate(async (t) => [(await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).json().then((j) => j.memberships.map((m) => m.arenaName))][0], tk);
   assert.deepEqual(r, ['Arena Vibe Beach']);
 });
-await step('gestão: Equipe da própria arena — cadastra pessoa, edita, inativa; sem acesso a outras arenas nem ao portal', async () => {
-  await g.goto(BASE + '/arena/#/gestao/equipe'); await g.waitForSelector('h1:has-text("Equipe")');
-  await g.waitForSelector(`.g-card:has-text("${OPER}")`);
-  await g.click('button:has-text("Novo usuário")');
-  await g.fill('dialog input[name=name]', 'Atleta Vibe'); await g.fill('dialog input[name=email]', 'atleta.vibe@example.test'); await g.click('dialog button[type=submit]');
-  await g.waitForSelector('.g-card:has-text("atleta.vibe@example.test")');
-  const card = g.locator('.g-card', { hasText: 'atleta.vibe@example.test' });
-  await card.locator('button:has-text("Inativar")').click(); await g.click('dialog button[type=submit]');
-  await g.waitForSelector('.g-card:has-text("atleta.vibe@example.test"):has-text("Inativo na arena")');
-  const opts = await g.locator('dialog, select').allInnerTexts(); assert.ok(!opts.join(' ').includes('Admin global'));
+await step('gestão: gestor da Vibe só vê Início/Áudio/Patrocínio/Replays/Perfil; sem Equipe; sem acesso a outras arenas nem ao Portal', async () => {
+  await g.goto(BASE + '/arena/#/'); await g.waitForSelector('.g-top');
+  assert.deepEqual(await g.locator('nav.g-nav a').allTextContents(), ['Início', 'Áudio', 'Patrocínio', 'Replays', 'Perfil']);
+  await g.goto(BASE + '/arena/#/gestao/equipe'); await g.waitForFunction(() => location.hash === '#/' || location.hash === '');
   const tk = await g.evaluate(() => localStorage.getItem('ra_arena_token'));
-  const codes = await g.evaluate(async (t) => { const H = { Authorization: 'Bearer ' + t }; const me = await (await fetch('/api/auth/arena/me', { headers: H })).json();
-    const alfa = await (await fetch('/api/auth/user/me', { headers: H })).status; return [alfa, (await fetch('/api/platform/users', { headers: H })).status, (await fetch('/api/platform/integrations/google', { headers: H })).status]; }, tk);
-  assert.ok(codes[1] >= 401 && codes[1] <= 403 && codes[2] >= 401 && codes[2] <= 403, 'gestor não acessa o portal: ' + codes);
+  const codes = await g.evaluate(async (t) => { const H = { Authorization: 'Bearer ' + t }; const me = await (await fetch('/api/auth/arena/me', { headers: H })).json(); const id = me.memberships[0].arenaId;
+    const g = async (m, p) => (await fetch(p, { method: m, headers: H })).status;
+    return [await g('GET', '/api/platform/users'), await g('GET', '/api/platform/integrations/google'), await g('GET', `/api/arena/${id}/members`), await g('POST', `/api/arena/${id}/courts/x/test-trigger`), await g('GET', `/api/arena/${id}/diagnostics`)]; }, tk);
+  assert.ok(codes[0] >= 401 && codes[0] <= 403 && codes[1] >= 401 && codes[1] <= 403, 'gestor não acessa o portal: ' + codes);
+  assert.ok(codes[2] === 404 || codes[2] === 405, 'rota de equipe removida: ' + codes);
+  assert.ok(codes[3] === 403 && codes[4] === 403, 'gestor não executa testes físicos nem lê diagnósticos: ' + codes);
 });
 await step('gestão: vincular/desvincular Google no Perfil exige outro método seguro', async () => {
   await g.goto(BASE + '/arena/#/perfil'); await g.waitForSelector('text=Login com Google');
@@ -661,7 +641,7 @@ await step('portal: "Abrir Gestão da arena" entra na Gestão como administrador
   assert.ok((await pop.locator('.g-global-banner').innerText()).includes('Arena Vibe Beach'));
   assert.ok(!/token|ticket/i.test(pop.url()), 'nenhum token/ticket na URL: ' + pop.url());
   assert.ok((await pop.locator('.g-top').innerText()).includes('Arena Vibe Beach'));
-  await pop.goto(BASE + '/arena/#/gestao/equipe'); await pop.waitForSelector('h1:has-text("Equipe")'); await pop.waitForSelector('.g-card:has-text("gestor.vibe@example.test")');
+  await pop.goto(BASE + '/arena/#/audio'); await pop.waitForSelector('text=Áudio e músicas');
   await pop.goto(BASE + '/arena/#/perfil'); await pop.waitForSelector('text=Administrador global');
   const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => /Alfa/.test(x.name)).id; });
   const st = await pop.evaluate(async (id) => { const t = localStorage.getItem('ra_arena_token'); const H = { Authorization: 'Bearer ' + t };
@@ -689,6 +669,37 @@ await step('jogador: a logomarca da arena aparece em Minhas Arenas e na tela da 
   assert.ok(await hdr.evaluate((i) => i.complete && i.naturalWidth > 0), 'logo carregada na tela da arena');
   await shot(jp, 'jogador-arena-logo');
   await jc.close();
+});
+await step('arena: gestor com 2 arenas usa seletor; Início e Replays mostram só a arena selecionada e a escolha persiste', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const m = await ctx2.newPage(); await m.goto(BASE + '/arena/');
+  // o administrador global (Portal) vincula gestor.alfa como operador na Beta — a Gestão não administra equipe
+  await p.evaluate(async () => {
+    const t = localStorage.getItem('ra_portal_token'); const H = { Authorization: 'Bearer ' + t, 'content-type': 'application/json' };
+    const arenas = await (await fetch('/api/platform/arenas', { headers: H })).json(); const beta = arenas.find((x) => /Beta/.test(x.name));
+    const r = await fetch(`/api/platform/arenas/${beta.id}/members`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'gestor.alfa@example.test', role: 'arena_operator' }) });
+    if (!r.ok) throw new Error('vínculo Beta falhou ' + r.status);
+  });
+  await LOGIN(m, 'gestor.alfa@example.test');
+  const nomes = await m.locator('.g-switch option').allTextContents(); assert.equal(nomes.length, 2);
+  const alfaKpis = await m.locator('.g-kpis').innerText();
+  await m.selectOption('.g-switch select', { label: nomes.find((n) => n.includes('Beta')) });
+  await m.waitForFunction(() => document.querySelector('.g-switch select')?.selectedOptions[0].textContent.includes('Beta'));
+  await m.waitForTimeout(600);
+  const arenaIdsShown = async () => m.evaluate(async () => {
+    const t = localStorage.getItem('ra_arena_token'); const me = await (await fetch('/api/auth/arena/me', { headers: { Authorization: 'Bearer ' + t } })).json();
+    const ids = [...document.querySelectorAll('.g-replay')].length; const out = [];
+    for (const ms of me.memberships) { const l = await (await fetch(`/api/arena/${ms.arenaId}/videos?limit=100`, { headers: { Authorization: 'Bearer ' + t } })).json(); out.push([ms.arenaName, l.length]); }
+    return { shown: ids, out };
+  });
+  await m.click('nav.g-nav a:has-text("Replays")'); await m.waitForSelector('.g-replay'); await m.waitForTimeout(500);
+  const beta = (await arenaIdsShown()); const betaTotal = beta.out.find(([n]) => n.includes('Beta'))[1];
+  assert.equal(beta.shown, Math.min(20, betaTotal), 'Replays lista somente vídeos da Beta');
+  await m.reload(); await m.waitForSelector('.g-switch');
+  assert.ok((await m.locator('.g-switch select').evaluate((s) => s.selectedOptions[0].textContent)).includes('Beta'), 'seleção persiste após recarregar');
+  await m.click('nav.g-nav a:has-text("Início")'); await m.waitForSelector('.g-kpis');
+  assert.notEqual(await m.locator('.g-kpis').innerText(), alfaKpis, 'KPIs da Beta diferem da Alfa');
+  await ctx2.close();
 });
 await step('portal: Replays da arena — regulariza replays privados antigos, modera (ocultar com motivo) e o replay moderado fica fora do App', async () => {
   const alfa = await p.evaluate(async () => { const t = localStorage.getItem('ra_portal_token'); const l = await (await fetch('/api/platform/arenas', { headers: { Authorization: 'Bearer ' + t } })).json(); return l.find((x) => /Alfa/.test(x.name)).id; });

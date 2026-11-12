@@ -358,7 +358,7 @@ export async function journeyWatch(p, ctx) {
   downloadBtn.addEventListener('click', async () => {
     actionStatus.textContent = 'Preparando download…'; downloadBtn.disabled = true;
     try {
-      if (!v.sponsors?.length) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
+      if (!(v.derived ?? v.sponsors?.length)) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
       else {
         // Áudio, volume, música e patrocinadores são definidos SOMENTE pela Gestão da Arena; o atleta recebe o padrão da arena.
         const opts = await ctx.api.get(`/api/videos/${p.id}/export-options`);
@@ -404,7 +404,7 @@ export async function journeyWatch(p, ctx) {
   }
   playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Carregando…'));
   try {
-    if (v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
+    if (v.derived ?? v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
     else { const o = await ctx.api.get(`/api/videos/${p.id}/play`); display({ status: 'ready', url: o.url }); }
   } catch (e) { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, e.message || 'Não foi possível abrir o replay.')); }
 }

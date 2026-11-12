@@ -35,7 +35,6 @@ def test_platform_session_manages_any_arena_without_membership(client, world):
         assert client.get(base, headers=p).json()["myRole"] == "global_admin"
         assert client.get(f"{base}/dashboard", headers=p).status_code == 200
         assert client.get(f"{base}/courts", headers=p).status_code == 200
-        assert client.get(f"{base}/members", headers=p).status_code == 200
         vids = client.get(f"{base}/videos", headers=p).json()
         assert {v["id"] for v in vids} >= {A.pub, A.priv}
         # publicar e ocultar replay; excluir exige confirmação
@@ -70,7 +69,7 @@ def test_only_full_platform_session_with_mfa_is_accepted(client, world):
 def test_regular_roles_unchanged_and_isolated(client, world):
     a_admin, a_op, b_admin = (AH(client, world, w) for w in ("a_admin", "a_op", "b_admin"))
     assert client.get(f"/api/arena/{world.A.id}", headers=a_admin).json()["myRole"] == "arena_admin"
-    assert client.get(f"/api/arena/{world.A.id}/members", headers=a_op).status_code == 403      # operador não é gestor
+    assert client.get(f"/api/arena/{world.A.id}/agents", headers=a_op).status_code == 403      # operador não é gestor
     assert client.get(f"/api/arena/{world.A.id}/videos", headers=a_op).status_code == 200
     assert client.get(f"/api/arena/{world.B.id}", headers=a_admin).status_code == 404            # sem acesso lateral
     assert client.get(f"/api/arena/{world.A.id}", headers=b_admin).status_code == 404
@@ -95,11 +94,11 @@ def test_global_admin_does_not_play_private_content_and_cannot_create_global_adm
     p = P(client, world)
     base = f"/api/arena/{world.A.id}"
     assert client.get(f"{base}/videos/{world.A.priv}/play", headers=p).status_code == 403
-    r = client.post(f"{base}/members", json={"name": "X Y", "email": "x@t.test", "role": "global_admin"}, headers=p)
-    assert r.status_code == 422
-    assert client.post(f"{base}/members", json={"name": "Novo Op", "email": "novo.op@t.test", "role": "arena_operator"}, headers=p).status_code == 201
-    mid = next(m["id"] for m in client.get(f"{base}/members", headers=p).json() if m["email"] == world.emails["a_admin"])
-    assert client.delete(f"{base}/members/{mid}", headers=p).status_code == 409                   # último gestor continua protegido
+    pm = f"/api/platform/arenas/{world.A.id}/members"
+    assert client.post(pm, json={"name": "X Y", "email": "x@t.test", "role": "global_admin"}, headers=p).status_code == 422
+    assert client.post(pm, json={"name": "Novo Op", "email": "novo.op@t.test", "role": "arena_operator"}, headers=p).status_code == 201
+    mid = next(m["id"] for m in client.get(pm, headers=p).json() if m["email"] == world.emails["a_admin"])
+    assert client.delete(f"{pm}/{mid}", headers=p).status_code == 409                   # último gestor continua protegido
 
 
 def test_portal_handoff_ticket_is_single_use_scoped_and_not_a_token(client, world):

@@ -23,7 +23,7 @@ def test_operator_vs_admin_permissions(client, world, H):
     assert client.post(f"{base}/courts", headers=op, json={"label": "Q3", "localCourtKey": "A_03"}).status_code == 403
     assert client.post(f"{base}/music", headers=op).status_code == 403
     assert client.delete(f"{base}/videos/{world.A.pub}?confirm=true", headers=op).status_code == 403
-    assert client.get(f"{base}/members", headers=op).status_code == 403
+    assert client.get(f"{base}/members", headers=op).status_code in (403, 404)
     assert client.get(f"{base}/audit", headers=op).status_code == 403
     assert client.patch(base, headers=op, json={"name": "x" * 5}).status_code == 403
 
@@ -177,21 +177,15 @@ def test_default_audio_policy_validation(client, world, H):
     assert client.get(base, headers=h).json()["audio"]["defaultMusicId"] is None
 
 
-def test_members_and_last_admin_guard(client, world, H):
-    h, base = H("a_admin_arena"), A(world)
-    members = client.get(f"{base}/members", headers=h).json()
-    me = next(m for m in members if m["email"] == world.emails["a_admin"])
-    assert client.patch(f"{base}/members/{me['id']}", headers=h, json={"role": "user"}).status_code == 409
-    assert client.delete(f"{base}/members/{me['id']}", headers=h).status_code == 409
-    assert client.post(f"{base}/members", headers=h, json={"email": world.emails["nobody"], "role": "arena_operator"}).status_code == 201
-    assert client.post(f"{base}/members", headers=h, json={"email": world.emails["nobody"], "role": "arena_operator"}).status_code == 409
-    assert client.post(f"{base}/members", headers=h, json={"email": world.emails["nobody"], "role": "global_admin"}).status_code == 422
-    assert client.post(f"{base}/members", headers=h, json={"email": "fantasma@t.test", "role": "user"}).status_code == 404
-    # não pode mexer em membro de outra arena (id de B)
-    other = client.get(f"/api/arena/{world.B.id}/members", headers=H("b_admin_arena")).json()[0]["id"]
-    assert client.patch(f"{base}/members/{other}", headers=h, json={"role": "user"}).status_code == 404
-    assert client.delete(f"{base}/members/{other}", headers=h).status_code == 404
-
+def test_team_management_is_not_part_of_the_gestao_api(client, world, H):
+    """Cadastro/vínculos/papéis ficam no Portal DEV: as rotas de equipe saíram da API da Gestão (nem para o gestor, nem para o global)."""
+    base = A(world)
+    for who in ("a_admin_arena", "a_op_arena", "root"):
+        h = H(who)
+        assert client.get(f"{base}/members", headers=h).status_code in (404, 405)
+        assert client.post(f"{base}/members", headers=h, json={"email": world.emails["nobody"], "role": "arena_operator"}).status_code in (404, 405)
+        assert client.patch(f"{base}/members/x", headers=h, json={"role": "user"}).status_code in (404, 405)
+        assert client.delete(f"{base}/members/x", headers=h).status_code in (404, 405)
 
 def test_delete_video_requires_confirm_and_removes_files(client, world, H):
     from app import storage

@@ -179,11 +179,11 @@ def test_heartbeat_updates_runtime_visible_only_to_own_arena(client, world, H):
                        {"courtKey": "B_01", "queueDepth": 9}]}
     r = client.post(f"{BASE}/heartbeat", headers=ah(world), json=body).json()
     assert r["configChanged"] is True and r["unknownCourts"] == ["B_01"] and r["epoch"] == settings.central_epoch
-    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()
+    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()
     assert rt["connection"] == "online" and rt["agents"][0]["system"]["cpuPct"] == 12.5 and rt["agents"][0]["pendingSync"] == 3
     c1 = next(c for c in rt["courts"] if c["courtId"] == world.A.c1)
     assert (c1["queueDepth"], c1["failed"], c1["state"]) == (2, 1, "degraded")
-    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_op_arena")).status_code == 200  # operador lê
+    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_op_arena")).status_code == 403  # operador não lê o runtime
     assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("b_admin_arena")).status_code == 404  # outra arena: IDOR
     assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_user")).status_code in (401, 403)
     cap = client.get("/api/platform/capacity", headers=H("root")).json()
@@ -193,7 +193,7 @@ def test_heartbeat_updates_runtime_visible_only_to_own_arena(client, world, H):
 
 def test_legacy_heartbeat_marks_online(client, world, H):
     client.post("/api/ingest/heartbeat", headers={"Authorization": f"Bearer {world.A.token}"}, json={"version": "1", "pendingSync": 0})
-    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()["connection"] == "online"
+    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()["connection"] == "online"
 
 
 # ---------- redundância da central (fencing) ----------

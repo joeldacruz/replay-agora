@@ -9,14 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import userman, audit, capacity, delivery, policy, replaypolicy, storage
+from .. import audit, capacity, delivery, policy, replaypolicy, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..deps import ArenaCtx, ArenaGate
 from ..models import (AUDIO_MODES, POSITIONS, ROLES, Arena, ArenaAgent, AuditLog, Court, ExportJob, Membership,
                       MusicTrack, Plan, ReplayEvent, Sponsor, SponsorCampaign, User, Video)
 from ..agent_security import force_rotate, issue_credentials
-from ..userschemas import MemberChange, NewMember
 from ..uploads import ext_of, process_logo, to_temp, validate_music
 from .media import sign
 from .serializers import iso, video_out
@@ -659,95 +658,6 @@ def delete_music(track_id: str, c: ArenaCtx = Depends(G("music.manage")), db: Se
 
 
 # ---------------- equipe ----------------
-def _actor(c: "ArenaCtx") -> userman.Actor:
-    return userman.Actor("platform", c.user) if c.is_global else userman.Actor("arena", c.user, {c.arena.id})
-
-
-@router.get("/members")
-def list_members(q: str | None = Query(None, max_length=60), role: str | None = Query(None, max_length=20),
-                 status: str | None = Query(None, pattern=r"^(active|suspended|inactive)$"),
-                 c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    return userman.list_members(db, c.arena.id, q, role, status)
-
-
-def _member_or_404(db: Session, c: "ArenaCtx", member_id: str) -> Membership:
-    m = db.get(Membership, member_id)
-    if not m or m.arena_id != c.arena.id:
-        raise HTTPException(404, "membro não encontrado")
-    return m
-
-
-@router.post("/members", status_code=201)
-def add_member(body: NewMember, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    link = body.linkExisting
-    if body.name is None:  # fluxo legado: apenas vincular conta existente
-        if not db.query(User).filter_by(email=body.email.strip().lower()).first():
-            raise HTTPException(404, "usuário não cadastrado (informe o nome para cadastrar um novo usuário)")
-        link = True
-    r = userman.create_or_link(db, _actor(c), c.arena, name=body.name, email=body.email, role=body.role, phone=body.phone,
-                               active=body.active, auth_method=body.authMethod, link_existing=link, send_invite=body.sendInvite)
-    db.commit()
-    return {**userman.member_row(r["user"]), "created": r["created"]}
-
-
-@router.patch("/members/{member_id}")
-def patch_member(member_id: str, body: MemberChange, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    act = _actor(c)
-    ch = body.model_dump(exclude_unset=True)
-    userman.change_membership(db, act, c.arena, m, role=ch.get("role"), status=ch.get("status"))
-    if {"name", "phone", "authMethod"} & ch.keys():
-        userman.update_profile(db, act, db.get(User, m.user_id), name=ch.get("name"), phone=ch.get("phone", "__unset__"),
-                               auth_method=ch.get("authMethod"), arena_id=c.arena.id)
-    db.commit()
-    return userman.member_row(userman.user_out(db, db.get(User, m.user_id), c.arena.id, {c.arena.id}))
-
-
-@router.delete("/members/{member_id}", status_code=204)
-def remove_member(member_id: str, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    userman.remove_membership(db, _actor(c), c.arena, _member_or_404(db, c, member_id))
-    db.commit()
-
-
-@router.post("/members/{member_id}/invite")
-def resend_invite(member_id: str, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    u = db.get(User, m.user_id)
-    if not u.active or m.status != "active":
-        raise HTTPException(409, "conta ou vínculo inativo")
-    if u.password_set_at or u.last_login_at:
-        raise HTTPException(409, "este usuário já ativou o acesso; use 'Redefinir acesso'")
-    userman.issue_token(db, u, "invite", c.user.id, c.arena)
-    userman.log(db, _actor(c), c.arena.id, "invite_resend", u)
-    db.commit()
-    return {"sent": True}
-
-
-@router.post("/members/{member_id}/reset-access")
-def reset_access(member_id: str, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    u = db.get(User, m.user_id)
-    if u.global_role:
-        raise HTTPException(403, "conta de administrador global só é alterada no Portal")
-    if not u.active or m.status != "active":
-        raise HTTPException(409, "conta ou vínculo inativo")
-    userman.issue_token(db, u, "reset", c.user.id, c.arena)
-    userman.log(db, _actor(c), c.arena.id, "reset_access", u)
-    db.commit()
-    return {"sent": True}
-
-
-@router.get("/members/{member_id}/history")
-def member_history(member_id: str, c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    return userman.history(db, user_id=m.user_id, scope={c.arena.id})
-
-
-@router.get("/members-history")
-def members_history(c: ArenaCtx = Depends(G("members.manage")), db: Session = Depends(get_db)):
-    return userman.history(db, arena_id=c.arena.id)
-
-
 # ---------------- agentes locais / auditoria ----------------
 class AgentIn(BaseModel):
     label: str = Field(min_length=2, max_length=80)

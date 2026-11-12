@@ -184,7 +184,11 @@ def claim(body: Claim, a: Auth = Depends(user_auth), db: Session = Depends(get_d
 def get_video(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
     out = video_out(v, db.get(Court, v.court_id), a.user.id, avail=delivery.availability(db, v))
-    out["sponsors"] = [o["name"] for o in policy.select_overlays(db, v)]
+    spec = policy.select_overlays(db, v)
+    plan = playback_plan(db, v, spec)
+    out["sponsors"] = [o["name"] for o in spec]
+    out["derived"] = plan["derived"]            # true ⇒ a reprodução usa a versão processada (patrocínio e/ou música atribuída)
+    out["playbackAudio"] = plan["mode"]
     return out
 
 
@@ -193,10 +197,28 @@ def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_
     v = _get_visible(db, a, video_id)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
-    if policy.select_overlays(db, v):
-        raise HTTPException(409, "Replay patrocinado: utilize a prévia processada")
+    if playback_plan(db, v, policy.select_overlays(db, v))["derived"]:
+        raise HTTPException(409, "Replay personalizado (patrocínio/música): utilize a prévia processada")
     _require_playable(db, v)
     return {"url": sign("video", v.id, a.user.id), "expiresIn": settings.signed_url_ttl_s}
+
+
+def playback_plan(db: Session, v: Video, spec: list[dict]) -> dict:
+    """Como o replay é REPRODUZIDO para o jogador. Se a arena usa música e o replay tem faixa atribuída válida (direitos, licença
+    vigente, uso 'play' e 'export'), a reprodução usa a versão derivada com essa música (worker FFmpeg); o MP4 original não é alterado.
+    Sem faixa válida: som ambiente (ou mudo, se a arena não oferece o original ou o vídeo não tem áudio)."""
+    arena = db.get(Arena, v.arena_id)
+    allowed = [m for m in (arena.audio_allowed_modes or "").split(",") if m]
+    mode = "original" if v.has_audio and "original" in allowed else "mute"
+    music_id, ov, mv = None, 1.0, 0.0
+    t = db.get(MusicTrack, v.music_id) if v.music_id else None
+    uses = {u.strip() for u in (t.allowed_use or "").split(",")} if t else set()
+    if (arena.audio_default_mode in ("music", "mix") and t and t.arena_id == v.arena_id and policy.track_usable(t) and "play" in uses):
+        want = "mix" if (arena.audio_default_mode == "mix" and v.has_audio) else "music"
+        if want in allowed or "music" in allowed:
+            mode = want if want in allowed else "music"
+            music_id, ov, mv = t.id, arena.audio_original_volume, arena.audio_music_volume
+    return {"mode": mode, "musicId": music_id, "originalVolume": ov, "musicVolume": mv, "derived": bool(spec) or music_id is not None}
 
 
 def _preview_out(db: Session, job: ExportJob, uid: str) -> dict:
@@ -219,7 +241,8 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
     spec = policy.select_overlays(db, v)
-    if not spec:
+    plan = playback_plan(db, v, spec)
+    if not plan["derived"]:
         _require_playable(db, v)
         return {"status": "ready", "url": sign("video", v.id, a.user.id), "sponsored": False}
     if v.storage_location == "agent":
@@ -227,10 +250,8 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
 
     # Se a arena desabilita som original, a prévia é muda. O atleta pode
     # escolher uma trilha licenciada separadamente no editor de exportação.
-    arena = db.get(Arena, v.arena_id)
-    mode = "original" if v.has_audio and "original" in (arena.audio_allowed_modes or "").split(",") else "mute"
-    ov, mv = 1.0, 0.0
-    ph = hashlib.sha256(("preview:" + policy.params_hash(v.id, mode, None, ov, mv, spec)).encode()).hexdigest()
+    mode, music_id, ov, mv = plan["mode"], plan["musicId"], plan["originalVolume"], plan["musicVolume"]
+    ph = hashlib.sha256(("preview:" + policy.params_hash(v.id, mode, music_id, ov, mv, spec)).encode()).hexdigest()
     # Cache compartilhado: a chave cobre vídeo (ID global), áudio, logos e
     # versão da campanha. Um índice UNIQUE no banco evita duplicação concorrente.
     existing = db.query(ExportJob).filter(
@@ -255,8 +276,8 @@ def create_preview(video_id: str, a: Auth = Depends(user_auth), db: Session = De
         raise HTTPException(429, "limite de processamentos simultâneos; tente novamente")
 
     job = ExportJob(arena_id=v.arena_id, user_id=a.user.id, video_id=v.id, render_location=_where(v),
-                    purpose="preview", preview_cache_key=ph, audio_mode=mode, music_id=None,
-                    original_volume=ov, music_volume=mv, apply_sponsors=True,
+                    purpose="preview", preview_cache_key=ph, audio_mode=mode, music_id=music_id,
+                    original_volume=ov, music_volume=mv, apply_sponsors=bool(spec),
                     overlay_spec=json.dumps(spec), sponsor_template_version=policy.spec_version(spec),
                     params_hash=ph)
     try:
@@ -283,16 +304,17 @@ def preview_status(preview_id: str, a: Auth = Depends(user_auth), db: Session = 
     if not job or job.purpose != "preview":
         raise HTTPException(404, "prévia não encontrada")
     v = _get_visible(db, a, job.video_id)
-    if policy.spec_version(policy.select_overlays(db, v)) != job.sponsor_template_version:
-        raise HTTPException(409, "Patrocínio atualizado: gere uma nova prévia")
+    spec = policy.select_overlays(db, v)
+    if policy.spec_version(spec) != job.sponsor_template_version or playback_plan(db, v, spec)["musicId"] != job.music_id:
+        raise HTTPException(409, "Patrocínio ou música atualizados: gere uma nova prévia")
     return _preview_out(db, job, a.user.id)
 
 
 @router.post("/videos/{video_id}/download-link")
 def download_link(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
-    if policy.select_overlays(db, v):
-        raise HTTPException(409, "Patrocinadores ativos: gere uma versão da arena para download")
+    if playback_plan(db, v, policy.select_overlays(db, v))["derived"]:
+        raise HTTPException(409, "Replay personalizado (patrocínio/música): gere uma versão da arena para download")
     _require_playable(db, v)
     return {"url": sign("video", v.id, a.user.id, "attachment"), "expiresIn": settings.signed_url_ttl_s}
 

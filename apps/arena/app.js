@@ -3,7 +3,6 @@ import { createApi, createRouter, registerSW, GOOGLE_ERR, googleEnabled, googleS
 import { el, icon, brand, toast, fld, input } from './kit.js';
 import { inicio, replays, perfil, resetReplayFilters } from './views.js';
 import { patrocinios, musica } from './gestao.js';
-import { equipe } from './equipe.js';
 
 const root = document.getElementById('app');
 const api = createApi('ra_arena_token', () => { S.me = null; location.hash = '#/login'; });
@@ -111,7 +110,7 @@ function login(pre = {}) {
 document.body.classList.add('g-body');
 document.getElementById('app').innerHTML = '';
 const router = createRouter(root, {
-  '/': guarded(inicio), '/replays': guarded(replays), '/audio': guarded(musica), '/patrocinadores': guarded(patrocinios), '/gestao/equipe': guarded(equipe), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
+  '/': guarded(inicio), '/replays': guarded(replays), '/audio': guarded(musica), '/patrocinadores': guarded(patrocinios), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
 }, () => { location.hash = '#/'; });
 ctx.router = router;
 router.go();

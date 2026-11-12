@@ -1,5 +1,5 @@
 // Telas: Início (dashboard), Replays e Perfil. Dados sempre da API, sempre da arena selecionada (ctx.base()).
-import { el, icon, fmt, pill, toast, confirmSheet, sheet } from './kit.js';
+import { el, icon, fmt, pill, toast, confirmSheet, sheet, fld, input } from './kit.js';
 import { showQr } from './gestao.js';
 import { googleIdentity, googleLinkStart, googleUnlink } from '/shared/ui.js';
 
@@ -89,13 +89,24 @@ async function googleCard(ctx) {
 export async function perfil(ctx) {
   const me = ctx.me, a = ctx.arena;
   const gcard = await googleCard(ctx);
+  const acc = ctx.arena.role === 'global_admin' ? null : await ctx.api.get('/api/auth/account').catch(() => null);   // sessão de suporte do global: conta só no Portal
   const role = { arena_admin: 'Gestor', arena_operator: 'Operador', global_admin: 'Administrador global' };
   ctx.page({ title: 'Perfil', content: [
     el('section', { class: 'g-card' }, el('div', { class: 'g-profile-id' }, el('span', { class: 'g-avatar', 'aria-hidden': 'true' }, (me.name || '?').trim().charAt(0).toUpperCase())),
       el('dl', {}, el('div', { class: 'g-dl' }, el('dt', {}, 'Nome'), el('dd', {}, me.name)), el('div', { class: 'g-dl' }, el('dt', {}, 'E-mail da conta'), el('dd', {}, me.email)),
         el('div', { class: 'g-dl' }, el('dt', {}, 'Papel na arena selecionada'), el('dd', {}, `${role[a.role] || a.role} · ${a.arenaName}`)))),
+    acc ? el('section', { class: 'g-card g-stack' }, el('h2', {}, 'Meus dados'),
+      el('button', { class: 'g-btn g-btn--outline', type: 'button', onclick: () => sheet({ title: 'Meus dados', fields: [fld('Nome completo', input('name', { required: true, minlength: 2, maxlength: 120, value: acc.name })),
+        fld('Telefone (opcional)', input('phone', { type: 'tel', maxlength: 30, value: acc.phone || '' }))], onSubmit: async (fd) => {
+        await ctx.api.patch('/api/auth/account', { name: String(fd.get('name')).trim(), phone: String(fd.get('phone') || '') || null }); toast('Dados atualizados'); await ctx.refreshMe(); ctx.go();
+      } }) }, 'Editar nome e telefone'),
+      acc.passwordSet ? el('button', { class: 'g-btn g-btn--outline', type: 'button', onclick: () => sheet({ title: 'Alterar senha', fields: [
+        fld('Senha atual', input('current', { type: 'password', required: true, autocomplete: 'current-password' })),
+        fld('Nova senha (mínimo 10 caracteres)', input('new', { type: 'password', required: true, minlength: 10, autocomplete: 'new-password' })),
+        el('small', {}, 'Ao trocar a senha, os outros acessos desta conta são encerrados.')], onSubmit: async (fd) => {
+        const r = await ctx.api.post('/api/auth/account/password', { current: String(fd.get('current')), new: String(fd.get('new')) }); ctx.api.setToken(r.token); toast('Senha alterada');
+      } }) }, 'Alterar senha') : el('small', {}, 'Esta conta entra pelo Google; para criar uma senha, peça o link ao administrador da plataforma.')) : '',
     gcard,
-    ctx.isAdmin() && ctx.arena.role === 'arena_admin' ? el('a', { class: 'g-btn g-btn--outline', href: '#/gestao/equipe' }, 'Equipe da arena') : '',
     el('button', { class: 'g-btn g-btn--outline', style: 'color:var(--bad);border-color:#f0c4c0', type: 'button', onclick: () => ctx.signOut() }, icon('logout', { size: 22 }), 'Sair da conta'),
   ] });
 }
