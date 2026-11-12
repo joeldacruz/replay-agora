@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import audit, mediainfo, storage
+from .. import audit, mediainfo, replaypolicy, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..models import Arena, ArenaAgent, Court, Plan, ReplayEvent, Video
@@ -125,6 +125,8 @@ async def ingest_video(file: UploadFile = File(...), idempotencyKey: str = Form(
               captured_at=ev.captured_at)
     ev.status = "completed"
     db.add(v)
+    db.flush()
+    replaypolicy.finalize_new_replay(db, v, ct)
     audit.record(db, None, arena.id, "ingest.video", "video", vid, {"court": ct.local_court_key, "agent": ag.id})
     db.commit()
     return {"videoId": v.id, "code": v.code, "duplicate": False}

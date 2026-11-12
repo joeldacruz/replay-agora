@@ -152,7 +152,7 @@ def test_real_mp4_through_relay_is_valid_and_seekable(rig, tmp_path):
     db = SessionLocal()
     vid = db.query(Video).filter_by(local_id=lid).one().id
     db.close()
-    rig.client.patch(f"/api/arena/{rig.world.A.id}/videos/{vid}", headers=rig.H("a_admin_arena"), json={"visibility": "arena"})
+    rig.client.patch(f"/api/arena/{rig.world.A.id}/videos/{vid}", headers=rig.H("root"), json={"visibility": "arena"})
     rig.start()
     u = rig.client.get(f"/api/videos/{vid}/play", headers=rig.H("a_user")).json()["url"]
     body = rig.client.get(u).content
@@ -196,7 +196,7 @@ def test_expired_tampered_and_revoked_links(rig, monkeypatch):
     assert rig.client.get(ok[:-3] + ("aaa" if not ok.endswith("aaa") else "bbb")).status_code == 403  # adulterado
     assert rig.client.get("/media/notatoken").status_code == 403
     # a autorização é REVALIDADA a cada requisição: gestor despublica => o link antigo morre
-    rig.client.patch(f"/api/arena/{rig.world.A.id}/videos/{rig.ids['A_01']}", headers=rig.H("a_admin_arena"), json={"visibility": "private"})
+    rig.client.patch(f"/api/arena/{rig.world.A.id}/videos/{rig.ids['A_01']}", headers=rig.H("root"), json={"visibility": "private"})
     assert rig.client.get(ok).status_code == 404
 
 
@@ -400,7 +400,7 @@ def test_full_journey_offline_capture_reconnect_then_playable(client, world, tmp
         vids = db.query(Video).filter(Video.arena_id == world.A.id, Video.local_id.like("A-A_0%-%")).all()
         assert len(vids) == 2
         for v in vids:
-            client.patch(f"/api/arena/{world.A.id}/videos/{v.id}", headers=H("a_admin_arena"), json={"visibility": "arena"})
+            client.patch(f"/api/arena/{world.A.id}/videos/{v.id}", headers=H("root"), json={"visibility": "arena"})
             assert client.get(f"/api/videos/{v.id}", headers=H("a_user")).json()["playable"] is True
             url = client.get(f"/api/videos/{v.id}/play", headers=H("a_user")).json()["url"]
             got = client.get(url).content

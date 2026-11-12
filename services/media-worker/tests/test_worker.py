@@ -238,3 +238,72 @@ def test_command_transcodes_with_overlay_or_non_h264():
 def test_user_input_never_reaches_shell():
     c = cmd(mode="music", music_path="m; rm -rf /.mp3")
     assert "m; rm -rf /.mp3" in c  # permanece um único argumento literal
+
+
+# ---------- música ATRIBUÍDA ao replay é usada de verdade na reprodução (versão derivada), sem tocar no original ----------
+def _arena_music(world, mode, campaigns_active=False, assign=True, track="ok"):
+    import hashlib
+    from app.models import Arena, SponsorCampaign, Video
+    db = SessionLocal()
+    db.get(Arena, world.A.id).audio_default_mode = mode
+    for c in db.query(SponsorCampaign).filter_by(arena_id=world.A.id):
+        c.active = campaigns_active
+    v = db.get(Video, world.A.pub)
+    v.music_id = world.A.tracks[track] if assign else None
+    v.music_reason = "rotation" if assign else "fallback_ambient:teste"
+    db.commit()
+    src = storage.path_for(v.storage_key)
+    h = hashlib.sha256(src.read_bytes()).hexdigest()
+    db.close()
+    return src, h
+
+
+def _play(client, H, vid):
+    r = client.get(f"/api/videos/{vid}", headers=H("a_user")).json()
+    return r
+
+
+def test_assigned_music_is_what_the_player_hears_and_original_is_untouched(client, world, H):
+    src, h0 = _arena_music(world, "music")
+    v = _play(client, H, world.A.pub)
+    assert v["derived"] is True and v["playbackAudio"] == "music"
+    assert client.get(f"/api/videos/{world.A.pub}/play", headers=H("a_user")).status_code == 409            # não serve o original cru
+    assert client.post(f"/api/videos/{world.A.pub}/download-link", headers=H("a_user")).status_code == 409
+    pv = client.post(f"/api/videos/{world.A.pub}/preview", headers=H("a_user")).json()
+    assert pv["status"] in ("queued", "processing", "ready")
+    run_all()
+    done = client.get(f"/api/previews/{pv['id']}", headers=H("a_user")).json()
+    assert done["status"] == "ready" and done["url"]
+    o = out(pv["id"])
+    assert band_db(o, MUSIC_HZ) > PRESENT and band_db(o, ORIG_HZ) < ABSENT          # ouve-se a música atribuída, não o som ambiente
+    assert job(pv["id"]).music_id == world.A.tracks["ok"]
+    import hashlib
+    assert hashlib.sha256(src.read_bytes()).hexdigest() == h0                         # MP4 original intacto
+
+
+def test_mix_mode_plays_ambient_plus_assigned_music(client, world, H):
+    _arena_music(world, "mix")
+    assert _play(client, H, world.A.pub)["playbackAudio"] == "mix"
+    pv = client.post(f"/api/videos/{world.A.pub}/preview", headers=H("a_user")).json()
+    run_all()
+    assert band_db(out(pv["id"]), ORIG_HZ) > PRESENT and band_db(out(pv["id"]), MUSIC_HZ) > PRESENT
+
+
+def test_ambient_fallback_keeps_original_playback_when_no_valid_track(client, world, H):
+    _arena_music(world, "music", assign=False)
+    v = _play(client, H, world.A.pub)
+    assert v["derived"] is False and v["playbackAudio"] == "original"
+    assert client.get(f"/api/videos/{world.A.pub}/play", headers=H("a_user")).status_code == 200
+    _arena_music(world, "music", track="expired")                       # faixa atribuída com licença vencida ⇒ não é usada
+    assert _play(client, H, world.A.pub)["derived"] is False
+    _arena_music(world, "music", track="disabled")
+    assert _play(client, H, world.A.pub)["derived"] is False
+
+
+def test_export_defaults_to_assigned_track_and_arena_without_music_mode_plays_ambient(client, world, H):
+    _arena_music(world, "music")
+    opts = client.get(f"/api/videos/{world.A.pub}/export-options", headers=H("a_user")).json()
+    assert opts["assignedMusicId"] == world.A.tracks["ok"] and opts["defaultMusicId"] == world.A.tracks["ok"]
+    _arena_music(world, "original")                                       # arena em som ambiente: a faixa registrada não toca
+    v = _play(client, H, world.A.pub)
+    assert v["derived"] is False and v["playbackAudio"] == "original"

@@ -110,7 +110,7 @@ function arenaRow(a, selectedId) {
   const place = a.location || a.city || '';
   const selected = a.id === selectedId;
   return el('a', { class: 'j-card j-row' + (selected ? ' is-selected' : ''), href: '#/arena/' + encodeURIComponent(a.slug), 'aria-current': selected ? 'true' : null },
-    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, icon('stadium', { size: 28 })),
+    el('span', { class: 'j-row-icon', style: a.brandColor ? `--j-arena-color:${/^#[0-9a-f]{3,8}$/i.test(a.brandColor) ? a.brandColor : 'transparent'}` : '' }, a.logoUrl ? el('img', { src: a.logoUrl, alt: 'Logo de ' + a.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 28 })),
     el('span', { class: 'j-row-text' }, el('strong', {}, a.name), el('small', {}, place || (selected ? 'Arena selecionada' : 'Ver quadras e replays'))),
     selected ? el('span', { class: 'j-badge' }, icon('check', { size: 14 }), 'Selecionada') : '',
     el('span', { class: 'j-row-go' }, 'Acessar', icon('chevronRight', { size: 20 })));
@@ -320,7 +320,7 @@ export async function journeyArena(params, ctx) {
     el('header', { class: 'j-header j-header--arena' }, el('div', { class: 'j-header-row' }, brand())),
     el('div', { class: 'j-arena-body' },
       el('section', { class: 'j-card j-arena-card', 'aria-label': 'Arena selecionada' },
-        el('span', { class: 'j-arena-icon' }, icon('stadium', { size: 40 })),
+        el('span', { class: 'j-arena-icon' }, arena.logoUrl ? el('img', { src: arena.logoUrl, alt: 'Logo de ' + arena.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 40 })),
         el('span', { class: 'j-arena-id' }, el('strong', {}, arena.name), arena.location ? el('small', {}, arena.location) : el('small', {}, `${courts.length} ${courts.length === 1 ? 'quadra' : 'quadras'}`)),
         el('a', { class: 'j-icon-btn', href: '#/', 'aria-label': 'Ler outro QR Code ou trocar de arena' }, icon('qr', { size: 26 }))),
       el('div', { class: 'j-tiles' }, toReplays, toFilters),
@@ -358,7 +358,7 @@ export async function journeyWatch(p, ctx) {
   downloadBtn.addEventListener('click', async () => {
     actionStatus.textContent = 'Preparando download…'; downloadBtn.disabled = true;
     try {
-      if (!v.sponsors?.length) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
+      if (!(v.derived ?? v.sponsors?.length)) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
       else {
         // Áudio, volume, música e patrocinadores são definidos SOMENTE pela Gestão da Arena; o atleta recebe o padrão da arena.
         const opts = await ctx.api.get(`/api/videos/${p.id}/export-options`);
@@ -395,7 +395,13 @@ export async function journeyWatch(p, ctx) {
     if (stale()) return;
     if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(el('video', { src: preview.url, controls: '', playsinline: '', poster: v.thumbnailUrl || null, 'aria-label': 'Replay' })); return; }
     if (preview.status === 'unavailable') { playerBox.replaceChildren(retry(preview.error)); return; }
-    if (preview.status === 'failed') { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.')); return; }
+    if (preview.status === 'failed') {
+      const msg = el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.');
+      if (!v.sponsors?.length) msg.append(el('button', { class: 'j-btn j-btn--primary j-btn--sm', type: 'button', onclick: async () => {   // versão com música falhou: som ambiente (nunca contorna patrocínio)
+        try { const o = await ctx.api.get(`/api/videos/${p.id}/play?fallback=ambient`); display({ status: 'ready', url: o.url }); } catch (e) { toast(e.message, true); }
+      } }, 'Assistir com o som ambiente'));
+      playerBox.replaceChildren(msg); return;
+    }
     playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Preparando seu replay… ' + (preview.progress || 0) + '%'));
     if (preview.id) timer = setTimeout(async () => {
       if (stale()) return;
@@ -404,7 +410,7 @@ export async function journeyWatch(p, ctx) {
   }
   playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Carregando…'));
   try {
-    if (v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
+    if (v.derived ?? v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
     else { const o = await ctx.api.get(`/api/videos/${p.id}/play`); display({ status: 'ready', url: o.url }); }
   } catch (e) { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, e.message || 'Não foi possível abrir o replay.')); }
 }

@@ -125,7 +125,7 @@ def test_invited_manager_links_via_google_in_arena_app_only_once(client, world, 
     r = exch(client, frag, "arena")
     assert r.status_code == 200, frag
     h = {"Authorization": f"Bearer {r.json()['token']}"}
-    assert client.get(f"/api/arena/{world.A.id}/members", headers=h).status_code == 200
+    assert client.get(f"/api/arena/{world.A.id}", headers=h).status_code == 200
     # outro sub com o mesmo e-mail: convite já consumido -> negado
     fake.claims = {"email": "gestor@g.test", "sub": "sub-outro"}
     frag, _ = run(client, "arena")

@@ -11,6 +11,13 @@ from .security import decode_access_token
 
 ARENA_STAFF = ("arena_admin", "arena_operator")
 
+# Permissões POR OPERAÇÃO (o papel sozinho não basta). global_admin (sessão de plataforma + MFA) possui todas.
+# Operações que só o Portal/administrador global executa não aparecem em nenhum papel de arena.
+OPERATOR_PERMS = frozenset({"arena.view", "video.view", "video.play", "sponsor.view", "music.view", "preview", "qr.view"})
+ADMIN_PERMS = OPERATOR_PERMS | {"audio.manage", "music.manage", "sponsor.manage", "arena.info.edit"}
+GLOBAL_ONLY_PERMS = frozenset({"court.manage", "agent.manage", "policy.manage", "video.moderate", "video.delete", "audit.view", "diagnostics.view", "capture.test"})
+ROLE_PERMS = {"arena_operator": OPERATOR_PERMS, "arena_admin": ADMIN_PERMS}
+
 
 @dataclass
 class Auth:
@@ -72,6 +79,21 @@ def arena_or_platform_auth(authorization: str | None = Header(default=None), db:
     return _arena_dep(authorization, db)
 
 
+def self_auth(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> Auth:
+    """Conta do próprio usuário (dados pessoais e senha): qualquer app, sessão COMPLETA, conta ativa e não revogada.
+    Sessão de gestão emitida pelo Portal ao global_admin (arena_id) não edita a conta por aqui."""
+    claims = decode_access_token(_bearer(authorization))
+    if not claims or claims.get("scope") != "full" or claims.get("app") not in ("user", "arena", "platform"):
+        raise HTTPException(401, "sessão inválida ou expirada")
+    dep = _auth(claims["app"])
+    a = dep(authorization, db)
+    if a.app == "platform" and (a.user.global_role != "global_admin" or not a.user.mfa_enabled or not a.mfa):
+        raise HTTPException(403, "requer global_admin com MFA")
+    if a.arena_id:
+        raise HTTPException(403, "use o Portal DEV para alterar a conta do administrador global")
+    return a
+
+
 def active_arena_ids(db: Session, user: User, roles: tuple[str, ...] | None = None) -> list[str]:
     q = db.query(Membership.arena_id).join(Arena, Arena.id == Membership.arena_id).filter(
         Membership.user_id == user.id, Membership.status == "active", Arena.status == "active")
@@ -96,8 +118,10 @@ def arena_context(db: Session, user: User, arena_id: str, roles: tuple[str, ...]
 class ArenaGate:
     """Dependência para rotas /api/arena/{arena_id}/... com papéis permitidos."""
 
-    def __init__(self, *roles: str):
-        self.roles = roles or ARENA_STAFF
+    def __init__(self, *roles: str, perm: str | None = None):
+        # perm: autorização por operação (preferida). roles: forma legada, só por papel.
+        self.perm = perm
+        self.roles = tuple(r for r, ps in ROLE_PERMS.items() if perm in ps) if perm else (roles or ARENA_STAFF)
 
     def __call__(self, arena_id: str, request: Request, a: Auth = Depends(arena_or_platform_auth), db: Session = Depends(get_db)):
         if a.app == "platform" or a.arena_id:

@@ -181,7 +181,7 @@ def test_central_protection_reaches_local_retention_filter(client, world, tmp_pa
     a.link.tick()
     ids = [v for v in central_videos("A-")]
     ids.sort(key=lambda v: v.local_id)
-    assert client.post(f"/api/arena/{world.A.id}/videos/{ids[0].id}/protection", headers=H("a_admin_arena"), json={"protected": True}).status_code == 200
+    assert client.post(f"/api/arena/{world.A.id}/videos/{ids[0].id}/protection", headers=H("root"), json={"protected": True}).status_code == 200
     a.link.tick()
     cands = a.store.retention_candidates("A_01", 30)
     assert ids[0].local_id not in cands and len(cands) == 2
@@ -194,12 +194,12 @@ def test_heartbeat_reports_court_metrics_and_failures_to_central(client, world, 
     a.renderer.camera_up["A_02"] = False
     fire(a, n=2)
     a.link.tick()
-    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()
+    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()
     by = {c["courtId"]: c for c in rt["courts"]}
     assert by[world.A.c1]["completed"] == 2 and by[world.A.c1]["state"] == "ok"
     assert by[world.A.c2]["failed"] == 2 and by[world.A.c2]["state"] == "camera_down"
     assert rt["agents"][0]["system"]["diskTotalBytes"] and rt["agents"][0]["state"] == "online"
-    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("a_admin_arena")).json()
+    st = client.get(f"/api/arena/{world.A.id}/storage", headers=H("root")).json()
     assert any(c["courtId"] == world.A.c1 for c in st["courts"])
     a.engine.stop()
 
@@ -207,8 +207,8 @@ def test_heartbeat_reports_court_metrics_and_failures_to_central(client, world, 
 def test_agent_token_revoked_stops_sync_but_not_local_capture(client, world, tmp_path, H):
     a = arena(client, world, "A", tmp_path)
     a.link.tick()
-    ag = client.get(f"/api/arena/{world.A.id}/agents", headers=H("a_admin_arena")).json()[0]
-    client.delete(f"/api/arena/{world.A.id}/agents/{ag['id']}", headers=H("a_admin_arena"))
+    ag = client.get(f"/api/arena/{world.A.id}/agents", headers=H("root")).json()[0]
+    client.delete(f"/api/arena/{world.A.id}/agents/{ag['id']}", headers=H("root"))
     fire(a)
     r = a.link.tick()
     assert r["online"] is False and a.link.state == "rejected"

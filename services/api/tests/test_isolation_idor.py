@@ -14,10 +14,10 @@ def test_arena_admin_cannot_use_other_arena_in_path(client, world, H):
 def test_cross_arena_resource_ids_via_own_arena_path(client, world, H):
     hb, A, B = H("b_admin_arena"), world.A, world.B
     base = f"/api/arena/{B.id}"
-    assert client.patch(f"{base}/videos/{A.pub}", headers=hb, json={"visibility": "private"}).status_code == 404
-    assert client.delete(f"{base}/videos/{A.pub}?confirm=true", headers=hb).status_code == 404
+    assert client.patch(f"{base}/videos/{A.pub}", headers=hb, json={"visibility": "private"}).status_code in (403, 404)
+    assert client.delete(f"{base}/videos/{A.pub}?confirm=true", headers=hb).status_code in (403, 404)
     assert client.get(f"{base}/videos/{A.pub}/play", headers=hb).status_code == 404
-    assert client.patch(f"{base}/courts/{A.c1}", headers=hb, json={"label": "x"}).status_code == 404
+    assert client.patch(f"{base}/courts/{A.c1}", headers=hb, json={"label": "x"}).status_code in (403, 404)
     assert client.patch(f"{base}/music/{A.tracks['ok']}", headers=hb, json={"status": "disabled"}).status_code == 404
     assert client.delete(f"{base}/music/{A.tracks['ok']}", headers=hb).status_code == 404
     assert client.patch(f"{base}/sponsors/{A.sponsor}", headers=hb, data={"name": "xx"}).status_code == 404

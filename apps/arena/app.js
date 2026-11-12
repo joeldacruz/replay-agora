@@ -2,8 +2,7 @@
 import { createApi, createRouter, registerSW, GOOGLE_ERR, googleEnabled, googleStart, googleReturnParams, googleExchange } from '/shared/ui.js';
 import { el, icon, brand, toast, fld, input } from './kit.js';
 import { inicio, replays, perfil, resetReplayFilters } from './views.js';
-import { gestao, quadras, patrocinios, musica, dadosArena } from './gestao.js';
-import { equipe } from './equipe.js';
+import { patrocinios, musica } from './gestao.js';
 
 const root = document.getElementById('app');
 const api = createApi('ra_arena_token', () => { S.me = null; location.hash = '#/login'; });
@@ -40,7 +39,7 @@ function switchArena(id) {
   ls.set('arena', id); resetReplayFilters(); router.go();
 }
 
-const NAV = [['/', 'Início', 'home'], ['/replays', 'Replays', 'replays'], ['/gestao', 'Gestão', 'manage'], ['/perfil', 'Perfil', 'user']];
+const NAV = [['/', 'Início', 'home'], ['/audio', 'Áudio', 'music'], ['/patrocinadores', 'Patrocínio', 'megaphone'], ['/replays', 'Replays', 'replays'], ['/perfil', 'Perfil', 'user']];
 function nav() {
   const cur = location.hash.slice(1).split('?')[0] || '/';
   const active = (p) => (p === '/' ? cur === '/' : cur === p || cur.startsWith(p + '/'));
@@ -65,7 +64,15 @@ function page({ title, back, content }) {
 }
 ctx.page = page;
 const loading = () => { root.className = 'g-app'; root.replaceChildren(el('p', { class: 'g-loading' }, 'Carregando…')); };
-const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p); };
+// Token de navegação (ver Portal): descarta a renderização de uma rota que já foi substituída por outra.
+let navSeq = 0;
+const guarded = (fn) => async (p) => {
+  const my = ++navSeq;
+  if (!(await ensure()) || my !== navSeq) return;
+  loading();
+  const c = Object.create(ctx); c.page = (o) => { if (my === navSeq) page(o); };
+  await fn(c, p);
+};
 
 /** Entrada vinda do Portal DEV: recebe o ticket por postMessage same-origin (nunca por URL) e o troca por sessão desta arena. */
 async function portalHandoff() {
@@ -111,8 +118,7 @@ function login(pre = {}) {
 document.body.classList.add('g-body');
 document.getElementById('app').innerHTML = '';
 const router = createRouter(root, {
-  '/': guarded(inicio), '/replays': guarded(replays), '/gestao': guarded(gestao), '/gestao/quadras': guarded(quadras), '/gestao/patrocinios': guarded(patrocinios),
-  '/gestao/musica': guarded(musica), '/gestao/equipe': guarded(equipe), '/gestao/arena': guarded(dadosArena), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
+  '/': guarded(inicio), '/replays': guarded(replays), '/audio': guarded(musica), '/patrocinadores': guarded(patrocinios), '/perfil': guarded(perfil), '/login': login, '/auth/google': googleReturn, '/auth/portal': portalHandoff, '/auth/google-done': () => { location.hash = '#/'; },
 }, () => { location.hash = '#/'; });
 ctx.router = router;
 router.go();
