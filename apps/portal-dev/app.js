@@ -72,7 +72,16 @@ function shell({ title, subtitle, actions, content, needServer = false, hideCtx 
 }
 ctx.shell = shell;
 const loading = () => root.replaceChildren(el('p', { class: 'p-loading' }, 'Carregando…'));
-const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p || {}); };
+// Token de navegação: cada rota recebe um ctx cujo shell() só escreve na tela se ESTA ainda for a navegação mais recente.
+// Sem isso, uma tela lenta (aguardando a API) terminava depois da seguinte e a sobrescrevia (URL e conteúdo divergiam).
+let navSeq = 0;
+const guarded = (fn) => async (p) => {
+  const my = ++navSeq;
+  if (!(await ensure()) || my !== navSeq) return;
+  loading();
+  const c = Object.create(ctx); c.shell = (o) => { if (my === navSeq) shell(o); };
+  await fn(c, p || {});
+};
 
 // ------------------------------------------------------------------ login (senha -> cadastro TOTP -> código de 6 dígitos)
 function login(pre = {}) {

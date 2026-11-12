@@ -251,6 +251,14 @@ await step('arena: biblioteca de música exige licença e mostra situação', as
   await a.fill('dialog textarea[name=license_info]', 'Faixa sintética gerada no teste, uso livre.'); await a.check('dialog input[name=rights_declared]'); await a.click('dialog button[type=submit]');
   await a.waitForSelector('strong:has-text("Faixa E2E")');
 });
+await step('arena: navegação rápida — a tela mais recente nunca é sobrescrita por uma anterior mais lenta (regressão da corrida do roteador)', async () => {
+  for (let i = 0; i < 3; i++) {
+    await a.goto(BASE + '/arena/#/audio'); await a.waitForSelector('text=Áudio e músicas');
+    await a.evaluate(() => { location.hash = '#/'; location.hash = '#/replays'; location.hash = '#/perfil'; });   // três rotas em sequência imediata
+    await a.waitForSelector('button:has-text("Editar nome e telefone")'); await a.waitForTimeout(1200);
+    const t = await a.locator('main').innerText(); assert.ok(t.includes('Meus dados') && !t.includes('Replays recentes'), 'tela obsoleta sobrescreveu o Perfil (iteração ' + i + ')');
+  }
+});
 await step('arena: Perfil edita só os próprios dados e a senha; não existe tela Equipe (nem por link nem por rota)', async () => {
   await a.goto(BASE + '/arena/#/perfil'); await a.waitForSelector('.g-avatar');
   const txt = await a.locator('main').innerText(); assert.ok(txt.includes('gestor.alfa@example.test') && txt.includes('Sair da conta') && txt.includes('Meus dados'));
@@ -308,6 +316,14 @@ await step('portal: login exige MFA (cadastro TOTP no 1º acesso) e abre o Paine
   assert.ok((await p.locator('.p-kpi').count()) >= 12, 'indicadores do painel');
 });
 await shot(p, 'portal-painel');
+await step('portal: navegação rápida — a tela mais recente nunca é sobrescrita por uma anterior mais lenta (regressão da corrida do roteador)', async () => {
+  for (let i = 0; i < 3; i++) {
+    await p.goto(BASE + '/portal/#/'); await p.waitForSelector('h1:has-text("Painel Geral")');
+    await p.evaluate(() => { location.hash = '#/servidores'; location.hash = '#/arenas'; location.hash = '#/planos'; });
+    await p.waitForSelector('h1:has-text("Planos e Cotas")'); await p.waitForTimeout(1200);
+    assert.equal((await p.locator('h1').first().innerText()).trim(), 'Planos e Cotas', 'tela obsoleta sobrescreveu Planos (iteração ' + i + ')');
+  }
+});
 await step('portal: Arenas lista todas; suspende a Beta (gestor bloqueado) e reativa', async () => {
   await nav('Arenas'); await p.waitForSelector('td:has-text("Arena Beta")');
   assert.ok((await p.locator('tbody tr').count()) >= 2);

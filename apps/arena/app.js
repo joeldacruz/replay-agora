@@ -64,7 +64,15 @@ function page({ title, back, content }) {
 }
 ctx.page = page;
 const loading = () => { root.className = 'g-app'; root.replaceChildren(el('p', { class: 'g-loading' }, 'Carregando…')); };
-const guarded = (fn) => async (p) => { if (!(await ensure())) return; loading(); await fn(ctx, p); };
+// Token de navegação (ver Portal): descarta a renderização de uma rota que já foi substituída por outra.
+let navSeq = 0;
+const guarded = (fn) => async (p) => {
+  const my = ++navSeq;
+  if (!(await ensure()) || my !== navSeq) return;
+  loading();
+  const c = Object.create(ctx); c.page = (o) => { if (my === navSeq) page(o); };
+  await fn(c, p);
+};
 
 /** Entrada vinda do Portal DEV: recebe o ticket por postMessage same-origin (nunca por URL) e o troca por sessão desta arena. */
 async function portalHandoff() {
