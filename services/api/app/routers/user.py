@@ -193,12 +193,19 @@ def get_video(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends
 
 
 @router.get("/videos/{video_id}/play")
-def play(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
+def play(video_id: str, fallback: str | None = Query(None, pattern=r"^ambient$"), a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
     if v.processing_status != "ready":
         raise HTTPException(409, "replay ainda em processamento")
-    if playback_plan(db, v, policy.select_overlays(db, v))["derived"]:
-        raise HTTPException(409, "Replay personalizado (patrocínio/música): utilize a prévia processada")
+    spec = policy.select_overlays(db, v)
+    plan = playback_plan(db, v, spec)
+    if plan["derived"]:
+        # única exceção: replay SEM patrocínio cuja versão com música FALHOU no render ⇒ o jogador pode assistir com o som ambiente.
+        # Patrocínio nunca é contornado.
+        failed = (fallback == "ambient" and not spec and plan["musicId"] and db.query(ExportJob.id).filter(
+            ExportJob.video_id == v.id, ExportJob.purpose == "preview", ExportJob.music_id == plan["musicId"], ExportJob.status == "failed").first())
+        if not failed:
+            raise HTTPException(409, "Replay personalizado (patrocínio/música): utilize a prévia processada")
     _require_playable(db, v)
     return {"url": sign("video", v.id, a.user.id), "expiresIn": settings.signed_url_ttl_s}
 

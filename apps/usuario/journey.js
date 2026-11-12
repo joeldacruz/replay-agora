@@ -395,7 +395,13 @@ export async function journeyWatch(p, ctx) {
     if (stale()) return;
     if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(el('video', { src: preview.url, controls: '', playsinline: '', poster: v.thumbnailUrl || null, 'aria-label': 'Replay' })); return; }
     if (preview.status === 'unavailable') { playerBox.replaceChildren(retry(preview.error)); return; }
-    if (preview.status === 'failed') { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.')); return; }
+    if (preview.status === 'failed') {
+      const msg = el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.');
+      if (!v.sponsors?.length) msg.append(el('button', { class: 'j-btn j-btn--primary j-btn--sm', type: 'button', onclick: async () => {   // versão com música falhou: som ambiente (nunca contorna patrocínio)
+        try { const o = await ctx.api.get(`/api/videos/${p.id}/play?fallback=ambient`); display({ status: 'ready', url: o.url }); } catch (e) { toast(e.message, true); }
+      } }, 'Assistir com o som ambiente'));
+      playerBox.replaceChildren(msg); return;
+    }
     playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Preparando seu replay… ' + (preview.progress || 0) + '%'));
     if (preview.id) timer = setTimeout(async () => {
       if (stale()) return;
