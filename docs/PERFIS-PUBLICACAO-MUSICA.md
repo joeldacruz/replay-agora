@@ -19,12 +19,13 @@
 
 | Permissão | operador | gestor | global |
 |---|:-:|:-:|:-:|
-| arena.view, video.view, video.play, sponsor.view, music.view, preview, diagnostics.view, qr.view, capture.test | ✔ | ✔ | ✔ |
-| audio.manage, music.manage, sponsor.manage, arena.info.edit, members.manage | – | ✔ | ✔ |
-| court.manage, agent.manage, policy.manage, audit.view, video.moderate, video.delete | – | – | ✔ |
+| arena.view, video.view, video.play, sponsor.view, music.view, preview, qr.view | ✔ | ✔ | ✔ |
+| audio.manage, music.manage, sponsor.manage, arena.info.edit | – | ✔ | ✔ |
+| court.manage, agent.manage, policy.manage, audit.view, **diagnostics.view**, **capture.test**, video.moderate, video.delete | – | – | ✔ |
 
 - `global_admin` = sessão `platform` completa + MFA (ver PR #10); jogador nunca acessa `/api/arena`. Arena suspensa ⇒ 403 (inclusive global).
-- Decisões que precisam de confirmação do produto: (a) **`capture.test`** (botão de teste ponta a ponta) mantido para operador/gestor por não alterar o motor; (b) **Equipe** (gerir pessoas da própria arena) permanece no backend e acessível pelo Perfil do gestor, embora não conste na lista da §3.2 — decidir se sai; (c) o administrador global **não reproduz vídeo privado** pela Gestão (somente metadados e moderação).
+- Decisões de produto confirmadas (comentário da PR #11): `capture.test` (testes físicos de botoeira) e diagnósticos são **exclusivos do `global_admin`**; a tela e as rotas de **Equipe** foram **removidas** da Gestão (usuários/vínculos/papéis só no Portal DEV); o administrador global **não reproduz vídeo privado** pela Gestão (somente metadados/moderação).
+- Conta própria (qualquer app): `GET/PATCH /api/auth/account` (somente nome e telefone; e-mail, papel, vínculos e situação não são editáveis pelo usuário) e `POST /api/auth/account/password` (exige a senha atual, encerra as demais sessões e mantém a atual). A sessão de suporte do global aberta pelo Portal não edita a conta.
 
 ## 3. Publicação automática
 
@@ -39,13 +40,13 @@
 - Biblioteca por arena (já existente); validade = `policy.track_usable` (ativa, direitos, licença vigente, uso `export`).
 - Arena com modo `music`/`mix`: cada novo replay recebe a próxima faixa **em rotação** (ordem `position, título`), sem repetir a anterior quando há alternativa; 1 faixa ⇒ reutiliza; 0 válidas ⇒ **som ambiente** e `music_reason=fallback_ambient:<motivo>` (a publicação não é bloqueada).
 - Cursor `arenas.music_last_id` avançado por compare-and-swap ⇒ replays simultâneos recebem faixas distintas. A atribuição é persistida e não muda ao recarregar nem ao editar a biblioteca.
-- Exportação/reprodução: `export_options.assignedMusicId` tem prioridade; sem atribuição vale a faixa padrão da arena.
+- **Reprodução e exportação usam a faixa atribuída**: com a arena em `music`/`mix` e faixa atribuída válida (direitos, licença vigente, usos `play`+`export`), o App do Jogador reproduz a **versão derivada** gerada pelo worker FFmpeg (`purpose=preview`, `audio_mode=music|mix`, `music_id` = faixa do replay); download cru e `/play` cru respondem 409 nesse caso. `export_options.assignedMusicId` tem prioridade nas exportações. Sem faixa válida (inativa, licença vencida, biblioteca vazia) ou arena em som ambiente: toca o original. Teste com FFmpeg real mede o espectro (música presente, ambiente ausente) e confere o hash do MP4 original.
 - Original preservado: o MP4 do motor local nunca é sobrescrito; versão com música/moldura/patrocínio é derivada (worker/agente) e rastreada por `export_jobs`.
 - API de apoio à Gestão: `GET /videos/{id}/personalization`, `GET /music/usage`.
 
 ## 5. Interfaces
 
-- **Gestão da Arena**: Início (identificação, áudio padrão, patrocinadores ativos, QR), **Áudio** (modo, biblioteca, volumes, prévia, histórico de uso), **Patrocínio** (cadastro, logos, campanhas, prévia), **Replays** (consulta; música atribuída e personalização; sem publicar/excluir), Perfil. Quadras, agentes e dados técnicos saíram do app.
+- **Gestão da Arena**: Início (identificação, áudio padrão, patrocinadores ativos, QR), **Áudio** (modo, biblioteca, volumes, prévia, histórico de uso), **Patrocínio** (cadastro, logos, campanhas, prévia), **Replays** (consulta; música atribuída e personalização; sem publicar/excluir), **Perfil** (nome, telefone, senha, Google). Quadras, agentes, equipe e dados técnicos saíram do app.
 - **Portal DEV**: aba **Replays** na arena (estado, música, moderação com motivo, regularização); demais menus já existentes.
 - **App do Jogador**: inalterado (Arena → Quadra → Data → Horário → Replay); replays válidos aparecem automaticamente.
 
@@ -66,7 +67,11 @@ Pré-requisito: ordem da pilha de PRs (#6 → #10 → esta). Para cada passo, us
 
 `test_profiles_permissions.py` (matriz operador/gestor/global/jogador, token expirado/inválido, arena suspensa), `test_publication_music.py` (publicação automática, arquivo ausente, reconexão, idempotência, removido/moderado nunca republicado, quadras simultâneas, regularização, música: biblioteca vazia/uma/várias, rotação, persistência, licença expirada, faixa inativa, isolamento, simultaneidade, exportação), `test_global_admin_arena.py` e demais testes atualizados às novas permissões; E2E de navegador cobre Gestão simplificada, moderação e regularização no Portal.
 
-## 10. Pendências
+## 10. Homologação
+
+Roteiro seguro (não executado): `docs/HOMOLOGACAO-ARENA-VIBE.md`.
+
+## 11. Pendências
 
 - Aplicação de **patrocinadores na versão derivada** e recusa de campanha expirada já têm testes existentes (`test_sponsor_enforcement`); não foram acrescentados casos novos nesta etapa.
 - **Relay de mídia / agente local / reprodução no App do Jogador** com MP4 reais (Arena Vibe) dependem do ambiente físico e **não foram homologados** aqui.

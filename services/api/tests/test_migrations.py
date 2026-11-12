@@ -73,3 +73,41 @@ def test_0011_preserves_users_arenas_and_memberships():
     assert alembic(url, "downgrade", "0010").returncode == 0
     with eng.begin() as c:
         assert c.execute(text("SELECT COUNT(*) FROM users")).scalar() == 2
+
+
+def test_0012_and_0013_preserve_data_backfill_published_at_and_roll_back():
+    """Banco descartável na 0011 com dados (usuário, arena, quadra, vídeos privado/da arena, faixa): 0011→0012→0013 não perde nada,
+    faz o backfill de published_at só para replays já visíveis e o downgrade devolve o esquema anterior preservando os dados."""
+    from sqlalchemy import text
+    url = f"sqlite:///{tempfile.mkdtemp()}/m13.db"
+    assert alembic(url, "upgrade", "0011").returncode == 0
+    eng = create_engine(url)
+    with eng.begin() as c:
+        c.execute(text("INSERT INTO users(id,name,email,password_hash,active,mfa_enabled,mfa_last_step,created_at,auth_method,google_link_allowed) "
+                       "VALUES('u1','G','g@x.test','hash',1,0,0,CURRENT_TIMESTAMP,'password',0)"))
+        c.execute(text("INSERT INTO arenas(id,slug,name,status,timezone,brand_color,allow_self_join,audio_default_mode,audio_original_volume,audio_music_volume,"
+                       "audio_allowed_modes,created_at,storage_warn_pct,storage_critical_pct,agent_max_ffmpeg,agent_hwaccel,agent_render_nice) "
+                       "VALUES('a1','vibe','Vibe','active','America/Sao_Paulo','#000000',1,'original',1,0.6,'original',CURRENT_TIMESTAMP,80,95,1,'none',10)"))
+        c.execute(text("INSERT INTO courts(id,arena_id,label,number,status,capture_status,local_court_key,retention_days,visibility,created_at) "
+                       "VALUES('c1','a1','Q1',1,'active','unknown','QUADRA_01',30,'arena',CURRENT_TIMESTAMP)"))
+        for vid, vis in (("v1", "private"), ("v2", "arena")):
+            c.execute(text("INSERT INTO videos(id,arena_id,court_id,code,title,storage_key,mime,bytes,duration,width,height,has_audio,visibility,processing_status,"
+                           "captured_at,created_at,storage_location,protected,media_state) VALUES(:i,'a1','c1',:cd,'t','','video/mp4',1000,15,1920,1080,1,:v,'ready',"
+                           "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'agent',0,'ok')"), {"i": vid, "cd": "CODE" + vid, "v": vis})
+    assert alembic(url, "upgrade", "0012").returncode == 0
+    assert "logo_key" in {c["name"] for c in inspect(eng).get_columns("arenas")}
+    assert alembic(url, "upgrade", "head").returncode == 0
+    insp = inspect(eng)
+    assert {"published_at", "moderation_state", "music_id", "music_reason", "moderated_by"} <= {c["name"] for c in insp.get_columns("videos")}
+    assert "music_last_id" in {c["name"] for c in insp.get_columns("arenas")}
+    with eng.begin() as c:
+        rows = {r[0]: r for r in c.execute(text("SELECT id,visibility,published_at,moderation_state,music_id,music_reason FROM videos"))}
+        assert rows["v1"][1:] == ("private", None, "none", None, "") and rows["v2"][1] == "arena" and rows["v2"][2] is not None and rows["v2"][3] == "none"
+        assert c.execute(text("SELECT COUNT(*) FROM users")).scalar() == 1 and c.execute(text("SELECT name FROM arenas")).scalar() == "Vibe"
+        assert c.execute(text("SELECT COUNT(*) FROM videos")).scalar() == 2
+    assert alembic(url, "downgrade", "0011").returncode == 0
+    insp = inspect(eng)
+    assert "logo_key" not in {c["name"] for c in insp.get_columns("arenas")} and "published_at" not in {c["name"] for c in insp.get_columns("videos")}
+    with eng.begin() as c:
+        assert c.execute(text("SELECT COUNT(*) FROM videos")).scalar() == 2 and c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0011"
+    assert alembic(url, "upgrade", "head").returncode == 0      # reaplicar depois do rollback
