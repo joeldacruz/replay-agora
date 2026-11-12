@@ -1,3 +1,5 @@
+> **Atenção (atualizado em 12/11/2026):** este roteiro foi escrito antes de se saber do patch manual de `deps.py`/`routers/arena.py` no servidor. Para a Fase 1 e o ensaio das migrações use **`docs/HOMOLOGACAO-FASE1.md`** (inventário somente leitura, cópia isolada, ensaio com tarball). **Não** use `systemctl show -p Environment` (pode imprimir segredos) nem `git worktree` no repositório de produção; a implantação deve partir de `git checkout` limpo após guardar os dois arquivos modificados à mão.
+
 # Atualização do CMTB-SRV01: `936e2b6` → PR #6 (migração `0011 → 0012`)
 
 > **Roteiro para execução humana, sob autorização.** Nada aqui foi executado em servidor. Não altera Cloudflare, NGINX, câmeras ou outros serviços.
