@@ -154,6 +154,7 @@ class RemoteManager:
         self.frames_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.dir / "state.json"
         self.result_path = self.dir / "pending-result.json"
+        self.intent_path = self.dir / "apply-intent.json"
         self.state = self._load_state()
         self.lock = threading.Lock()
         self.last_inventory = 0.0
@@ -252,10 +253,16 @@ class RemoteManager:
         version = int(pending["version"])
         self.client.call("POST", f"/remote/{version}/result", pending["report"])
         self.result_path.unlink()
+        if self.intent_path.exists():
+            self.intent_path.unlink()
 
     def poll(self) -> dict | None:
         """Confirma um resultado anterior antes de buscar novos comandos."""
         self._confirm_pending_result()
+        if self.intent_path.exists():
+            # Reinicio durante o apply(): nao sabemos se o motor chegou a
+            # ativar o snapshot. Nunca executar uma segunda vez em silencio.
+            raise CentralUnavailable("aplicacao interrompida; reconciliacao supervisionada necessaria")
         rev = self.client.call("GET", "/remote/pending")
         if not rev:
             return None
@@ -266,6 +273,9 @@ class RemoteManager:
         progress = self.client.call("POST", f"/remote/{v}/progress", {})
         if progress.get("status") != "aplicando":
             raise ApplyError("central recusou o início da aplicação")
+        # Grava a intencao ANTES de qualquer alteracao na captura.
+        # Um crash durante o apply exige verificacao humana antes de reentregar.
+        _atomic_write(self.intent_path, json.dumps({"version": v}).encode())
         report = self.apply(rev)
         # Resultado persistido ANTES do envio: perda de rede ou processo
         # após a aplicação não resulta em uma nova ativação de câmeras.
