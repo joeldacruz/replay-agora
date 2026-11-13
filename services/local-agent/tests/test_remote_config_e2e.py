@@ -565,7 +565,7 @@ def test_lost_result_ack_retries_without_reapplying(client, world, H, rig):
     rig.svc.activate = counted_activate
     remote.client.call = lose_result_once
     first = tick(rig)
-    assert first["online"] is False
+    assert first["online"] is True  # remote.tick isola falhas da configuração da sincronização de replays
     assert remote.active_version == rev["version"]
     assert remote.result_path.exists()
     assert len(activations) == 1
