@@ -535,3 +535,86 @@ def test_servers_disconnect_is_recorded_after_silence(client, world, H, rig):
     assert srv["state"] == "offline" and srv["events"][0]["kind"] == "disconnected"
     mon = client.get(f"{P}/monitoring", headers=rig.root).json()[0]
     assert mon["status"] == "desconectado" and all(c["camera"]["status"] == "desconectado" for c in mon["courts"])
+
+
+# =============================================================================================== reconciliação em falhas
+def test_lost_result_ack_retries_without_reapplying(client, world, H, rig):
+    """Se a confirmação falhar, o agente conserva o resultado e NÃO ativa novamente."""
+    from replay_agent.client import CentralUnavailable
+
+    setup_portal(rig)
+    tick(rig)  # registra o agente sem revisão para aplicar
+    rev = publish(rig)
+
+    remote = rig.svc.remote
+    original_call = remote.client.call
+    original_activate = rig.svc.activate
+    activations = []
+    failures = [1]
+
+    def counted_activate(*args, **kwargs):
+        activations.append(1)
+        return original_activate(*args, **kwargs)
+
+    def lose_result_once(method, path, *args, **kwargs):
+        if method == "POST" and path == f"/remote/{rev['version']}/result" and failures[0]:
+            failures[0] -= 1
+            raise CentralUnavailable("ACK de resultado indisponivel (simulado)")
+        return original_call(method, path, *args, **kwargs)
+
+    rig.svc.activate = counted_activate
+    remote.client.call = lose_result_once
+    first = tick(rig)
+    assert first["online"] is False
+    assert remote.active_version == rev["version"]
+    assert remote.result_path.exists()
+    assert len(activations) == 1
+
+    remote.client.call = original_call
+    second = tick(rig)
+    assert second["online"] is True
+    assert remote.result_path.exists() is False
+    assert len(activations) == 1
+    assert revs(rig)[rev["version"]]["status"] == "aplicado"
+
+
+def test_uncertain_remote_revision_is_not_automatically_redelivered(client, world, H, rig):
+    """Mesmo após expirar o prazo antigo, 'aplicando' não vira ordem de execução."""
+    from datetime import timedelta
+    from app.models import ConfigRevision
+
+    setup_portal(rig)
+    tick(rig)
+    rev = publish(rig)
+    ag = rig.svc.remote.client
+
+    got = ag.call("GET", "/remote/pending")
+    assert got["version"] == rev["version"]
+    assert ag.call("POST", f"/remote/{rev['version']}/received", {})["status"] == "recebido"
+    assert ag.call("POST", f"/remote/{rev['version']}/progress", {})["status"] == "aplicando"
+
+    db = SessionLocal()
+    row = db.query(ConfigRevision).filter_by(server_id=rig.server["id"], version=rev["version"]).one()
+    row.sent_at = utcnow() - timedelta(minutes=30)
+    row.received_at = utcnow() - timedelta(minutes=30)
+    db.commit()
+    db.close()
+
+    assert ag.call("GET", "/remote/pending") is None
+    assert revs(rig)[rev["version"]]["status"] == "aplicando"
+
+
+def test_remote_result_rejects_mismatched_active_version(client, world, H, rig):
+    """A central não pode registrar como aplicada uma versão diferente da entrega."""
+    from replay_agent.client import CentralRejected
+
+    setup_portal(rig)
+    tick(rig)
+    rev = publish(rig)
+    ag = rig.svc.remote.client
+    assert ag.call("GET", "/remote/pending")["version"] == rev["version"]
+    with pytest.raises(CentralRejected) as err:
+        ag.call("POST", f"/remote/{rev['version']}/result",
+                {"status": "aplicado", "activeVersion": 0, "items": []})
+    assert err.value.status == 422
+    assert revs(rig)[rev["version"]]["status"] == "enviado"
