@@ -136,7 +136,7 @@ def build_snapshot(db: Session, server: LocalServer) -> dict:
                .order_by(Camera.is_primary.desc(), Camera.created_at).first())
         camera = None
         if cam:
-            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
+            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "macAddress": cam.mac_address, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
                       "username": cam.username, "hasSecret": bool(cam.secret_enc), "secretVersion": cam.secret_version,
                       "width": cam.width, "height": cam.height, "fps": cam.fps, "codec": cam.codec, "profile": cam.profile}
         frames = {"enabled": bool(cs.frames_enabled), "horizontal": None, "vertical": None}
