@@ -618,3 +618,32 @@ def test_remote_result_rejects_mismatched_active_version(client, world, H, rig):
                 {"status": "aplicado", "activeVersion": 0, "items": []})
     assert err.value.status == 422
     assert revs(rig)[rev["version"]]["status"] == "enviado"
+
+
+def test_crash_during_apply_leaves_durable_intent_and_blocks_retry(client, world, H, rig):
+    """Interrupção no início do apply não reenvia ordem de ativação."""
+    from replay_agent.client import CentralUnavailable
+
+    setup_portal(rig)
+    tick(rig)
+    rev = publish(rig)
+    remote = rig.svc.remote
+    original_apply = remote.apply
+    attempts = []
+
+    def interrupted(_rev):
+        attempts.append(_rev["version"])
+        raise RuntimeError("simulated process crash during activation")
+
+    remote.apply = interrupted
+    with pytest.raises(RuntimeError):
+        remote.poll()
+    assert attempts == [rev["version"]]
+    assert remote.intent_path.exists()
+    assert not remote.result_path.exists()
+
+    remote.apply = original_apply
+    with pytest.raises(CentralUnavailable):
+        remote.poll()
+    assert attempts == [rev["version"]]
+    assert revs(rig)[rev["version"]]["status"] == "aplicando"
