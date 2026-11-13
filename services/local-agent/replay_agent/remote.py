@@ -153,6 +153,8 @@ class RemoteManager:
         self.frames_dir = self.dir / "frames"
         self.frames_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.dir / "state.json"
+        self.result_path = self.dir / "pending-result.json"
+        self.intent_path = self.dir / "apply-intent.json"
         self.state = self._load_state()
         self.lock = threading.Lock()
         self.last_inventory = 0.0
@@ -243,19 +245,48 @@ class RemoteManager:
             pass
 
     # ------------------------------------------------------------ aplicação
+    def _confirm_pending_result(self) -> None:
+        """Reenvia somente o RESULTADO persistido; nunca a ordem de aplicar."""
+        if not self.result_path.exists():
+            return
+        pending = json.loads(self.result_path.read_text())
+        version = int(pending["version"])
+        self.client.call("POST", f"/remote/{version}/result", pending["report"])
+        self.result_path.unlink()
+        if self.intent_path.exists():
+            self.intent_path.unlink()
+
     def poll(self) -> dict | None:
-        """Um ciclo: busca configuração pendente, aplica e confirma. Retorna o relatório ou None."""
+        """Confirma um resultado anterior antes de buscar novos comandos."""
+        self._confirm_pending_result()
+        if self.intent_path.exists():
+            # Reinicio durante o apply(): nao sabemos se o motor chegou a
+            # ativar o snapshot. Nunca executar uma segunda vez em silencio.
+            raise CentralUnavailable("aplicacao interrompida; reconciliacao supervisionada necessaria")
         rev = self.client.call("GET", "/remote/pending")
         if not rev:
             return None
-        v = rev["version"]
-        self.client.call("POST", f"/remote/{v}/received", {})
-        self.client.call("POST", f"/remote/{v}/progress", {})
+        v = int(rev["version"])
+        received = self.client.call("POST", f"/remote/{v}/received", {})
+        if received.get("status") != "recebido":
+            raise ApplyError("central recusou a entrega da revisão")
+        progress = self.client.call("POST", f"/remote/{v}/progress", {})
+        if progress.get("status") != "aplicando":
+            raise ApplyError("central recusou o início da aplicação")
+        # Grava a intencao ANTES de qualquer alteracao na captura.
+        # Um crash durante o apply exige verificacao humana antes de reentregar.
+        _atomic_write(self.intent_path, json.dumps({"version": v}).encode())
         report = self.apply(rev)
+        # Resultado persistido ANTES do envio: perda de rede ou processo
+        # após a aplicação não resulta em uma nova ativação de câmeras.
+        _atomic_write(self.result_path, json.dumps({"version": v, "report": report}).encode())
         try:
-            self.client.call("POST", f"/remote/{v}/result", report)
+            self._confirm_pending_result()
         except CentralRejected as e:
             log.warning("central recusou o resultado da v%s: %s", v, e.detail)
+            # Falha fechada: manter o resultado local para auditoria e
+            # evitar novo comando até reconciliar a divergência.
+            raise
         self.last_apply = {"version": v, "status": report["status"], "at": self.clock()}
         self.last_inventory = 0.0
         return report
