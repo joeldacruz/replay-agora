@@ -136,7 +136,7 @@ def build_snapshot(db: Session, server: LocalServer) -> dict:
                .order_by(Camera.is_primary.desc(), Camera.created_at).first())
         camera = None
         if cam:
-            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
+            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "macAddress": cam.mac_address, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
                       "username": cam.username, "hasSecret": bool(cam.secret_enc), "secretVersion": cam.secret_version,
                       "width": cam.width, "height": cam.height, "fps": cam.fps, "codec": cam.codec, "profile": cam.profile}
         frames = {"enabled": bool(cs.frames_enabled), "horizontal": None, "vertical": None}
@@ -236,15 +236,14 @@ def create_revision(db: Session, server: LocalServer, user_id: str, expected: in
                          snapshot_json=json.dumps(snap, sort_keys=True), base_version=expected, allow_restart=allow_restart, note=note[:200],
                          created_by=user_id, reverted_from=reverted_from)
     db.add(rev)
-    if apply:
-        supersede_pending(db, server.id, keep_version=rev.version)
+    supersede_pending(db, server.id, keep_version=rev.version)
     db.flush()
     return rev
 
 
 def supersede_pending(db: Session, server_id: str, keep_version: int) -> None:
     """Uma versão mais nova pendente substitui as anteriores ainda NÃO aplicadas (evita reaplicar operações antigas)."""
-    for r in db.query(ConfigRevision).filter(ConfigRevision.server_id == server_id, ConfigRevision.status.in_(("pendente", "enviado")),
+    for r in db.query(ConfigRevision).filter(ConfigRevision.server_id == server_id, ConfigRevision.status == "pendente",
                                              ConfigRevision.version < keep_version).all():
         r.status, r.error, r.finished_at = "substituido", "substituída por versão mais nova antes de ser aplicada", utcnow()
 
@@ -323,7 +322,9 @@ def sweep_stale(db: Session, server: LocalServer, now=None) -> None:
     for r in db.query(ConfigRevision).filter(ConfigRevision.server_id == server.id, ConfigRevision.status.in_(("enviado", "recebido", "aplicando"))).all():
         ref = r.received_at or r.sent_at
         if ref and now - ref > timedelta(minutes=10):
-            r.status = "pendente"
+            # Sem reentrega automatica: o agente pode estar aplicando.
+            # Recuperacao exige reconciliacao explicita.
+            continue
 
 
 # ------------------------------------------------------------------ saneamento de resultados do agente

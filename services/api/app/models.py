@@ -436,6 +436,7 @@ class Camera(Base):
     vendor: Mapped[str] = mapped_column(String(40), default="")
     model: Mapped[str] = mapped_column(String(60), default="")
     host: Mapped[str] = mapped_column(String(253))
+    mac_address: Mapped[str | None] = mapped_column(String(17), nullable=True)
     rtsp_port: Mapped[int] = mapped_column(Integer, default=554)
     transport: Mapped[str] = mapped_column(String(3), default="tcp")
     rtsp_path: Mapped[str] = mapped_column(String(200), default="")

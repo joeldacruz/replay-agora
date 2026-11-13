@@ -39,7 +39,7 @@ def pending(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Próxima configuração a aplicar (a mais nova; versões antigas não aplicadas já foram substituídas) + segredos + arquivos."""
     s = _server(db, ag)
     rc.sweep_stale(db, s)
-    rev = (db.query(ConfigRevision).filter(ConfigRevision.server_id == s.id, ConfigRevision.status.in_(("pendente", "enviado")))
+    rev = (db.query(ConfigRevision).filter(ConfigRevision.server_id == s.id, ConfigRevision.status == "pendente")
            .order_by(ConfigRevision.version.desc()).first())
     if not rev:
         db.commit()

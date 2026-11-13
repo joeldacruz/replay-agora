@@ -192,6 +192,7 @@ class CameraIn(BaseModel):
     vendor: str = Field("", max_length=40)
     model: str = Field("", max_length=60)
     host: str = Field(max_length=253)
+    macAddress: str | None = Field(None, pattern=r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
     rtspPort: int = Field(554, ge=1, le=65535)
     transport: str = "tcp"
     rtspPath: str = Field("", max_length=200)
@@ -214,6 +215,7 @@ class CameraPatch(BaseModel):
     vendor: str | None = Field(None, max_length=40)
     model: str | None = Field(None, max_length=60)
     host: str | None = Field(None, max_length=253)
+    macAddress: str | None = Field(None, pattern=r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
     rtspPort: int | None = Field(None, ge=1, le=65535)
     transport: str | None = None
     rtspPath: str | None = Field(None, max_length=200)
@@ -243,7 +245,7 @@ KNOWN_PROFILES = [
 def camera_out(db: Session, c: Camera) -> dict:
     court = db.get(Court, c.court_id) if c.court_id else None
     return {"id": c.id, "arenaId": c.arena_id, "courtId": c.court_id, "courtLabel": court.label if court else None, "serverId": c.server_id,
-            "name": c.name, "vendor": c.vendor, "model": c.model, "host": c.host, "rtspPort": c.rtsp_port, "transport": c.transport,
+            "name": c.name, "vendor": c.vendor, "model": c.model, "host": c.host, "macAddress": c.mac_address, "rtspPort": c.rtsp_port, "transport": c.transport,
             "rtspPath": c.rtsp_path, "username": c.username, "hasSecret": bool(c.secret_enc), "secretVersion": c.secret_version,
             "width": c.width, "height": c.height, "fps": c.fps, "codec": c.codec, "profile": c.profile, "active": c.active, "isPrimary": c.is_primary,
             "version": c.row_version, "lastTest": json.loads(c.last_test_json) if c.last_test_json else None, "updatedAt": iso(c.updated_at)}
@@ -278,7 +280,7 @@ def create_camera(body: CameraIn, a: Auth = Depends(platform_auth), db: Session 
     f = rc.validate_camera_fields({"host": body.host, "rtsp_port": body.rtspPort, "rtsp_path": body.rtspPath, "username": body.username,
                                    "transport": body.transport, "codec": body.codec, "fps": body.fps, "width": body.width, "height": body.height})
     cam = Camera(arena_id=body.arenaId, court_id=body.courtId, server_id=body.serverId, name=body.name.strip(), vendor=body.vendor, model=body.model,
-                 host=f["host"], rtsp_port=body.rtspPort, transport=body.transport, rtsp_path=f["rtsp_path"], username=body.username,
+                 host=f["host"], mac_address=body.macAddress.upper() if body.macAddress else None, rtsp_port=body.rtspPort, transport=body.transport, rtsp_path=f["rtsp_path"], username=body.username,
                  width=body.width, height=body.height, fps=body.fps, codec=body.codec, profile=body.profile, active=body.active, is_primary=body.isPrimary)
     if body.password:
         cam.secret_enc, cam.secret_version = secretbox.seal(rc.validate_password(body.password)), 1
@@ -309,10 +311,12 @@ def patch_camera(cid: str, body: CameraPatch, a: Auth = Depends(platform_auth), 
         raise HTTPException(409, {"message": "A câmera foi alterada por outra pessoa. Recarregue antes de salvar.", "currentVersion": c.row_version})
     ch = body.model_dump(exclude_unset=True, exclude={"expectedVersion"})
     _check_refs(db, c.arena_id, ch.get("courtId"), ch.get("serverId"))
-    mapping = {"courtId": "court_id", "serverId": "server_id", "rtspPort": "rtsp_port", "rtspPath": "rtsp_path", "isPrimary": "is_primary"}
+    mapping = {"courtId": "court_id", "serverId": "server_id", "rtspPort": "rtsp_port", "rtspPath": "rtsp_path", "isPrimary": "is_primary", "macAddress": "mac_address"}
     val = rc.validate_camera_fields({mapping.get(k, k): v for k, v in ch.items() if k in ("host", "rtspPort", "rtspPath", "username", "transport", "codec", "fps", "width", "height")})
     for k, v in ch.items():
         attr = mapping.get(k, k)
+        if attr == "mac_address" and v is not None:
+            v = v.upper()
         setattr(c, attr, val.get(attr, v) if attr in val else v)
     c.row_version += 1
     c.updated_at = utcnow()
