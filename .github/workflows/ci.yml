@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -r services/api/requirements-dev.txt
+      - run: pytest -q
+      - name: Benchmark do agente (2 câmeras simuladas, rápido)
+        run: python scripts/bench_agent.py --courts 2 --seconds 20 --trigger-every 8
+      - name: Simulação multiarena (queda e reconexão da central)
+        run: python scripts/simulate_fleet.py --arenas 3 --courts 2 --rounds 4 --renderer ffmpeg --outage
+      - name: E2E de navegador (mídia sintética, sem câmeras)
+        run: |
+          npm --prefix e2e install && npx --prefix e2e playwright install --with-deps chromium
+          PY=$(which python) NODE_PATH=$PWD/e2e/node_modules scripts/e2e.sh
+  docker_smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker, Compose e smoke HTTP isolados
+        env:
+          RUN_DOCKER_HOMOLOGACAO: SIM
+        run: bash scripts/docker-smoke.sh

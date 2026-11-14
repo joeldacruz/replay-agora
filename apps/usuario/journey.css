@@ -1,0 +1,416 @@
+/* ==========================================================================================
+   App do Jogador — Replay Agora
+   Folha única e organizada. Ordem: 1 tokens · 2 base · 3 layout · 4 componentes · 5 telas · 6 breakpoints.
+   Convenções: prefixo `j-`; blocos `.j-bloco`, elementos `.j-bloco-elemento`, modificadores `.j-bloco--mod` / `.is-estado`.
+   Mobile-first (320 px+). Breakpoints: 480 · 768 (tablet) · 1100 (computador).
+   ========================================================================================== */
+
+/* ---------------------------------------------------------------- 1. TOKENS */
+body.j-body {
+  --j-navy-950: #020c26;
+  --j-navy-900: #041437;
+  --j-navy-800: #06235f;
+  --j-blue-700: #0a4f9c;
+  --j-blue-500: #0a78d4;
+  --j-cyan: #1ec8ff;
+  --j-coral: #ff6b57;
+  --j-coral-light: #ff8a73;
+  --j-coral-dark: #f2523f;
+  --j-paper: #f3f6fb;
+  --j-card: #fff;
+  --j-ink: #07204a;
+  --j-muted: #566a89;
+  --j-line: #dfe7f2;
+
+  --j-radius-lg: 24px;
+  --j-radius-md: 18px;
+  --j-radius-sm: 12px;
+  --j-shadow-card: 0 10px 28px rgba(4, 20, 55, .10), 0 2px 6px rgba(4, 20, 55, .06);
+
+  --j-gutter: clamp(16px, 5vw, 28px);
+  --j-col: 560px;                                   /* largura útil do conteúdo */
+  --j-nav-h: calc(76px + env(safe-area-inset-bottom));
+  --j-top-h: 0px;                                   /* altura da barra superior (só no computador) */
+  --j-brand-size: 1.4rem;
+}
+
+/* ---------------------------------------------------------------- 2. BASE */
+body.j-body {
+  margin: 0;
+  background: var(--j-paper);
+  color: var(--j-ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+/* resets com especificidade ZERO (:where): nunca sobrescrevem os componentes abaixo */
+:where(.j-body) *, :where(.j-body) *::before, :where(.j-body) *::after { box-sizing: border-box; }
+:where(.j-body) :is(h1, h2, h3, p, dl, dd) { margin: 0; }
+:where(.j-body) :is(h1, h2, h3) { letter-spacing: -.02em; }
+:where(.j-body) a { color: inherit; }
+:where(.j-body) :is(button, input, select) { font: inherit; }
+.j-body :focus-visible { outline: 3px solid var(--j-cyan); outline-offset: 2px; }
+.j-icon { flex: none; display: block; }
+.j-loading { padding: 2rem; text-align: center; color: var(--j-muted); }
+@media (prefers-reduced-motion: reduce) { .j-body * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------------------------------------------------------------- 3. LAYOUT */
+.j-app { min-height: 100svh; padding-bottom: var(--j-nav-h); }
+.j-hero-inner, .j-header-row, .j-header-title, .j-sheet, .j-arena-body, .j-watch-body, .j-profile-body {
+  width: min(100%, var(--j-col));
+  margin-inline: auto;
+  padding-inline: var(--j-gutter);
+}
+.j-stack { display: grid; gap: 12px; }
+
+/* ---------------------------------------------------------------- 4. COMPONENTES */
+
+/* 4.1 Logotipo — tudo em `em`: o símbolo escala junto com o texto e nunca o sobrepõe */
+.j-brand { display: inline-flex; align-items: center; line-height: 0; }
+.j-brand-logo { display: block; height: calc(var(--j-brand-size) * 2); width: auto; max-width: 100%; }
+
+/* 4.2 Fundo azul premium com luz ciano (hero e cabeçalhos) */
+.j-hero, .j-header {
+  position: relative; isolation: isolate; overflow: hidden; color: #fff;
+  background:
+    radial-gradient(ellipse 70% 42% at 108% 52%, rgba(30, 200, 255, .42), transparent 70%),
+    radial-gradient(ellipse 80% 55% at -12% 105%, rgba(10, 120, 212, .42), transparent 70%),
+    linear-gradient(165deg, var(--j-navy-950) 0%, var(--j-navy-900) 42%, var(--j-navy-800) 100%);
+}
+.j-hero::before, .j-header::before {              /* feixe diagonal de luz */
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  width: 150%; height: 34%; right: -35%; top: 36%;
+  background: linear-gradient(90deg, transparent, rgba(80, 205, 255, .5) 55%, transparent);
+  transform: rotate(-30deg); filter: blur(12px); opacity: .5;
+}
+
+/* 4.3 Botões */
+.j-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .6rem;
+  width: 100%; min-height: 56px; padding: 0 1.25rem;
+  border: 2px solid transparent; border-radius: var(--j-radius-md);
+  font-weight: 700; font-size: 1.05rem; line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer;
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+}
+.j-btn:active { transform: scale(.985); }
+.j-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.j-btn--primary { color: #fff; background: linear-gradient(100deg, var(--j-coral-light), var(--j-coral) 55%, #ff5d57); box-shadow: 0 10px 26px rgba(255, 94, 80, .38); }
+.j-btn--outline { color: #fff; background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .88); }
+.j-btn--outline-dark { color: var(--j-ink); background: #fff; border-color: #cbd7e8; }
+.j-btn--danger { color: #b3261e; background: #fff; border-color: #f0c4c0; }
+.j-btn--sm { width: auto; min-height: 46px; padding: 0 1.3rem; font-size: 1rem; }
+.j-link { display: inline-flex; align-items: center; gap: .3rem; min-height: 44px; padding: 0; border: 0; background: none; color: var(--j-coral-dark); font-weight: 700; cursor: pointer; }
+.j-link[hidden] { display: none; }
+.j-icon-btn { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: #eef3fb; color: var(--j-ink); text-decoration: none; box-shadow: 0 2px 6px rgba(4, 20, 55, .08); }
+
+/* 4.4 Campos e filtros */
+.j-field { display: grid; gap: 6px; min-width: 0; }
+.j-label { font-size: .84rem; font-weight: 700; color: var(--j-muted); }
+.j-input {
+  width: 100%; min-width: 0; min-height: 50px; padding: 0 .95rem;
+  border: 1.5px solid #cbd7e8; border-radius: 14px; background: #fff; color: var(--j-ink); font: inherit;
+}
+.j-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.j-chips::-webkit-scrollbar { display: none; }
+.j-chip {
+  flex: none; min-height: 44px; padding: 0 1.1rem; border: 1.5px solid #cbd7e8; border-radius: 999px;
+  background: #fff; color: var(--j-ink); font-weight: 600; cursor: pointer;
+}
+.j-chip.is-on { background: var(--j-navy-800); border-color: var(--j-navy-800); color: #fff; }
+
+/* 4.5 Cartões, linhas e rótulos */
+.j-card { background: var(--j-card); border-radius: var(--j-radius-lg); box-shadow: var(--j-shadow-card); }
+.j-pad { padding: 18px; }
+.j-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; text-decoration: none; }
+.j-row-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; overflow: hidden; }
+.j-arena-logo { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 4px; border-radius: inherit; }
+.j-row-text { flex: 1; min-width: 0; display: grid; }
+.j-row-text strong { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-row-text small { color: var(--j-muted); }
+.j-meta { display: flex; align-items: center; gap: 8px; color: var(--j-muted); font-size: .93rem; min-width: 0; }
+.j-meta .j-icon { color: var(--j-ink); }
+.j-pill { padding: 2px 8px; border-radius: 9px; background: rgba(3, 14, 40, .8); color: #fff; font-size: .78rem; font-weight: 700; line-height: 1.4; }
+.j-pill--warn { background: #8a4b00; }
+.j-empty { padding: 18px 4px; color: var(--j-muted); }
+.j-status { color: var(--j-muted); font-size: .9rem; }
+.j-status:not(:empty) { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fff3ea; color: #8a3c25; }
+.j-status--err:not(:empty) { background: #fdecec; color: #a3201a; }
+.j-hint { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: .9rem; line-height: 1.4; color: #cfdcf1; }
+.j-hint--dark { color: var(--j-muted); }
+
+/* 4.6 Miniatura de replay (vetor; usa a miniatura real quando existir) */
+.j-thumb { position: relative; flex: none; display: block; width: clamp(112px, 34vw, 168px); aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: var(--j-navy-800); }
+.j-thumb img, .j-thumb-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.j-thumb-play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.j-thumb-play .j-icon { fill: #fff; stroke-width: 1.4; padding: 0; }
+.j-thumb-play::before { content: ""; position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(255, 255, 255, .16); border: 1.5px solid rgba(255, 255, 255, .55); }
+.j-thumb-play .j-icon { position: relative; }
+.j-thumb-time { position: absolute; right: 6px; bottom: 6px; }
+
+/* 4.7 Ondas (azul · coral · branco) — no fluxo, no fim do hero: nunca cobertas pelo conteúdo nem pela barra inferior */
+.j-waves { display: block; width: 100%; height: clamp(96px, min(40vw, 19svh), 200px); flex: none; margin-top: auto; }
+
+/* 4.8 Barra de navegação inferior */
+.j-nav {
+  position: fixed; left: 50%; bottom: 0; z-index: 40; transform: translateX(-50%);
+  width: min(100%, 560px); min-height: var(--j-nav-h);
+  display: grid; grid-template-columns: repeat(3, 1fr); padding: 10px 12px calc(8px + env(safe-area-inset-bottom));
+  background: linear-gradient(110deg, #031230, #052b63 55%, #041a45);
+  border-radius: 28px 28px 0 0; box-shadow: 0 -10px 30px rgba(2, 12, 38, .28);
+}
+.j-nav-item { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; color: #fff; text-decoration: none; font-size: .86rem; font-weight: 600; }
+.j-nav-item.is-active { color: #ff7a66; }
+.j-nav-item.is-active::after { content: ""; position: absolute; bottom: 0; width: 44px; height: 4px; border-radius: 99px; background: #ff7a66; }
+
+/* 4.9 Menu ⋮ do replay, leitor de QR e aviso (toast) */
+.j-more { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); cursor: pointer; }
+.j-menu { position: absolute; right: 10px; top: 56px; z-index: 5; min-width: 190px; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 14px 40px rgba(4, 20, 55, .25); }
+.j-menu[hidden] { display: none; }
+.j-menu a, .j-menu button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: 12px; background: none; color: var(--j-ink); font-weight: 600; text-decoration: none; cursor: pointer; }
+.j-menu a:hover, .j-menu button:hover { background: #eef3fb; }
+.j-scanner { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 22px; background: rgba(2, 12, 38, .95); color: #fff; text-align: center; }
+.j-scanner-box { position: relative; width: min(86vw, 420px); aspect-ratio: 1; border-radius: 22px; overflow: hidden; background: #000; }
+.j-scanner-box video { width: 100%; height: 100%; object-fit: cover; }
+.j-scanner-frame { position: absolute; inset: 14%; border: 3px solid var(--j-coral); border-radius: 18px; box-shadow: 0 0 0 999px rgba(2, 12, 38, .35); }
+.j-scanner .j-btn { max-width: 320px; }
+.toast { position: fixed; left: 50%; bottom: calc(var(--j-nav-h) + 12px); transform: translateX(-50%); z-index: 90; max-width: 90vw; padding: .7rem 1rem; border-radius: 12px; background: var(--j-ink); color: #fff; }
+.toast.bad { background: #b3261e; }
+
+/* ---------------------------------------------------------------- 5. TELAS */
+
+/* 5.1 Acesso à arena (tela inicial) */
+.j-hero--welcome { display: flex; flex-direction: column; min-height: calc(100svh - var(--j-nav-h)); }
+.j-hero--welcome .j-hero-inner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 1.6svh, 16px); padding-top: calc(clamp(12px, 2.6svh, 44px) + env(safe-area-inset-top)); padding-bottom: 0; text-align: center; }
+.j-welcome-copy, .j-welcome-actions { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.j-welcome-copy { --j-brand-size: clamp(1.7rem, min(10vw, 5.2svh), 2.8rem); gap: 0; }
+.j-welcome-actions { max-width: 440px; }
+.j-tagline {
+  display: inline-grid; margin: clamp(.5rem, 1.3svh, 1.15rem) 0 clamp(8px, 2svh, 28px); padding-left: .9rem; text-align: left;
+  border-left: 3px solid var(--j-coral); font-size: .78rem; font-weight: 500; letter-spacing: .34em; line-height: 1.75; color: #cfe0f7;
+}
+.j-welcome-copy h1 { font-size: clamp(1.45rem, min(7.4vw, 4.2svh), 2.3rem); font-weight: 800; }
+.j-lead { margin-top: .4rem; font-size: clamp(.88rem, min(3.9vw, 2.2svh), 1.08rem); line-height: 1.4; color: #dbe8fb; }
+.j-qr { position: relative; width: clamp(96px, min(42vw, 16.5svh), 190px); aspect-ratio: 1; margin: 2px auto clamp(6px, 1.4svh, 12px); }
+.j-qr-svg { display: block; width: 100%; height: 100%; filter: drop-shadow(0 0 16px rgba(80, 200, 255, .35)); }
+.j-qr-scan {
+  position: absolute; left: -14%; right: -14%; top: 50%; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--j-coral) 16%, #ffa08e 50%, var(--j-coral) 84%, transparent);
+  box-shadow: 0 0 14px 4px rgba(255, 107, 87, .65), 0 0 40px 10px rgba(255, 107, 87, .32);
+  animation: j-scan 3.4s ease-in-out infinite alternate;
+}
+@keyframes j-scan { from { transform: translateY(-26%); } to { transform: translateY(26%); } }
+.j-or { display: flex; align-items: center; gap: 14px; width: 100%; margin: clamp(6px, 1.5svh, 14px) 0; color: #dbe8fb; }
+.j-or::before, .j-or::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, .35); }
+.j-code-form { display: flex; gap: 10px; width: 100%; margin-top: 12px; padding: 10px; border-radius: 16px; background: #fff; }
+.j-code-form[hidden] { display: none; }
+.j-welcome-actions .j-hint { margin-top: clamp(8px, 1.8svh, 16px); max-width: 340px; font-size: clamp(.8rem, 1.9svh, .9rem); }
+.j-welcome-actions .j-btn { min-height: clamp(48px, 6svh, 58px); }
+.j-sheet { padding-top: 8px; padding-bottom: 24px; }
+.j-sheet h2 { margin: 6px 0 14px; font-size: 1.35rem; font-weight: 800; }
+.j-sheet--lift { margin-top: -34px; position: relative; }
+
+@media (max-height: 700px) and (max-width: 767px) {
+  .j-hero--welcome .j-lead, .j-welcome-actions .j-hint { display: none; }
+  .j-qr { width: 84px; }
+  .j-tagline { margin: .4rem 0 6px; }
+}
+
+/* 5.2 Arena selecionada */
+.j-header { padding: calc(16px + env(safe-area-inset-top)) 0 54px; --j-brand-size: 1.4rem; }
+.j-header-row { display: flex; align-items: center; justify-content: space-between; }
+.j-header-title { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.j-header-title h1 { font-size: 1.45rem; font-weight: 800; }
+.j-back { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; text-decoration: none; }
+.j-header--arena { padding-bottom: 62px; }
+.j-arena-body { position: relative; margin-top: -42px; }
+.j-arena-card { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.j-arena-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; color: var(--j-ink); border-radius: 12px; overflow: hidden; }
+.j-arena-id { flex: 1; min-width: 0; display: grid; padding-left: 14px; border-left: 1.5px solid var(--j-line); }
+.j-arena-id strong { font-size: 1.3rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.j-arena-id small { color: var(--j-muted); font-size: .95rem; }
+.j-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.j-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px;
+  border: 0; border-radius: 20px; background: #fff; color: var(--j-ink); font-weight: 700; font-size: 1rem; box-shadow: var(--j-shadow-card); cursor: pointer;
+}
+.j-tile--primary { color: #fff; background: linear-gradient(135deg, var(--j-coral-light), #ff5d57); box-shadow: 0 10px 24px rgba(255, 94, 80, .35); }
+.j-tile[aria-expanded="true"] { outline: 2px solid var(--j-blue-500); }
+.j-tile--primary .j-icon { fill: none; }
+.j-filters { margin-bottom: 16px; padding: 16px; display: grid; gap: 14px; }
+.j-filters[hidden] { display: none; }
+.j-filters-path { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--j-muted); }
+.j-filters-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.j-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 6px; }
+.j-section-head h2 { font-size: 1.35rem; font-weight: 800; }
+.j-replays { padding-bottom: 20px; }
+.j-day { margin: 14px 2px 0; font-size: .95rem; font-weight: 700; color: var(--j-muted); text-transform: capitalize; }
+.j-replay { position: relative; display: flex; align-items: center; padding: 10px 6px 10px 10px; border-radius: 20px; }
+.j-replay-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; }
+.j-replay-info { min-width: 0; display: grid; gap: 4px; }
+.j-replay-info strong { font-size: 1.15rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-replay-info .j-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.j-replay.is-unavailable { opacity: .72; }
+
+/* 5.3 Assistir */
+.j-watch-body { position: relative; margin-top: -34px; display: grid; gap: 14px; }
+.j-player { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden; background: var(--j-navy-950); box-shadow: var(--j-shadow-card); color: #fff; }
+.j-player video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.j-player-msg { display: grid; justify-items: center; gap: 10px; padding: 16px; text-align: center; }
+.j-info h2 { font-size: 1.3rem; font-weight: 800; }
+.j-info-grid { display: grid; gap: 8px; margin-top: 10px; }
+.j-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* 5.4 Perfil */
+.j-profile-body { position: relative; margin-top: -34px; display: grid; gap: 16px; }
+.j-profile-card { display: grid; justify-items: center; gap: 14px; padding: 22px 18px; }
+.j-avatar { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(145deg, #0a5fae, var(--j-navy-800)); color: #fff; font-size: 1.9rem; font-weight: 800; }
+.j-data { display: grid; gap: 0; width: 100%; }
+.j-data > div { padding: 14px 2px; border-top: 1px solid var(--j-line); }
+.j-data dt { font-size: .82rem; font-weight: 700; color: var(--j-muted); }
+.j-data dd { margin-top: 2px; font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+
+/* 5.5 Entrar / criar conta */
+.j-app--auth { padding-bottom: 24px; }
+.j-hero--auth { display: flex; flex-direction: column; }
+.j-hero--auth .j-hero-inner { display: flex; flex-direction: column; align-items: center; padding-top: calc(32px + env(safe-area-inset-top)); --j-brand-size: clamp(2rem, 10vw, 2.6rem); }
+.j-hero--auth .j-tagline { margin-bottom: 8px; }
+.j-form { display: grid; gap: 14px; }
+.j-form h2 { margin: 0; font-size: 1.4rem; font-weight: 800; }
+.j-switch { text-align: center; }
+.j-switch a { color: var(--j-blue-700); font-weight: 700; }
+
+/* 5.6 Minhas Arenas e cartão de arena (identidade, seleção, ação "Acessar") */
+.j-my-arenas { padding-top: 20px; padding-bottom: 24px; }
+.j-my-arenas .j-stack { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 420px)); }
+.j-add-arena { display: flex; margin-top: 20px; text-decoration: none; }
+.j-replay-actions { display: none; }          /* ações visíveis só no computador (celular/tablet usam o menu ⋮) */
+.j-nav-brand { display: none; }
+.j-badge, .j-header-sub { display: none; }       /* só tablet/computador */
+.j-header-sub { width: min(100%, var(--j-col)); margin: 6px auto 0; padding-inline: var(--j-gutter); }
+/* Cartão de arena: identidade (cor da arena), seleção e ação de acesso. */
+.j-row-icon { box-shadow: 0 0 0 3px var(--j-arena-color, transparent); }
+.j-row-text strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.j-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.j-row.is-selected { box-shadow: 0 0 0 2px var(--j-coral), var(--j-shadow, 0 6px 20px rgba(4, 20, 55, .08)); }
+.j-row-go { display: inline-flex; align-items: center; gap: 2px; font-size: .85rem; font-weight: 700; color: var(--j-coral-dark, #e04a34); }
+
+/* ---------------------------------------------------------------- 6. BREAKPOINTS */
+@media (max-width: 360px) {
+  .j-actions { grid-template-columns: 1fr; }
+  .j-filters-row { grid-template-columns: 1fr; }
+  .j-thumb { width: 104px; }
+  .j-replay-info strong { font-size: 1.05rem; }
+}
+@media (min-width: 480px) {
+  .j-body { --j-gutter: 24px; }
+}
+
+@media (min-width: 768px) {                        /* tablet: coluna única mais larga, barra inferior flutuante */
+  body.j-body { --j-col: 720px; --j-gutter: 32px; --j-nav-h: 96px; }
+  .j-nav { bottom: 12px; width: min(92%, 520px); border-radius: 28px; }
+  .j-hero--welcome .j-hero-inner { gap: 26px; padding-top: 48px; }
+  .j-welcome-copy { --j-brand-size: 3.1rem; }
+  .j-welcome-copy h1 { font-size: 2.5rem; }
+  .j-qr { width: 200px; }
+  .j-header { --j-brand-size: 1.6rem; padding-bottom: 62px; }
+  .j-thumb { width: 190px; }
+  .j-replay-info strong { font-size: 1.25rem; }
+  .j-actions { max-width: 520px; }
+  .j-add-arena { display: inline-flex; width: auto; min-width: 280px; }
+  /* Minhas Arenas centralizada */
+  .j-app--arenas .j-header-title { justify-content: center; text-align: center; flex-direction: column; gap: 4px; }
+  .j-header-sub { display: block; color: #cfe0f7; font-size: .98rem; text-align: center; }
+  .j-arena-grid { justify-content: center; }
+  .j-my-arenas { display: flex; flex-direction: column; align-items: center; }
+  .j-my-arenas .j-arena-grid { width: 100%; }
+  .j-my-arenas .j-row { position: relative; }
+  .j-sheet--lift.j-my-arenas { margin-top: 0; padding-top: 36px; }
+  .j-badge { position: absolute; top: -11px; right: 18px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--j-coral); color: #fff; font-size: .75rem; font-weight: 700; box-shadow: 0 4px 10px rgba(255, 94, 80, .35); }
+}
+
+@media (min-width: 1024px) {                       /* computador: barra superior, composição em duas áreas */
+  body.j-body { --j-col: 1120px; --j-gutter: 40px; --j-nav-h: 0px; --j-top-h: 68px; }
+
+  /* navegação: barra fixa no topo (marca à esquerda, Arenas · Replays · Perfil à direita) */
+  .j-nav {
+    inset: 0 0 auto 0; width: auto; height: var(--j-top-h); min-height: 0; transform: none; border-radius: 0;
+    display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+    padding: 0 max(var(--j-gutter), calc((100vw - var(--j-col)) / 2 + var(--j-gutter)));
+    background: rgba(3, 16, 44, .78); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 0 rgba(255, 255, 255, .08);
+  }
+  .j-nav-brand { display: flex; align-items: center; margin-right: auto; --j-brand-size: 1.5rem; text-decoration: none; }
+  .j-app--home .j-nav-brand { visibility: hidden; }
+  .j-nav-item { flex-direction: row; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; font-size: 1rem; }
+  .j-nav-item:hover { background: rgba(255, 255, 255, .1); }
+  .j-nav-item.is-active { background: rgba(255, 107, 87, .16); }
+  .j-nav-item.is-active::after { display: none; }
+  .j-nav-item .j-icon { width: 22px; height: 22px; }
+  .toast { bottom: 24px; }
+
+  /* cabeçalho das telas internas: a marca fica na barra */
+  .j-header { padding-top: calc(var(--j-top-h) + 26px); padding-bottom: 76px; }
+  .j-header--arena { padding-top: calc(var(--j-top-h) + 8px); padding-bottom: 76px; }
+  .j-header-row { display: none; }
+  .j-header-title h1 { font-size: 1.9rem; }
+
+  /* acesso por QR (sem arenas) */
+  .j-hero--welcome .j-hero-inner { display: grid; grid-template-columns: 1fr 440px; align-items: center; justify-items: stretch; gap: 72px; text-align: left; padding-top: calc(var(--j-top-h) + 24px); }
+  .j-welcome-copy { align-items: flex-start; --j-brand-size: 3.6rem; }
+  .j-welcome-copy h1 { font-size: 2.9rem; margin-top: .2rem; }
+  .j-lead { font-size: 1.2rem; }
+  .j-sheet { padding-top: 16px; }
+
+  /* Minhas Arenas: composição centralizada, cartões adaptados à quantidade de arenas */
+  .j-app--arenas { display: flex; flex-direction: column; }
+  .j-app--arenas .j-header { padding-bottom: 56px; }
+  .j-app--arenas .j-header-title h1 { font-size: 2.2rem; }
+  .j-header-sub { font-size: 1.05rem; }
+  .j-sheet--lift.j-my-arenas { flex: 1; justify-content: flex-start; margin-top: 0; padding-top: clamp(40px, 11vh, 130px); padding-bottom: 96px; }
+  .j-arena-grid { display: grid; gap: 22px; }
+  .j-arena-grid[data-count="1"] { grid-template-columns: minmax(0, 540px); }
+  .j-arena-grid[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 440px)); }
+  .j-arena-grid[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 330px)); }
+  .j-arena-grid[data-count="4"] { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 330px)); }
+  .j-my-arenas .j-row { padding: 22px; gap: 18px; }
+  .j-my-arenas .j-row-icon { width: 64px; height: 64px; border-radius: 18px; }
+  .j-my-arenas .j-row-text strong { font-size: 1.2rem; }
+  .j-my-arenas .j-row-text small { font-size: .95rem; }
+  /* 3+ arenas: cartão em duas linhas (identificação · ação) para o nome nunca ficar espremido */
+  .j-arena-grid[data-count="3"] .j-row, .j-arena-grid[data-count="4"] .j-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: center; row-gap: 14px; }
+  .j-arena-grid[data-count="3"] .j-row-go, .j-arena-grid[data-count="4"] .j-row-go { grid-column: 1 / -1; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--j-line); }
+  .j-arena-grid[data-count="1"] .j-row { padding: 28px 30px; gap: 24px; }
+  .j-arena-grid[data-count="1"] .j-row-icon { width: 80px; height: 80px; border-radius: 22px; }
+  .j-arena-grid[data-count="1"] .j-row-text strong { font-size: 1.5rem; }
+  .j-row-go { font-size: .95rem; }
+  .j-add-arena { margin-top: 36px; min-width: 320px; align-self: center; }
+
+  /* arena selecionada: coluna lateral (identificação, atalhos, filtros) + coluna de replays */
+  .j-arena-body { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); column-gap: 32px; align-items: start; margin-top: -52px; }
+  .j-arena-card, .j-tiles, .j-filters { grid-column: 1; }
+  .j-tiles { margin: 16px 0; }
+  .j-filters-row { grid-template-columns: 1fr; }
+  .j-filters .j-chips { flex-wrap: wrap; overflow: visible; }
+  .j-replays { grid-column: 2; grid-row: 1 / span 4; padding-top: 68px; min-width: 0; }
+  .j-replays .j-stack { grid-template-columns: 1fr; gap: 14px; }
+  .j-replay { padding: 14px 16px 14px 14px; gap: 12px; }
+  .j-replay-link { gap: 20px; }
+  .j-thumb { width: 176px; }
+  .j-replay-info { gap: 6px; }
+  .j-replay-info strong { font-size: 1.25rem; white-space: normal; }
+  .j-more { display: none; }
+  .j-replay-actions { display: flex; flex: none; flex-direction: column; gap: 8px; width: 150px; }
+  .j-replay-actions .j-btn { min-height: 42px; padding: 0 1rem; font-size: .95rem; }
+
+  /* assistir e perfil */
+  .j-watch-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; row-gap: 16px; align-items: start; grid-auto-flow: row; }
+  .j-watch-body > .j-player { grid-column: 1; grid-row: 1 / span 3; }
+  .j-watch-body > :not(.j-player) { grid-column: 2; }
+  .j-watch-body .j-actions { grid-template-columns: 1fr; max-width: none; }
+  .j-profile-body { --j-col: 560px; }
+  .j-form { max-width: 460px; margin-inline: auto; }
+}
+
+@media (min-width: 1600px) {
+  body.j-body { --j-col: 1240px; }
+  .j-thumb { width: 200px; }
+}

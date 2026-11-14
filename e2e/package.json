@@ -1,0 +1,1 @@
+{"name":"replay-agora-e2e","private":true,"type":"module","description":"E2E de navegador (executado por scripts/e2e.sh)","devDependencies":{"playwright":"^1.48.0"}}

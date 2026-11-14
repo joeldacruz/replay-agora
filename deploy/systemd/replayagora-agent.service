@@ -1,0 +1,35 @@
+# Agente local da arena. NÃO instalar sem seguir docs/INSTALACAO-UBUNTU.md (e a autorização de homologação).
+[Unit]
+Description=Replay Agora - agente local da arena
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=replayagora
+Group=replayagora
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/replayagora/agent
+Environment=PYTHONPATH=/opt/replayagora/agent
+ExecStart=/opt/replayagora/venv/bin/python -m replay_agent run --config /etc/replayagora/agent.json
+Restart=always
+RestartSec=3
+# Mata TODOS os processos filhos (FFmpeg de captura) junto com o serviço: nada de gravador órfão
+KillMode=control-group
+TimeoutStopSec=20
+# Captura continua tem prioridade; o render já roda com nice interno
+Nice=-2
+# Endurecimento
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/replayagora /etc/replayagora
+DeviceAllow=char-ttyUSB rw
+DeviceAllow=char-ttyACM rw
+DeviceAllow=/dev/dri/renderD128 rw
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

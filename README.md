@@ -12,7 +12,9 @@
 
 ## O que já existe e o que falta
 
-Documentação publicada; os aplicativos, o portal do desenvolvedor e a API ainda **não foram implementados neste repositório**. O código atual de Python/FFmpeg no servidor local da arena **não está neste GitHub**.
+**Implementado nesta branch (MVP de desenvolvimento, validado só com mídia sintética):** API, worker FFmpeg e as três interfaces separadas (`apps/usuario`, `apps/arena`, `apps/portal-dev`). Veja [Executar localmente](#executar-localmente) e [docs/SEGURANCA-E-PENDENCIAS.md](docs/SEGURANCA-E-PENDENCIAS.md).
+
+**Continua não existindo/validado:** integração com câmeras RTSP, Arduino e o motor local real. O código atual de Python/FFmpeg do servidor da arena **não está neste GitHub** e não foi tocado.
 
 ### Arena local, testes confirmados (03/11/2026)
 
@@ -23,6 +25,46 @@ Documentação publicada; os aplicativos, o portal do desenvolvedor e a API aind
 - Câmeras indisponíveis; captura RTSP, geração de MP4 e download **não homologados**.
 - `/srv/replayagora/botoeira/leitor.py` registra os eventos, mas ainda não há integração demonstrada com geração de vídeo.
 - Existem arquivos `/srv/replayagora/quadra01/app/buffer.py` e `replay.py` no servidor, que precisarão ser inventariados e importados com segurança.
+
+## Executar localmente
+
+Requisitos: Python 3.12+, FFmpeg/ffprobe, (E2E) Node 20+ com Playwright. Nenhuma dependência de produção; os dados são fictícios.
+
+```bash
+make setup                      # cria .venv e instala dependências
+make test                       # 78 testes: RBAC, IDOR, uploads, ingestão, exportações FFmpeg
+scripts/e2e.sh                  # E2E de navegador: banco temporário + API + worker + motor simulado
+```
+
+Para navegar manualmente (dois terminais):
+
+```bash
+export DATABASE_URL=sqlite:///$PWD/var/replay.db STORAGE_DIR=$PWD/var/storage SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" SEED_PASSWORD='escolha-uma-senha-dev' PYTHONPATH=$PWD/services/api:$PWD/services/media-worker
+(cd services/api && ../../.venv/bin/python -m alembic upgrade head) && .venv/bin/python -m app.seed
+.venv/bin/python -m uvicorn app.main:app --reload            # terminal 1
+.venv/bin/python -m worker                                    # terminal 2
+```
+
+| Aplicação | URL | Conta de demonstração (seed) |
+|---|---|---|
+| App do Usuário | http://127.0.0.1:8000/ | `atleta.alfa@example.test` |
+| App de Gestão da Arena | http://127.0.0.1:8000/arena/ | `gestor.alfa@example.test` (gestor), `operador.alfa@example.test` |
+| Portal do Desenvolvedor | http://127.0.0.1:8000/portal/ | `dev@replayagora.example` (MFA TOTP: o 1º login mostra o segredo) |
+| API (OpenAPI) | http://127.0.0.1:8000/api/docs | — |
+
+Rollback/limpeza local: apague `var/` (banco e mídia de desenvolvimento) ou rode `alembic downgrade base`. Com Docker: `cp .env.example .env && docker compose up --build` (não validado neste ambiente — ver pendências).
+
+Arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) · Integração futura com Arduino/RTSP: [docs/INTEGRACAO-LOCAL.md](docs/INTEGRACAO-LOCAL.md).
+
+## Multiarena e armazenamento (simulado)
+
+Motor local por arena (simulado em `services/local-agent`), API só com metadados, limites de armazenamento, previsão de esgotamento, retenção em dry-run e compatibilidade com a futura redundância da central: [capacidade](docs/CAPACIDADE-E-ARMAZENAMENTO.md) · [alta disponibilidade](docs/ALTA-DISPONIBILIDADE.md). Rode `make simulate-fleet`. **Não homologado com câmeras, Arduino ou servidores reais.**
+
+Motor real (RTSP, serial REPLAY, buffer, painel de diagnóstico — **só simulado**): [INTEGRACAO-MOTOR-REAL.md](docs/INTEGRACAO-MOTOR-REAL.md) · [instalação Ubuntu](docs/INSTALACAO-UBUNTU.md) · [plano de homologação do srv01](docs/HOMOLOGACAO-replayagora-srv01.md) · [relatório de recursos](docs/RELATORIO-RECURSOS.md).
+
+Preparação da homologação física: [inventário somente leitura do srv01](docs/INVENTARIO-SRV01.md) · [matriz legado × agente](docs/MATRIZ-COMPATIBILIDADE-LEGADO-AGENTE.md).
+
+Entrega de vídeo por relay, renderização local e segurança do agente: [ENTREGA-E-SEGURANCA-DO-AGENTE.md](docs/ENTREGA-E-SEGURANCA-DO-AGENTE.md).
 
 ## Documentação para Claude
 
@@ -47,3 +89,10 @@ Com o GitHub conectado ao Claude/Claude Code, selecione `joeldacruz/replay-agora
 > Leia CLAUDE.md e docs/ESPECIFICACAO-APP.md. Entregue três interfaces **separadas**: App do Usuário, App de Gestão da Arena e Portal do Desenvolvedor. Não misture permissões. Faça o MVP com testes em branch de feature e abra um pull request; não realize deploy de produção.
 
 Nunca publicar `.env`, credenciais RTSP, chaves, vídeos privados nem backups do Arduino.
+
+## Configuração remota (Portal do Desenvolvedor)
+O Portal (`/portal/`) configura servidores locais, câmeras (senha cifrada), controladores/botoeiras, replay/captura e **molduras** por menus; a API entrega ao
+agente (conexão iniciada pelo agente), que valida, aplica por quadra, confirma a versão e permite reverter. Veja
+[docs/CONFIGURACAO-REMOTA.md](docs/CONFIGURACAO-REMOTA.md), [docs/MANUAL-PORTAL-DEV.md](docs/MANUAL-PORTAL-DEV.md) e o plano de homologação
+[docs/HOMOLOGACAO-CONFIG-REMOTA.md](docs/HOMOLOGACAO-CONFIG-REMOTA.md). Simulador para homologação sem hardware: `scripts/simulate_remote_agent.py`.
+**Não homologado em câmeras, Arduino ou FFmpeg reais.** Variável nova: `CREDENTIAL_KEY` (chave de cifra das senhas de câmera; recomendada em produção).
