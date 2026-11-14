@@ -1,6 +1,7 @@
 """Renderização local no agente: prévia patrocinada e exportação de áudio (original|music|mix|mute) sem que o vídeo
 original — nem o resultado — fique na central."""
 import hashlib
+import re
 import subprocess
 import threading
 import time
@@ -52,7 +53,7 @@ def rig(client, world, media, tmp_path, monkeypatch, H):
     r.ids = {}
     for k, (lid, _) in r.src.items():
         r.ids[k] = db.query(Video).filter_by(arena_id=world.A.id, local_id=lid).one().id
-        client.patch(f"/api/arena/{world.A.id}/videos/{r.ids[k]}", headers=H("a_admin_arena"), json={"visibility": "arena"})
+        client.patch(f"/api/arena/{world.A.id}/videos/{r.ids[k]}", headers=H("root"), json={"visibility": "arena"})
     db.close()
     mk = lambda: CentralClient(TestClient(app), world.A.token, "node-A")  # noqa: E731
     r.render = RenderWorker(mk(), r.agent.store, tmp_path / "A" / "renders", nice=0, allowed_source_roots=[tmp_path / "A" / "replays"])
@@ -333,3 +334,69 @@ def test_rendering_does_not_starve_replay_generation_on_two_courts(rig):
     t.join(timeout=60)
     assert rig.agent.store.job_counts() == {"done": 12}
     assert rig.client.get(f"/api/exports/{j['id']}", headers=rig.H("a_user")).json()["status"] == "ready"
+
+
+# ---------- música ATRIBUÍDA: reproduzida na versão derivada renderizada NA ARENA (topologia real: MP4 fica no servidor local) ----------
+def _band_db(path, hz):
+    af = f"bandpass=f={hz}:width_type=h:w=100,bandpass=f={hz}:width_type=h:w=100,volumedetect"
+    r = subprocess.run([settings.ffmpeg_bin, "-v", "info", "-i", str(path), "-vn", "-af", af, "-f", "null", "-"], capture_output=True, text=True)
+    m = re.search(r"mean_volume: (-?[\d.]+|-inf) dB", r.stderr)
+    return -200.0 if not m or m.group(1) == "-inf" else float(m.group(1))
+
+
+def _music_arena(rig, track="ok", mode="music"):
+    from app.models import Arena, SponsorCampaign
+    db = SessionLocal()
+    db.get(Arena, rig.world.A.id).audio_default_mode = mode
+    for c in db.query(SponsorCampaign).filter_by(arena_id=rig.world.A.id):
+        c.active = False                                   # isola a música (sem patrocínio)
+    v = db.get(Video, rig.ids["A_01"]); v.music_id = rig.world.A.tracks[track]; v.music_reason = "rotation"
+    db.commit(); db.close()
+
+
+def test_assigned_music_is_rendered_on_the_arena_and_played_instead_of_the_original(rig):
+    from conftest import MUSIC_HZ, ORIG_HZ
+    src = rig.src["A_01"][1]; h0 = hashlib.sha256(src.read_bytes()).hexdigest()
+    _music_arena(rig)
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play", headers=rig.H("a_user")).status_code == 409   # nunca o original cru
+    a = rig.client.post(f"/api/videos/{rig.ids['A_01']}/preview", headers=rig.H("a_user")).json()
+    b = rig.client.post(f"/api/videos/{rig.ids['A_01']}/preview", headers=rig.H("a_user2")).json()
+    assert a["id"] == b["id"] and a["status"] == "queued"                                   # um único render compartilhado (sem duplicar)
+    db = SessionLocal(); j = job(db, a["id"]); assert j.render_location == "agent" and j.audio_mode == "music" and j.music_id == rig.world.A.tracks["ok"]; db.close()
+    assert runner.process_one() is False                                                    # o worker central não toca (MP4 só na arena)
+    assert rig.render.run_one() is True and rig.render.run_one() is False
+    st = rig.client.get(f"/api/previews/{a['id']}", headers=rig.H("a_user2")).json()
+    assert st["status"] == "ready" and st["url"]
+    got = download(rig, st["url"], "music-preview.mp4")
+    assert _band_db(got, MUSIC_HZ) > -40 and _band_db(got, ORIG_HZ) < -60                     # o que o jogador ouve é a música atribuída
+    assert hashlib.sha256(src.read_bytes()).hexdigest() == h0                                # MP4 original intacto
+    assert sorted(str(x) for x in storage.root().rglob("*") if x.is_file()) == rig.snapshot   # a central não guardou cópia
+    assert rig.client.get(f"/api/previews/{a['id']}", headers=rig.H("b_user")).status_code == 404   # outra arena não vê
+
+
+def test_ambient_mode_and_invalid_track_play_the_original_and_failed_render_offers_ambient_fallback(rig):
+    _music_arena(rig, mode="original")                                         # arena em som ambiente: a faixa registrada não toca
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play", headers=rig.H("a_user")).status_code == 200
+    _music_arena(rig, track="expired")                                         # licença vencida: cai para o ambiente, sem erro
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play", headers=rig.H("a_user")).status_code == 200
+    _music_arena(rig)                                                          # válida: derivada
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play?fallback=ambient", headers=rig.H("a_user")).status_code == 409   # sem falha de render não há atalho
+    from app.models import MusicTrack
+    db = SessionLocal(); db.get(MusicTrack, rig.world.A.tracks["ok"]).license_valid_until = utcnow() - timedelta(days=1); db.commit(); db.close()
+    r = rig.client.get(f"/api/videos/{rig.ids['A_01']}/play", headers=rig.H("a_user"))
+    assert r.status_code == 200                                                # licença venceu depois da atribuição: volta ao original (sem 409, sem erro)
+
+
+def test_failed_music_render_allows_ambient_fallback_but_never_bypasses_sponsors(rig):
+    _music_arena(rig)
+    p = rig.client.post(f"/api/videos/{rig.ids['A_01']}/preview", headers=rig.H("a_user")).json()
+    db = SessionLocal(); j = job(db, p["id"]); j.status, j.error = "failed", "falha simulada do render"; db.commit(); db.close()
+    st = rig.client.get(f"/api/previews/{p['id']}", headers=rig.H("a_user")).json()
+    assert st["status"] == "failed"
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play?fallback=ambient", headers=rig.H("a_user")).status_code == 200   # som ambiente
+    from app.models import SponsorCampaign
+    db = SessionLocal()
+    for c in db.query(SponsorCampaign).filter_by(arena_id=rig.world.A.id):
+        c.active = True
+    db.commit(); db.close()
+    assert rig.client.get(f"/api/videos/{rig.ids['A_01']}/play?fallback=ambient", headers=rig.H("a_user")).status_code == 409    # patrocínio não é contornado

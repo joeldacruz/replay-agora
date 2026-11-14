@@ -104,14 +104,14 @@ def test_deleted_video_link_dies(client, world, H):
     from app.routers.media import sign
     url = sign("video", world.A.pub, world.uid["a_user"])
     assert client.get(url).status_code == 409  # origem bloqueada por patrocínio
-    r = client.delete(f"/api/arena/{world.A.id}/videos/{world.A.pub}?confirm=true", headers=H("a_admin_arena"))
+    r = client.delete(f"/api/arena/{world.A.id}/videos/{world.A.pub}?confirm=true", headers=H("root"))
     assert r.status_code == 204
     assert client.get(url).status_code == 404
     assert client.get(f"/api/videos/{world.A.pub}", headers=H("a_user")).status_code == 404
 
 
 def test_unpublish_revokes_access_for_members(client, world, H):
-    assert client.patch(f"/api/arena/{world.A.id}/videos/{world.A.pub}", headers=H("a_op_arena"), json={"visibility": "private"}).status_code == 200
+    assert client.patch(f"/api/arena/{world.A.id}/videos/{world.A.pub}", headers=H("root"), json={"visibility": "private", "reason": "teste"}).status_code == 200
     ids = {i["id"] for i in client.get("/api/videos", headers=H("a_user")).json()["items"]}
     assert world.A.pub not in ids
 

@@ -17,8 +17,7 @@ from .serializers import iso
 from .. import delivery
 
 router = APIRouter(prefix="/api/arena/{arena_id}", tags=["arena-capacity"])
-staff = ArenaGate("arena_admin", "arena_operator")
-admin = ArenaGate("arena_admin")
+from .arena import G
 
 
 def storage_overview(db: Session, arena: Arena) -> dict:
@@ -63,12 +62,12 @@ def runtime_overview(db: Session, arena: Arena) -> dict:
 
 
 @router.get("/storage")
-def storage(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def storage(c: ArenaCtx = Depends(G("diagnostics.view")), db: Session = Depends(get_db)):
     return storage_overview(db, c.arena)
 
 
 @router.get("/runtime")
-def runtime(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def runtime(c: ArenaCtx = Depends(G("diagnostics.view")), db: Session = Depends(get_db)):
     return runtime_overview(db, c.arena)
 
 
@@ -78,7 +77,7 @@ class PolicyIn(BaseModel):
 
 
 @router.put("/storage-policy")
-def set_policy(body: PolicyIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def set_policy(body: PolicyIn, c: ArenaCtx = Depends(G("policy.manage")), db: Session = Depends(get_db)):
     if body.warnPct >= body.criticalPct:
         raise HTTPException(422, "warnPct deve ser menor que criticalPct")
     c.arena.storage_warn_pct, c.arena.storage_critical_pct = body.warnPct, body.criticalPct
@@ -93,7 +92,7 @@ class CourtPolicyIn(BaseModel):
 
 
 @router.put("/courts/{court_id}/storage-policy")
-def set_court_policy(court_id: str, body: CourtPolicyIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def set_court_policy(court_id: str, body: CourtPolicyIn, c: ArenaCtx = Depends(G("policy.manage")), db: Session = Depends(get_db)):
     ct = db.get(Court, court_id)
     if not ct or ct.arena_id != c.arena.id:  # IDOR: quadra de outra arena é "inexistente"
         raise HTTPException(404, "quadra não encontrada")
@@ -111,7 +110,7 @@ class ProtectIn(BaseModel):
 
 
 @router.post("/videos/{video_id}/protection")
-def protect(video_id: str, body: ProtectIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def protect(video_id: str, body: ProtectIn, c: ArenaCtx = Depends(G("policy.manage")), db: Session = Depends(get_db)):
     v = db.get(Video, video_id)
     if not v or v.arena_id != c.arena.id or v.deleted_at is not None:
         raise HTTPException(404, "vídeo não encontrado")
@@ -122,7 +121,7 @@ def protect(video_id: str, body: ProtectIn, c: ArenaCtx = Depends(admin), db: Se
 
 
 @router.get("/retention/plan")
-def retention_plan(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def retention_plan(c: ArenaCtx = Depends(G("policy.manage")), db: Session = Depends(get_db)):
     """Dry-run. Não existe endpoint que remova arquivos reais nesta etapa."""
     return capacity.retention_plan(db, c.arena)
 
@@ -139,12 +138,12 @@ def _res_out(a: Arena) -> dict:
 
 
 @router.get("/agent-resources")
-def get_resources(c: ArenaCtx = Depends(staff)):
+def get_resources(c: ArenaCtx = Depends(G("diagnostics.view"))):
     return _res_out(c.arena)
 
 
 @router.put("/agent-resources")
-def set_resources(body: ResourcesIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def set_resources(body: ResourcesIn, c: ArenaCtx = Depends(G("policy.manage")), db: Session = Depends(get_db)):
     """Ajuste por arena de FFmpeg simultâneos, aceleração por hardware e prioridade. Só a PRÓPRIA arena (gestor)."""
     c.arena.agent_max_ffmpeg, c.arena.agent_hwaccel, c.arena.agent_render_nice = body.maxFfmpeg, body.hwaccel, body.renderNice
     audit.record(db, c.user.id, c.arena.id, "agent.resources", "arena", c.arena.id, body.model_dump())
@@ -186,7 +185,7 @@ def _central_alerts(db: Session, arena: Arena, agents: list[ArenaAgent], conn: s
 
 
 @router.get("/diagnostics")
-def diagnostics(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def diagnostics(c: ArenaCtx = Depends(G("diagnostics.view")), db: Session = Depends(get_db)):
     """Visão única para o gestor/operador DA PRÓPRIA arena: quadras, câmeras, botoeiras, buffer, fila, armazenamento, sincronização."""
     arena = c.arena
     now = utcnow()
@@ -228,7 +227,7 @@ def diagnostics(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
 
 
 @router.post("/courts/{court_id}/test-trigger", status_code=202)
-def test_trigger(court_id: str, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def test_trigger(court_id: str, c: ArenaCtx = Depends(G("capture.test")), db: Session = Depends(get_db)):
     """Pede ao agente um acionamento de TESTE (origem 'manual:painel-…'). Passa pelo mesmo caminho da botoeira: debounce não se
     aplica, cooldown sim. O comando só é entregue quando o agente buscar (heartbeat); nada é chamado de fora para dentro."""
     ct = db.get(Court, court_id)
@@ -252,7 +251,7 @@ def test_trigger(court_id: str, c: ArenaCtx = Depends(staff), db: Session = Depe
 
 
 @router.get("/commands/{cmd_id}")
-def command_status(cmd_id: str, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def command_status(cmd_id: str, c: ArenaCtx = Depends(G("capture.test")), db: Session = Depends(get_db)):
     cmd = db.get(AgentCommand, cmd_id)
     if not cmd or cmd.arena_id != c.arena.id:
         raise HTTPException(404, "comando não encontrado")

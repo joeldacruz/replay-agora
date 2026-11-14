@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import audit, capacity
+from .. import audit, capacity, replaypolicy
 from ..config import settings
 from ..db import get_db, utcnow
 from ..models import AgentCommand, ArenaAgent, Arena, Court, CourtRuntime, ExportJob, MusicTrack, ReplayEvent, Video
@@ -238,7 +238,11 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
         if it.deletedLocally and v.deleted_at is None:
             v.deleted_at = utcnow()
             audit.record(db, None, ag.arena_id, "video.deleted_local", "video", v.id, {"agent": ag.id})
-        return {"localId": it.localId, "status": "duplicate", "videoId": v.id, "code": v.code}
+        # reenvio idempotente: pode promover (arquivo agora disponível) mas nunca republica removido/moderado
+        replaypolicy.assign_music(db, v, db.get(Arena, ag.arena_id))
+        replaypolicy.auto_publish(db, v, db.get(Arena, ag.arena_id), ct)
+        return {"localId": it.localId, "status": "duplicate", "videoId": v.id, "code": v.code,
+                "published": v.visibility == "arena"}
     ev = db.query(ReplayEvent).filter_by(arena_id=ag.arena_id, idempotency_key=it.localId).first()
     at = _utc(it.capturedAt)
     if ev and ev.court_id != ct.id:
@@ -257,7 +261,8 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
               deleted_at=utcnow() if it.deletedLocally else None)
     db.add(v)
     db.flush()
-    return {"localId": it.localId, "status": "created", "videoId": v.id, "code": v.code}
+    replaypolicy.finalize_new_replay(db, v, ct)   # música da rotação + publicação automática (se válido)
+    return {"localId": it.localId, "status": "created", "videoId": v.id, "code": v.code, "published": v.visibility == "arena"}
 
 
 @router.post("/sync/replays")

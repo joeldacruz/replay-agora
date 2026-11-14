@@ -57,7 +57,7 @@ def test_register_reports_unknown_courts_and_is_audited_once(client, world, H):
     r = client.post(f"{BASE}/register", headers=ah(world), json={"nodeId": "node-A-0001", "courts": ["A_01", "B_01", "X"]}).json()
     assert r["unknownCourts"] == ["B_01", "X"]  # quadra de outra arena é desconhecida
     reg(client, world)
-    logs = client.get(f"/api/arena/{world.A.id}/audit", headers=H("a_admin_arena")).json()
+    logs = client.get(f"/api/arena/{world.A.id}/audit", headers=H("root")).json()
     assert sum(1 for x in logs if x["action"] == "agent.register") == 1
 
 
@@ -90,7 +90,7 @@ def test_sync_is_idempotent_and_metadata_only(client, world):
     assert [x["status"] for x in r2] == ["duplicate", "duplicate"] and [x["videoId"] for x in r2] == [x["videoId"] for x in r1]
     db = SessionLocal()
     vids = db.query(Video).filter(Video.local_id.like("sim-A-%")).all()
-    assert len(vids) == 2 and all(v.storage_location == "agent" and v.storage_key == "" and v.visibility == "private" for v in vids)
+    assert len(vids) == 2 and all(v.storage_location == "agent" and v.storage_key == "" and v.visibility == "arena" for v in vids)   # publicação automática
     assert {v.court_id for v in vids} == {world.A.c1, world.A.c2}
     db.close()
 
@@ -179,11 +179,11 @@ def test_heartbeat_updates_runtime_visible_only_to_own_arena(client, world, H):
                        {"courtKey": "B_01", "queueDepth": 9}]}
     r = client.post(f"{BASE}/heartbeat", headers=ah(world), json=body).json()
     assert r["configChanged"] is True and r["unknownCourts"] == ["B_01"] and r["epoch"] == settings.central_epoch
-    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()
+    rt = client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()
     assert rt["connection"] == "online" and rt["agents"][0]["system"]["cpuPct"] == 12.5 and rt["agents"][0]["pendingSync"] == 3
     c1 = next(c for c in rt["courts"] if c["courtId"] == world.A.c1)
     assert (c1["queueDepth"], c1["failed"], c1["state"]) == (2, 1, "degraded")
-    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_op_arena")).status_code == 200  # operador lê
+    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_op_arena")).status_code == 403  # operador não lê o runtime
     assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("b_admin_arena")).status_code == 404  # outra arena: IDOR
     assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_user")).status_code in (401, 403)
     cap = client.get("/api/platform/capacity", headers=H("root")).json()
@@ -193,7 +193,7 @@ def test_heartbeat_updates_runtime_visible_only_to_own_arena(client, world, H):
 
 def test_legacy_heartbeat_marks_online(client, world, H):
     client.post("/api/ingest/heartbeat", headers={"Authorization": f"Bearer {world.A.token}"}, json={"version": "1", "pendingSync": 0})
-    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("a_admin_arena")).json()["connection"] == "online"
+    assert client.get(f"/api/arena/{world.A.id}/runtime", headers=H("root")).json()["connection"] == "online"
 
 
 # ---------- redundância da central (fencing) ----------

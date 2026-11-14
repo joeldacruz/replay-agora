@@ -9,21 +9,24 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import userman, audit, capacity, delivery, policy, storage
+from .. import audit, capacity, delivery, policy, replaypolicy, storage
 from ..config import settings
 from ..db import get_db, new_id, utcnow
 from ..deps import ArenaCtx, ArenaGate
 from ..models import (AUDIO_MODES, POSITIONS, ROLES, Arena, ArenaAgent, AuditLog, Court, ExportJob, Membership,
                       MusicTrack, Plan, ReplayEvent, Sponsor, SponsorCampaign, User, Video)
 from ..agent_security import force_rotate, issue_credentials
-from ..userschemas import MemberChange, NewMember
 from ..uploads import ext_of, process_logo, to_temp, validate_music
 from .media import sign
 from .serializers import iso, video_out
 
 router = APIRouter(prefix="/api/arena/{arena_id}", tags=["arena"])
-staff = ArenaGate("arena_admin", "arena_operator")
-admin = ArenaGate("arena_admin")
+_GATES: dict = {}
+
+
+def G(perm: str) -> ArenaGate:
+    """Gate por operação (permissão), uma instância por permissão."""
+    return _GATES.setdefault(perm, ArenaGate(perm=perm))
 
 
 def storage_used(db: Session, arena_id: str) -> int:
@@ -41,8 +44,8 @@ def _arena_out(a: Arena, role: str) -> dict:
 
 
 @router.get("")
-def get_arena(c: ArenaCtx = Depends(staff)):
-    return _arena_out(c.arena, c.membership.role)
+def get_arena(c: ArenaCtx = Depends(G("arena.view"))):
+    return _arena_out(c.arena, c.role)
 
 
 class ArenaPatch(BaseModel):
@@ -57,7 +60,7 @@ class ArenaPatch(BaseModel):
 
 
 @router.patch("")
-def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(G("arena.info.edit")), db: Session = Depends(get_db)):
     a, ch = c.arena, body.model_dump(exclude_unset=True)
     if "allowedModes" in ch:
         if not ch["allowedModes"] or any(m not in AUDIO_MODES for m in ch["allowedModes"]):
@@ -82,12 +85,12 @@ def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(admin), db: Session = De
             setattr(a, attr, ch[k])
     audit.record(db, c.user.id, a.id, "arena.update", "arena", a.id, ch)
     db.commit()
-    return _arena_out(a, c.membership.role)
+    return _arena_out(a, c.role)
 
 
 # QR identifica a arena, mas nao concede acesso a replays privados.
 @router.get("/access-qr")
-def access_qr(request: Request, c: ArenaCtx = Depends(staff)):
+def access_qr(request: Request, c: ArenaCtx = Depends(G("qr.view"))):
     import io
     import os
     from urllib.parse import quote
@@ -109,7 +112,7 @@ def access_qr(request: Request, c: ArenaCtx = Depends(staff)):
 
 # ---------------- dashboard / saúde ----------------
 @router.get("/dashboard")
-def dashboard(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def dashboard(c: ArenaCtx = Depends(G("arena.view")), db: Session = Depends(get_db)):
     aid = c.arena.id
     since = utcnow() - timedelta(days=7)
     per_court = []
@@ -170,12 +173,12 @@ def _no_credentials(ref: str | None) -> None:
 
 
 @router.get("/courts")
-def list_courts(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def list_courts(c: ArenaCtx = Depends(G("arena.view")), db: Session = Depends(get_db)):
     return [_court_out(x) for x in db.query(Court).filter_by(arena_id=c.arena.id).order_by(Court.number)]
 
 
 @router.post("/courts", status_code=201)
-def create_court(body: CourtIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def create_court(body: CourtIn, c: ArenaCtx = Depends(G("court.manage")), db: Session = Depends(get_db)):
     _no_credentials(body.cameraRef)
     plan = db.get(Plan, c.arena.plan_id) if c.arena.plan_id else None
     count = db.query(func.count(Court.id)).filter_by(arena_id=c.arena.id).scalar()
@@ -201,7 +204,7 @@ def _court(db: Session, c: ArenaCtx, court_id: str) -> Court:
 
 
 @router.patch("/courts/{court_id}")
-def patch_court(court_id: str, body: CourtPatch, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def patch_court(court_id: str, body: CourtPatch, c: ArenaCtx = Depends(G("court.manage")), db: Session = Depends(get_db)):
     ct = _court(db, c, court_id)
     ch = body.model_dump(exclude_unset=True)
     _no_credentials(ch.get("cameraRef"))
@@ -218,7 +221,7 @@ def patch_court(court_id: str, body: CourtPatch, c: ArenaCtx = Depends(admin), d
 @router.get("/videos")
 def list_videos(courtId: str | None = None, visibility: str | None = Query(None, pattern=r"^(arena|private)$"),
                 limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0),
-                c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+                c: ArenaCtx = Depends(G("video.view")), db: Session = Depends(get_db)):
     q = db.query(Video, Court).join(Court, Court.id == Video.court_id).filter(Video.arena_id == c.arena.id, Video.deleted_at.is_(None))
     if courtId:
         q = q.filter(Video.court_id == courtId)
@@ -232,6 +235,7 @@ def list_videos(courtId: str | None = None, visibility: str | None = Query(None,
 class VideoPatch(BaseModel):
     visibility: str | None = Field(None, pattern=r"^(arena|private)$")
     title: str | None = Field(None, max_length=160)
+    reason: str | None = Field(None, max_length=200)
 
 
 def _video(db: Session, c: ArenaCtx, video_id: str) -> Video:
@@ -242,20 +246,23 @@ def _video(db: Session, c: ArenaCtx, video_id: str) -> Video:
 
 
 @router.patch("/videos/{video_id}")
-def patch_video(video_id: str, body: VideoPatch, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def patch_video(video_id: str, body: VideoPatch, c: ArenaCtx = Depends(G("video.moderate")), db: Session = Depends(get_db)):
+    """Somente o administrador global (sessão de plataforma + MFA). A publicação é automática; aqui só há moderação excepcional."""
     v = _video(db, c, video_id)
     ch = body.model_dump(exclude_unset=True)
     if "visibility" in ch:
-        v.visibility = ch["visibility"]
+        replaypolicy.moderate(db, v, "restore" if ch["visibility"] == "arena" else "hide", c.user.id, ch.get("reason") or "ajuste administrativo")
     if "title" in ch:
         v.title = ch["title"] or ""
-    audit.record(db, c.user.id, c.arena.id, "video.publish" if ch.get("visibility") == "arena" else "video.update", "video", v.id, ch)
+    audit.record(db, c.user.id, c.arena.id, "video.moderate" if "visibility" in ch else "video.update", "video", v.id, ch)
     db.commit()
     return video_out(v, db.get(Court, v.court_id), c.user.id, admin=True, avail=delivery.availability(db, v))
 
 
 @router.get("/videos/{video_id}/play")
-def staff_play(video_id: str, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def staff_play(video_id: str, c: ArenaCtx = Depends(G("video.play")), db: Session = Depends(get_db)):
+    if c.is_global:  # administrar metadados não exige ver conteúdo privado; acesso excepcional exigiria política/consentimento
+        raise HTTPException(403, "o administrador global gerencia os replays, mas não reproduz conteúdo privado por esta rota")
     v = _video(db, c, video_id)
     av = delivery.availability(db, v)
     if not av["playable"]:
@@ -263,25 +270,55 @@ def staff_play(video_id: str, c: ArenaCtx = Depends(staff), db: Session = Depend
     return {"url": sign("video", v.id, c.user.id), "expiresIn": settings.signed_url_ttl_s}
 
 
-@router.delete("/videos/{video_id}", status_code=204)
-def delete_video(video_id: str, confirm: bool = Query(False), c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    if not confirm:
-        raise HTTPException(422, "confirme a exclusão com ?confirm=true")
+@router.get("/videos/{video_id}/personalization")
+def video_personalization(video_id: str, c: ArenaCtx = Depends(G("video.view")), db: Session = Depends(get_db)):
+    """Personalização aplicada ao replay: música atribuída (persistida) e patrocinadores vigentes da arena para a quadra/data."""
     v = _video(db, c, video_id)
-    jobs = db.query(ExportJob).filter_by(video_id=v.id).all()
-    for j in jobs:
+    t = db.get(MusicTrack, v.music_id) if v.music_id else None
+    arena = db.get(Arena, v.arena_id)
+    ov = policy.select_overlays(db, v)
+    return {"videoId": v.id, "audioMode": arena.audio_default_mode, "hasOriginalAudio": v.has_audio,
+            "music": {"id": t.id, "title": t.title, "artist": t.artist, "usable": policy.track_usable(t)} if t and t.arena_id == v.arena_id else None,
+            "musicReason": v.music_reason, "sponsors": [{"name": o["name"], "position": o["position"]} for o in ov],
+            "publishedAt": iso(v.published_at), "moderationState": v.moderation_state}
+
+
+@router.get("/music/usage")
+def music_usage(c: ArenaCtx = Depends(G("music.view")), db: Session = Depends(get_db)):
+    """Histórico de músicas utilizadas nos replays da arena (faixas atribuídas, contagem e último uso)."""
+    rows = (db.query(MusicTrack, func.count(Video.id), func.max(Video.captured_at))
+            .outerjoin(Video, (Video.music_id == MusicTrack.id) & (Video.deleted_at.is_(None)))
+            .filter(MusicTrack.arena_id == c.arena.id).group_by(MusicTrack.id).order_by(MusicTrack.position, MusicTrack.title).all())
+    fall = db.query(func.count(Video.id)).filter(Video.arena_id == c.arena.id, Video.deleted_at.is_(None), Video.music_id.is_(None),
+                                               Video.music_reason.like("fallback_ambient%")).scalar()
+    return {"tracks": [{"id": t.id, "title": t.title, "artist": t.artist, "status": t.status, "usable": policy.track_usable(t),
+                        "replays": n, "lastUsedAt": iso(last)} for t, n, last in rows], "ambientFallbacks": fall}
+
+
+def remove_video(db: Session, v: Video, user_id: str, reason: str = "") -> None:
+    """Remoção administrativa de um replay: apaga derivados/exports centrais e marca como removido (nunca é republicado).
+    O MP4 ORIGINAL no computador da arena não é tocado por este código."""
+    for j in db.query(ExportJob).filter_by(video_id=v.id).all():
         storage.delete(j.output_key)
     storage.delete(v.storage_key)
     storage.delete(v.thumb_key)
     v.deleted_at = utcnow()
+    v.visibility, v.moderation_state, v.moderation_reason, v.moderated_by, v.moderated_at = "private", "blocked", (reason or "removido")[:200], user_id, utcnow()
     v.storage_key, v.thumb_key = "", None
-    audit.record(db, c.user.id, c.arena.id, "video.delete", "video", v.id, {"code": v.code})
+    audit.record(db, user_id, v.arena_id, "video.delete", "video", v.id, {"code": v.code, "reason": reason})
     db.query(ExportJob).filter_by(video_id=v.id).delete()
+
+
+@router.delete("/videos/{video_id}", status_code=204)
+def delete_video(video_id: str, confirm: bool = Query(False), c: ArenaCtx = Depends(G("video.delete")), db: Session = Depends(get_db)):
+    if not confirm:
+        raise HTTPException(422, "confirme a exclusão com ?confirm=true")
+    remove_video(db, _video(db, c, video_id), c.user.id)
     db.commit()
 
 
 @router.get("/exports")
-def export_history(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def export_history(c: ArenaCtx = Depends(G("video.view")), db: Session = Depends(get_db)):
     rows = (db.query(ExportJob, Video.code, User.name).join(Video, Video.id == ExportJob.video_id)
             .join(User, User.id == ExportJob.user_id).filter(ExportJob.arena_id == c.arena.id)
             .order_by(ExportJob.created_at.desc()).limit(100).all())
@@ -303,7 +340,7 @@ def _check_site(w: str | None) -> str | None:
 
 
 @router.get("/sponsors")
-def list_sponsors(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def list_sponsors(c: ArenaCtx = Depends(G("sponsor.view")), db: Session = Depends(get_db)):
     return [_sponsor_out(s, c.user.id) for s in db.query(Sponsor).filter_by(arena_id=c.arena.id).order_by(Sponsor.name)]
 
 
@@ -320,7 +357,7 @@ async def _save_logo(db, c: ArenaCtx, file: UploadFile, sponsor_id: str) -> tupl
 
 @router.post("/sponsors", status_code=201)
 async def create_sponsor(name: str = Form(..., min_length=2, max_length=120), website: str | None = Form(None, max_length=300),
-                         logo: UploadFile = File(...), c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+                         logo: UploadFile = File(...), c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     site = _check_site(website)
     sid = new_id()
     key, w, h = await _save_logo(db, c, logo, sid)
@@ -341,7 +378,7 @@ def _sponsor(db: Session, c: ArenaCtx, sponsor_id: str) -> Sponsor:
 @router.patch("/sponsors/{sponsor_id}")
 async def patch_sponsor(sponsor_id: str, name: str | None = Form(None, min_length=2, max_length=120),
                         website: str | None = Form(None, max_length=300), status: str | None = Form(None, pattern=r"^(active|inactive)$"),
-                        logo: UploadFile | None = File(None), c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+                        logo: UploadFile | None = File(None), c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     s = _sponsor(db, c, sponsor_id)
     ch = {}
     if name is not None:
@@ -361,7 +398,7 @@ async def patch_sponsor(sponsor_id: str, name: str | None = Form(None, min_lengt
 
 
 @router.delete("/sponsors/{sponsor_id}", status_code=204)
-def delete_sponsor(sponsor_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def delete_sponsor(sponsor_id: str, c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     s = _sponsor(db, c, sponsor_id)
     storage.delete(s.asset_key)
     audit.record(db, c.user.id, c.arena.id, "sponsor.delete", "sponsor", s.id, {"name": s.name})
@@ -419,14 +456,14 @@ def _validate_campaign(db: Session, c: ArenaCtx, sponsor_id: str | None, court_i
 
 
 @router.get("/campaigns")
-def list_campaigns(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def list_campaigns(c: ArenaCtx = Depends(G("sponsor.view")), db: Session = Depends(get_db)):
     rows = (db.query(SponsorCampaign, Sponsor).join(Sponsor, Sponsor.id == SponsorCampaign.sponsor_id)
             .filter(SponsorCampaign.arena_id == c.arena.id).order_by(SponsorCampaign.priority).all())
     return [_camp_out(k, s) for k, s in rows]
 
 
 @router.post("/campaigns", status_code=201)
-def create_campaign(body: CampaignIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def create_campaign(body: CampaignIn, c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     st, en = _norm_dt(body.startsOn), _norm_dt(body.endsOn)
     _validate_campaign(db, c, body.sponsorId, body.courtId, body.position, st, en)
     k = SponsorCampaign(arena_id=c.arena.id, sponsor_id=body.sponsorId, court_id=body.courtId, starts_on=st, ends_on=en,
@@ -447,7 +484,7 @@ def _campaign(db: Session, c: ArenaCtx, cid: str) -> SponsorCampaign:
 
 
 @router.patch("/campaigns/{campaign_id}")
-def patch_campaign(campaign_id: str, body: CampaignPatch, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def patch_campaign(campaign_id: str, body: CampaignPatch, c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     k = _campaign(db, c, campaign_id)
     ch = body.model_dump(exclude_unset=True)
     st = _norm_dt(ch["startsOn"]) if "startsOn" in ch else k.starts_on
@@ -464,7 +501,7 @@ def patch_campaign(campaign_id: str, body: CampaignPatch, c: ArenaCtx = Depends(
 
 
 @router.delete("/campaigns/{campaign_id}", status_code=204)
-def delete_campaign(campaign_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def delete_campaign(campaign_id: str, c: ArenaCtx = Depends(G("sponsor.manage")), db: Session = Depends(get_db)):
     k = _campaign(db, c, campaign_id)
     audit.record(db, c.user.id, c.arena.id, "campaign.delete", "campaign", k.id)
     db.delete(k)
@@ -480,7 +517,7 @@ class PreviewIn(BaseModel):
 
 
 @router.post("/campaigns/preview")
-def preview(body: PreviewIn, c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def preview(body: PreviewIn, c: ArenaCtx = Depends(G("preview")), db: Session = Depends(get_db)):
     """Prévia fiel (mesma geometria do FFmpeg) sobre um frame real do replay ou um quadro de exemplo."""
     from io import BytesIO
 
@@ -544,7 +581,7 @@ def _parse_date(raw: str | None) -> datetime | None:
 
 
 @router.get("/music")
-def list_music(c: ArenaCtx = Depends(staff), db: Session = Depends(get_db)):
+def list_music(c: ArenaCtx = Depends(G("music.view")), db: Session = Depends(get_db)):
     rows = db.query(MusicTrack).filter_by(arena_id=c.arena.id).order_by(MusicTrack.position, MusicTrack.title).all()
     return [_track_out(t, c.user.id) for t in rows]
 
@@ -554,7 +591,7 @@ async def create_music(title: str = Form(..., min_length=2, max_length=160), art
                        description: str = Form("", max_length=300), license_info: str = Form(..., min_length=10, max_length=2000),
                        rights_declared: bool = Form(False), license_valid_until: str | None = Form(None),
                        allowed_use: str = Form("export"), file: UploadFile = File(...),
-                       c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+                       c: ArenaCtx = Depends(G("music.manage")), db: Session = Depends(get_db)):
     uses, valid = _parse_use(allowed_use), _parse_date(license_valid_until)
     ext = ext_of(file.filename)
     tmp = await to_temp(file, settings.max_music_bytes, ext)
@@ -594,7 +631,7 @@ def _track(db: Session, c: ArenaCtx, tid: str) -> MusicTrack:
 
 
 @router.patch("/music/{track_id}")
-def patch_music(track_id: str, body: MusicPatch, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def patch_music(track_id: str, body: MusicPatch, c: ArenaCtx = Depends(G("music.manage")), db: Session = Depends(get_db)):
     t, ch = _track(db, c, track_id), body.model_dump(exclude_unset=True)
     if "allowedUse" in ch:
         t.allowed_use = _parse_use(ch["allowedUse"])
@@ -610,7 +647,7 @@ def patch_music(track_id: str, body: MusicPatch, c: ArenaCtx = Depends(admin), d
 
 
 @router.delete("/music/{track_id}", status_code=204)
-def delete_music(track_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def delete_music(track_id: str, c: ArenaCtx = Depends(G("music.manage")), db: Session = Depends(get_db)):
     t = _track(db, c, track_id)
     if c.arena.audio_default_music_id == t.id:
         c.arena.audio_default_music_id = None
@@ -621,102 +658,13 @@ def delete_music(track_id: str, c: ArenaCtx = Depends(admin), db: Session = Depe
 
 
 # ---------------- equipe ----------------
-def _actor(c: "ArenaCtx") -> userman.Actor:
-    return userman.Actor("arena", c.user, {c.arena.id})
-
-
-@router.get("/members")
-def list_members(q: str | None = Query(None, max_length=60), role: str | None = Query(None, max_length=20),
-                 status: str | None = Query(None, pattern=r"^(active|suspended|inactive)$"),
-                 c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    return userman.list_members(db, c.arena.id, q, role, status)
-
-
-def _member_or_404(db: Session, c: "ArenaCtx", member_id: str) -> Membership:
-    m = db.get(Membership, member_id)
-    if not m or m.arena_id != c.arena.id:
-        raise HTTPException(404, "membro não encontrado")
-    return m
-
-
-@router.post("/members", status_code=201)
-def add_member(body: NewMember, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    link = body.linkExisting
-    if body.name is None:  # fluxo legado: apenas vincular conta existente
-        if not db.query(User).filter_by(email=body.email.strip().lower()).first():
-            raise HTTPException(404, "usuário não cadastrado (informe o nome para cadastrar um novo usuário)")
-        link = True
-    r = userman.create_or_link(db, _actor(c), c.arena, name=body.name, email=body.email, role=body.role, phone=body.phone,
-                               active=body.active, auth_method=body.authMethod, link_existing=link, send_invite=body.sendInvite)
-    db.commit()
-    return {**userman.member_row(r["user"]), "created": r["created"]}
-
-
-@router.patch("/members/{member_id}")
-def patch_member(member_id: str, body: MemberChange, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    act = _actor(c)
-    ch = body.model_dump(exclude_unset=True)
-    userman.change_membership(db, act, c.arena, m, role=ch.get("role"), status=ch.get("status"))
-    if {"name", "phone", "authMethod"} & ch.keys():
-        userman.update_profile(db, act, db.get(User, m.user_id), name=ch.get("name"), phone=ch.get("phone", "__unset__"),
-                               auth_method=ch.get("authMethod"), arena_id=c.arena.id)
-    db.commit()
-    return userman.member_row(userman.user_out(db, db.get(User, m.user_id), c.arena.id, {c.arena.id}))
-
-
-@router.delete("/members/{member_id}", status_code=204)
-def remove_member(member_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    userman.remove_membership(db, _actor(c), c.arena, _member_or_404(db, c, member_id))
-    db.commit()
-
-
-@router.post("/members/{member_id}/invite")
-def resend_invite(member_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    u = db.get(User, m.user_id)
-    if not u.active or m.status != "active":
-        raise HTTPException(409, "conta ou vínculo inativo")
-    if u.password_set_at or u.last_login_at:
-        raise HTTPException(409, "este usuário já ativou o acesso; use 'Redefinir acesso'")
-    userman.issue_token(db, u, "invite", c.user.id, c.arena)
-    userman.log(db, _actor(c), c.arena.id, "invite_resend", u)
-    db.commit()
-    return {"sent": True}
-
-
-@router.post("/members/{member_id}/reset-access")
-def reset_access(member_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    u = db.get(User, m.user_id)
-    if u.global_role:
-        raise HTTPException(403, "conta de administrador global só é alterada no Portal")
-    if not u.active or m.status != "active":
-        raise HTTPException(409, "conta ou vínculo inativo")
-    userman.issue_token(db, u, "reset", c.user.id, c.arena)
-    userman.log(db, _actor(c), c.arena.id, "reset_access", u)
-    db.commit()
-    return {"sent": True}
-
-
-@router.get("/members/{member_id}/history")
-def member_history(member_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    m = _member_or_404(db, c, member_id)
-    return userman.history(db, user_id=m.user_id, scope={c.arena.id})
-
-
-@router.get("/members-history")
-def members_history(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
-    return userman.history(db, arena_id=c.arena.id)
-
-
 # ---------------- agentes locais / auditoria ----------------
 class AgentIn(BaseModel):
     label: str = Field(min_length=2, max_length=80)
 
 
 @router.get("/agents")
-def list_agents(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def list_agents(c: ArenaCtx = Depends(G("agent.manage")), db: Session = Depends(get_db)):
     rows = db.query(ArenaAgent).filter_by(arena_id=c.arena.id).order_by(ArenaAgent.created_at).all()
     return [{"id": a.id, "label": a.label, "active": a.active, "lastSeenAt": iso(a.last_used_at), "version": a.agent_version,
              "pendingSync": a.pending_sync, "connectionState": capacity.connection_state(a),
@@ -725,7 +673,7 @@ def list_agents(c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
 
 
 @router.post("/agents", status_code=201)
-def create_agent(body: AgentIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def create_agent(body: AgentIn, c: ArenaCtx = Depends(G("agent.manage")), db: Session = Depends(get_db)):
     ag = ArenaAgent(arena_id=c.arena.id, label=body.label, token_hash="pending")
     token, key = issue_credentials(ag)  # token + chave de assinatura, mostrados uma única vez
     db.add(ag)
@@ -745,7 +693,7 @@ def _agent(db: Session, c: ArenaCtx, agent_id: str) -> ArenaAgent:
 
 
 @router.post("/agents/{agent_id}/rotate")
-def force_rotate_agent(agent_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def force_rotate_agent(agent_id: str, c: ArenaCtx = Depends(G("agent.manage")), db: Session = Depends(get_db)):
     """Rotação forçada (suspeita de vazamento): a credencial antiga é invalidada IMEDIATAMENTE."""
     ag = _agent(db, c, agent_id)
     if not ag.active:
@@ -761,7 +709,7 @@ class CertIn(BaseModel):
 
 
 @router.put("/agents/{agent_id}/certificate")
-def set_certificate(agent_id: str, body: CertIn, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def set_certificate(agent_id: str, body: CertIn, c: ArenaCtx = Depends(G("agent.manage")), db: Session = Depends(get_db)):
     """Vincula o SHA-256 do certificado de cliente (mTLS, quando AGENT_MTLS_MODE != off). None remove."""
     ag = _agent(db, c, agent_id)
     ag.cert_fingerprint = body.fingerprint.replace(":", "").lower() if body.fingerprint else None
@@ -771,7 +719,7 @@ def set_certificate(agent_id: str, body: CertIn, c: ArenaCtx = Depends(admin), d
 
 
 @router.delete("/agents/{agent_id}", status_code=204)
-def revoke_agent(agent_id: str, c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def revoke_agent(agent_id: str, c: ArenaCtx = Depends(G("agent.manage")), db: Session = Depends(get_db)):
     ag = db.get(ArenaAgent, agent_id)
     if not ag or ag.arena_id != c.arena.id:
         raise HTTPException(404, "agente não encontrado")
@@ -781,7 +729,7 @@ def revoke_agent(agent_id: str, c: ArenaCtx = Depends(admin), db: Session = Depe
 
 
 @router.get("/audit")
-def audit_log(limit: int = Query(100, ge=1, le=300), c: ArenaCtx = Depends(admin), db: Session = Depends(get_db)):
+def audit_log(limit: int = Query(100, ge=1, le=300), c: ArenaCtx = Depends(G("audit.view")), db: Session = Depends(get_db)):
     rows = (db.query(AuditLog, User.name).outerjoin(User, User.id == AuditLog.actor_id)
             .filter(AuditLog.arena_id == c.arena.id).order_by(AuditLog.created_at.desc()).limit(limit).all())
     return [{"id": r.id, "actor": name, "action": r.action, "resourceType": r.resource_type, "resourceId": r.resource_id,

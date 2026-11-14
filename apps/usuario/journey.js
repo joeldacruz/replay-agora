@@ -189,18 +189,6 @@ export async function journeyAddArena(ctx) {
   arenaAccessScreen(ctx, arenas);
 }
 
-/** O link identifica a arena; não contém token nem libera replays privados. */
-async function shareArena(arena) {
-  const url = new URL(location.pathname + '#/arena/' + encodeURIComponent(arena.slug), location.origin).href;
-  const data = { title: arena.name + ' — Replay Agora', text: 'Acesse a arena ' + arena.name + ' no Replay Agora.', url };
-  if (typeof navigator.share === 'function') {
-    try { await navigator.share(data); return; }
-    catch (e) { if (e?.name === 'AbortError') return; }
-  }
-  try { await copy(url); toast('Link da arena copiado para compartilhar'); }
-  catch { toast('Não foi possível copiar o link da arena', true); }
-}
-
 // ------------------------------------------------------------------------------------------ arena: quadras · data · horário · replays
 function shareReplay(ctx, v) {
   return async () => {
@@ -334,7 +322,7 @@ export async function journeyArena(params, ctx) {
       el('section', { class: 'j-card j-arena-card', 'aria-label': 'Arena selecionada' },
         el('span', { class: 'j-arena-icon' }, arena.logoUrl ? el('img', { src: arena.logoUrl, alt: 'Logo de ' + arena.name, class: 'j-arena-logo', loading: 'lazy' }) : icon('stadium', { size: 40 })),
         el('span', { class: 'j-arena-id' }, el('strong', {}, arena.name), arena.location ? el('small', {}, arena.location) : el('small', {}, `${courts.length} ${courts.length === 1 ? 'quadra' : 'quadras'}`)),
-        el('button', { class: 'j-icon-btn j-share-arena', type: 'button', 'aria-label': 'Compartilhar arena', title: 'Compartilhar arena', onclick: () => shareArena(arena) }, icon('share', { size: 26 }))),
+        el('a', { class: 'j-icon-btn', href: '#/', 'aria-label': 'Ler outro QR Code ou trocar de arena' }, icon('qr', { size: 26 }))),
       el('div', { class: 'j-tiles' }, toReplays, toFilters),
       filters,
       el('section', { class: 'j-replays', id: 'j-replays' },
@@ -370,7 +358,7 @@ export async function journeyWatch(p, ctx) {
   downloadBtn.addEventListener('click', async () => {
     actionStatus.textContent = 'Preparando download…'; downloadBtn.disabled = true;
     try {
-      if (!v.sponsors?.length) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
+      if (!(v.derived ?? v.sponsors?.length)) { const l = await ctx.api.post(`/api/videos/${p.id}/download-link`); location.href = l.url; actionStatus.textContent = ''; }
       else {
         // Áudio, volume, música e patrocinadores são definidos SOMENTE pela Gestão da Arena; o atleta recebe o padrão da arena.
         const opts = await ctx.api.get(`/api/videos/${p.id}/export-options`);
@@ -407,7 +395,13 @@ export async function journeyWatch(p, ctx) {
     if (stale()) return;
     if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(el('video', { src: preview.url, controls: '', playsinline: '', poster: v.thumbnailUrl || null, 'aria-label': 'Replay' })); return; }
     if (preview.status === 'unavailable') { playerBox.replaceChildren(retry(preview.error)); return; }
-    if (preview.status === 'failed') { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.')); return; }
+    if (preview.status === 'failed') {
+      const msg = el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.');
+      if (!v.sponsors?.length) msg.append(el('button', { class: 'j-btn j-btn--primary j-btn--sm', type: 'button', onclick: async () => {   // versão com música falhou: som ambiente (nunca contorna patrocínio)
+        try { const o = await ctx.api.get(`/api/videos/${p.id}/play?fallback=ambient`); display({ status: 'ready', url: o.url }); } catch (e) { toast(e.message, true); }
+      } }, 'Assistir com o som ambiente'));
+      playerBox.replaceChildren(msg); return;
+    }
     playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Preparando seu replay… ' + (preview.progress || 0) + '%'));
     if (preview.id) timer = setTimeout(async () => {
       if (stale()) return;
@@ -416,7 +410,7 @@ export async function journeyWatch(p, ctx) {
   }
   playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Carregando…'));
   try {
-    if (v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
+    if (v.derived ?? v.sponsors?.length) display(await ctx.api.post(`/api/videos/${p.id}/preview`));
     else { const o = await ctx.api.get(`/api/videos/${p.id}/play`); display({ status: 'ready', url: o.url }); }
   } catch (e) { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, e.message || 'Não foi possível abrir o replay.')); }
 }

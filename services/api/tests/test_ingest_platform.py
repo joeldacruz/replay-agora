@@ -44,7 +44,7 @@ def test_two_simulated_courts_have_separate_events_and_videos(client, world, med
     db = SessionLocal()
     a, b = db.get(Video, v1["videoId"]), db.get(Video, v2["videoId"])
     assert (a.court_id, b.court_id) == (world.A.c1, world.A.c2) and a.arena_id == b.arena_id == world.A.id
-    assert a.event_id == e1["eventId"] and b.event_id == e2["eventId"] and a.visibility == "private"
+    assert a.event_id == e1["eventId"] and b.event_id == e2["eventId"] and a.visibility == "arena"   # válido: publicado automaticamente
     assert a.has_audio and a.thumb_key and a.duration > 2
     db.close()
     # arena B recebe na quadra de B; mesma chave de idempotência em arena diferente não colide
@@ -92,7 +92,7 @@ def test_suspended_arena_agent_blocked_and_heartbeat(client, world, H):
     assert client.post("/api/ingest/heartbeat", headers=agent(world), json={"version": "1.2.3", "pendingSync": 4}).status_code == 200
     d = client.get(f"/api/arena/{world.A.id}/dashboard", headers=H("a_admin_arena")).json()
     assert d["agentOnline"] is True
-    ag = client.get(f"/api/arena/{world.A.id}/agents", headers=H("a_admin_arena")).json()[0]
+    ag = client.get(f"/api/arena/{world.A.id}/agents", headers=H("root")).json()[0]
     assert ag["version"] == "1.2.3" and ag["pendingSync"] == 4
     root = H("root")
     assert client.patch(f"/api/platform/arenas/{world.A.id}", headers=root, json={"status": "suspended"}).status_code == 200
@@ -127,7 +127,7 @@ def test_platform_plan_limits_apply_to_arena(client, world, H):
     r = H("root")
     plan = client.post("/api/platform/plans", headers=r, json={"name": "Mini", "maxCourts": 2, "maxStorageMb": 100, "maxExportsPerUserDay": 1}).json()
     client.patch(f"/api/platform/arenas/{world.A.id}", headers=r, json={"planId": plan["id"]})
-    ha = H("a_admin_arena")
+    ha = H("root")
     assert client.post(f"/api/arena/{world.A.id}/courts", headers=ha, json={"label": "Q3", "localCourtKey": "A_03"}).status_code == 409
     uh = H("a_user")
     assert client.post(f"/api/videos/{world.A.pub}/exports", headers=uh, json={"audioMode": "mute"}).status_code == 200

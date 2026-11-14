@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import audit, userman
 from ..config import settings
 from ..db import get_db, utcnow
-from ..deps import ARENA_STAFF, Auth, active_arena_ids, user_auth, arena_auth, _platform_base
+from ..deps import ARENA_STAFF, Auth, active_arena_ids, self_auth, user_auth, arena_auth, _platform_base
 from ..models import Membership, User
 from ..ratelimit import RateLimiter
 from ..security import (DUMMY_HASH, create_access_token, decode_access_token, hash_password, new_totp_secret,
@@ -162,6 +162,11 @@ def platform_me(a: Auth = Depends(_platform_base), db: Session = Depends(get_db)
 def _me_full(db: Session, a: Auth, staff_only: bool = False) -> dict:
     from ..models import Arena
 
+    if a.arena_id:  # sessão de gestão emitida pelo Portal ao global_admin: uma única arena, papel 'global_admin', sem Membership
+        ar = db.get(Arena, a.arena_id)
+        ms = [{"arenaId": ar.id, "arenaSlug": ar.slug, "arenaName": ar.name, "role": "global_admin", "brandColor": ar.brand_color}] if ar and ar.status == "active" else []
+        return _me(db, a.user) | {"memberships": ms}
+
     q = (db.query(Membership, Arena).join(Arena, Arena.id == Membership.arena_id)
          .filter(Membership.user_id == a.user.id, Membership.status == "active", Arena.status == "active"))
     if staff_only:
@@ -197,3 +202,84 @@ def password_set(body: SetPassword, request: Request, db: Session = Depends(get_
     audit.record(db, u.id, None, f"userman.password_{t.kind}", "user", u.id, {"email": u.email})
     db.commit()
     return {"ok": True}
+
+
+# ---------- Portal -> Gestão: troca de ticket de uso único (60 s) por sessão da arena, sem token em URL ----------
+class PortalExchange(BaseModel):
+    ticket: str = Field(min_length=20, max_length=100)
+
+
+@router.post("/arena/portal-exchange")
+def arena_portal_exchange(body: PortalExchange, request: Request, db: Session = Depends(get_db)):
+    import hashlib
+    from ..models import Arena, OAuthFlow
+    limiter.check(f"pe:{request.client.host if request.client else '-'}")
+    f = db.query(OAuthFlow).filter_by(ticket_hash=hashlib.sha256(body.ticket.encode()).hexdigest(), intent="portal").first()
+    if not f or f.ticket_used_at is not None or not f.ticket_expires_at or f.ticket_expires_at < utcnow():
+        raise HTTPException(401, "ticket inválido ou expirado")
+    f.ticket_used_at = utcnow()           # uso único, mesmo em falha
+    db.commit()
+    u, ar = db.get(User, f.ticket_user_id), db.get(Arena, f.nonce)
+    if not u or not u.active or u.global_role != "global_admin" or not u.mfa_enabled or not ar or ar.status != "active":
+        raise HTTPException(403, "acesso global indisponível")
+    audit.record(db, u.id, ar.id, "platform.gestao_session", "arena", ar.id, {})
+    db.commit()
+    tok = create_access_token(u.id, "arena", mfa=True, extra={"gadm": True, "aid": ar.id}, ttl_s=3600)
+    return {"token": tok, "arenaId": ar.id}
+
+
+# ---------- conta do próprio usuário (qualquer app): dados pessoais e senha ----------
+def _account(db: Session, u: User) -> dict:
+    from ..models import UserIdentity
+    return {"id": u.id, "name": u.name, "email": u.email, "phone": u.phone, "authMethod": u.auth_method,
+            "passwordSet": u.password_hash not in (userman.UNUSABLE, ""),
+            "googleLinked": db.query(UserIdentity).filter_by(user_id=u.id, provider="google").first() is not None}
+
+
+@router.get("/account")
+def account_get(a: Auth = Depends(self_auth), db: Session = Depends(get_db)):
+    return _account(db, a.user)
+
+
+class AccountPatch(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=120)
+    phone: str | None = Field(None, max_length=30)
+
+
+@router.patch("/account")
+def account_patch(body: AccountPatch, a: Auth = Depends(self_auth), db: Session = Depends(get_db)):
+    """Só nome e telefone. E-mail, perfil, vínculos e situação NÃO são editáveis pelo próprio usuário (sem autoelevação)."""
+    ch = body.model_dump(exclude_unset=True)
+    if "name" in ch:
+        a.user.name = ch["name"].strip()
+    if "phone" in ch:
+        a.user.phone = userman.norm_phone(ch["phone"])
+    audit.record(db, a.user.id, None, "user.self_update", "user", a.user.id, {k: ("***" if k == "phone" else v) for k, v in ch.items()})
+    db.commit()
+    return _account(db, a.user)
+
+
+class PasswordChange(BaseModel):
+    current: str = Field(min_length=1, max_length=200)
+    new: str = Field(min_length=10, max_length=200)
+
+
+@router.post("/account/password")
+def account_password(body: PasswordChange, request: Request, a: Auth = Depends(self_auth), db: Session = Depends(get_db)):
+    """Troca de senha com a senha atual. Encerra TODAS as outras sessões e devolve um token novo para a sessão corrente."""
+    u = a.user
+    limiter.check(f"pwchg:{u.id}")
+    if u.password_hash in (userman.UNUSABLE, ""):
+        raise HTTPException(409, "esta conta ainda não tem senha: peça um link de definição de senha")
+    if not verify_password(body.current, u.password_hash):
+        raise HTTPException(403, "senha atual incorreta")
+    if body.new == body.current:
+        raise HTTPException(422, "a nova senha deve ser diferente da atual")
+    u.password_hash = hash_password(body.new)
+    u.password_set_at = utcnow()
+    u.tokens_valid_after = utcnow()
+    audit.record(db, u.id, None, "user.self_password", "user", u.id)
+    db.commit()
+    import time
+    time.sleep(0.002)          # garante iatm posterior ao corte de revogação
+    return {"token": create_access_token(u.id, a.app, mfa=a.mfa)}

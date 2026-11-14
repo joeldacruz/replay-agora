@@ -39,7 +39,7 @@ def pending(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Próxima configuração a aplicar (a mais nova; versões antigas não aplicadas já foram substituídas) + segredos + arquivos."""
     s = _server(db, ag)
     rc.sweep_stale(db, s)
-    rev = (db.query(ConfigRevision).filter(ConfigRevision.server_id == s.id, ConfigRevision.status.in_(("pendente", "enviado")))
+    rev = (db.query(ConfigRevision).filter(ConfigRevision.server_id == s.id, ConfigRevision.status == "pendente")
            .order_by(ConfigRevision.version.desc()).first())
     if not rev:
         db.commit()
@@ -108,6 +108,14 @@ def result(version: int, body: ResultIn, ag: ArenaAgent = Depends(bound), db: Se
         return {"ok": True, "status": r.status, "duplicate": True}
     if r.status in ("substituido", "revertido"):
         raise HTTPException(409, "esta versão foi substituída; o resultado foi ignorado")
+    if r.status not in ("enviado", "recebido", "aplicando"):
+        raise HTTPException(409, "revisão ainda não foi entregue ao agente")
+    if version < s.applied_version:
+        raise HTTPException(409, "resultado atrasado: versão mais recente já aplicada")
+    if body.status == "aplicado" and body.activeVersion != version:
+        raise HTTPException(422, "resultado aplicado exige activeVersion igual à versão confirmada")
+    if body.status == "falha" and body.activeVersion != s.applied_version:
+        raise HTTPException(409, "versão de rollback divergente do estado conhecido pela central")
     top = rc.latest(db, s.id)
     if body.activeVersion > (top.version if top else 0):
         raise HTTPException(422, "versão ativa informada não existe")

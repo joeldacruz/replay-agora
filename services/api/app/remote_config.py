@@ -136,7 +136,7 @@ def build_snapshot(db: Session, server: LocalServer) -> dict:
                .order_by(Camera.is_primary.desc(), Camera.created_at).first())
         camera = None
         if cam:
-            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
+            camera = {"id": cam.id, "name": cam.name, "host": cam.host, "macAddress": cam.mac_address, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
                       "username": cam.username, "hasSecret": bool(cam.secret_enc), "secretVersion": cam.secret_version,
                       "width": cam.width, "height": cam.height, "fps": cam.fps, "codec": cam.codec, "profile": cam.profile}
         frames = {"enabled": bool(cs.frames_enabled), "horizontal": None, "vertical": None}
@@ -320,10 +320,11 @@ def diff_snapshots(a: dict | None, b: dict) -> list[dict]:
 def sweep_stale(db: Session, server: LocalServer, now=None) -> None:
     """Revisão presa em 'enviado/recebido/aplicando' por muito tempo (agente caiu no meio) volta a 'pendente' para reentrega."""
     now = now or utcnow()
-    for r in db.query(ConfigRevision).filter(ConfigRevision.server_id == server.id, ConfigRevision.status.in_(("enviado", "recebido", "aplicando"))).all():
-        ref = r.received_at or r.sent_at
-        if ref and now - ref > timedelta(minutes=10):
-            r.status = "pendente"
+    # Nunca transformar entrega incerta em novo comando de aplicacao.
+    # O agente pode ter aplicado o snapshot e perdido apenas o ACK;
+    # reenviar sem consultar o estado local pode duplicar reinicios.
+    # A recuperacao devera usar reconciliacao explicita por versao.
+    return None
 
 
 # ------------------------------------------------------------------ saneamento de resultados do agente

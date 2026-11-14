@@ -36,7 +36,7 @@ def beat(c, key="A_01", **over):
 def test_panel_shows_courts_cameras_buffer_queue_alerts_and_sync_state(client, world, H):
     c = agent(client, world)
     beat(c)
-    r = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("a_admin_arena"))
+    r = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("root"))
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["connection"] == "online" and d["stale"] is False and d["agent"]["pendingSync"] == 0 and d["agent"]["system"]["cpuPct"] == 31.5
@@ -49,16 +49,16 @@ def test_panel_shows_courts_cameras_buffer_queue_alerts_and_sync_state(client, w
     assert {a["code"] for a in d["alerts"]} >= {"unrecoverable", "unsigned_agent"} and all("severity" in a for a in d["alerts"])
     assert d["storage"]["limitBytes"] and "forecast" in d["storage"]
     assert "S3nh4" not in r.text and "admin:" not in r.text                                       # nenhum segredo de câmera no painel
-    assert client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("a_op_arena")).status_code == 200      # operador lê
+    assert client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("a_op_arena")).status_code == 403      # operador não lê diagnósticos
 
 
 def test_panel_flags_offline_stale_storage_and_outdated_config(client, world, H):
-    d0 = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("a_admin_arena")).json()
+    d0 = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H("root")).json()
     assert d0["connection"] == "never_connected" and any(a["code"] == "agent_never_connected" and a["severity"] == "critical" for a in d0["alerts"])
     c = agent(client, world)
     beat(c, **{"configVersion": "antiga"})
     client.put(f"/api/platform/arenas/{world.A.id}/storage-limit", headers=H("root"), json={"storageLimitMb": 100})
-    h = H("a_admin_arena")
+    h = H("root")
     d = client.get(f"/api/arena/{world.A.id}/diagnostics", headers=h).json()
     assert any(a["code"].startswith("storage_") for a in d["alerts"]) or d["storage"]["level"] == "ok"
     db = SessionLocal()
@@ -81,7 +81,7 @@ def test_panel_is_isolated_between_arenas_and_closed_to_other_apps(client, world
     for who in ("a_user", "nobody"):
         assert client.get(f"/api/arena/{world.A.id}/diagnostics", headers=H(who)).status_code in (401, 403)
     assert client.get(f"/api/arena/{world.A.id}/diagnostics").status_code == 401
-    db_b = client.get(f"/api/arena/{world.B.id}/diagnostics", headers=H("b_admin_arena")).json()
+    db_b = client.get(f"/api/arena/{world.B.id}/diagnostics", headers=H("root")).json()
     assert all(x["diag"] is None for x in db_b["courts"])                                          # a telemetria de A não vaza para B
     assert client.get(f"/api/arena/{world.A.id}/diagnostics", headers={"Authorization": f"Bearer {world.A.token}"}).status_code == 401   # token de agente
 
@@ -99,9 +99,11 @@ def test_agent_cannot_push_diagnostics_for_courts_of_other_arenas(client, world,
 def test_manual_test_trigger_roundtrip_through_heartbeat(client, world, H):
     c = agent(client, world)
     beat(c)
-    ha, url = H("a_admin_arena"), f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger"
-    r = client.post(url, headers=H("a_op_arena"))
-    assert r.status_code == 202, r.text                                                          # operador no local também pode testar
+    ha, url = H("root"), f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger"
+    assert client.post(url, headers=H("a_op_arena")).status_code == 403                           # operador e gestor NÃO executam testes físicos
+    assert client.post(url, headers=H("a_admin_arena")).status_code == 403
+    r = client.post(url, headers=ha)
+    assert r.status_code == 202, r.text                                                          # somente o global_admin (plataforma + MFA)
     cid = r.json()["commandId"]
     assert client.post(url, headers=ha).status_code == 409                                       # um teste por vez na quadra
     assert client.get(f"/api/arena/{world.A.id}/commands/{cid}", headers=ha).json()["status"] == "pending"
@@ -121,12 +123,12 @@ def test_manual_test_trigger_roundtrip_through_heartbeat(client, world, H):
 
 
 def test_test_trigger_guards_offline_scope_expiry_and_other_agents(client, world, H):
-    ha = H("a_admin_arena")
+    ha = H("root")
     assert client.post(f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger", headers=ha).status_code == 503      # agente offline
     ca, cb = agent(client, world, "A"), agent(client, world, "B")
     beat(ca)
     assert client.post(f"/api/arena/{world.A.id}/courts/{world.B.c1}/test-trigger", headers=ha).status_code == 404       # quadra de outra arena
-    assert client.post(f"/api/arena/{world.B.id}/courts/{world.B.c1}/test-trigger", headers=ha).status_code == 404       # não é membro de B
+    assert client.post(f"/api/arena/{world.B.id}/courts/{world.B.c1}/test-trigger", headers=H("b_admin_arena")).status_code == 403       # gestor de B não executa testes físicos
     assert client.post(f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger", headers=H("a_user")).status_code in (401, 403)
     assert client.post(f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger").status_code == 401
     cid = client.post(f"/api/arena/{world.A.id}/courts/{world.A.c1}/test-trigger", headers=ha).json()["commandId"]
@@ -140,4 +142,4 @@ def test_test_trigger_guards_offline_scope_expiry_and_other_agents(client, world
     db.close()
     assert beat(ca)["commands"] == []                                                             # vencido: nunca é executado
     assert client.get(f"/api/arena/{world.A.id}/commands/{cid}", headers=ha).json()["status"] == "expired"
-    assert client.get(f"/api/arena/{world.B.id}/commands/{cid}", headers=H("b_admin_arena")).status_code == 404
+    assert client.get(f"/api/arena/{world.B.id}/commands/{cid}", headers=H("b_admin_arena")).status_code in (403, 404)
