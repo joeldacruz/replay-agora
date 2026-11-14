@@ -266,7 +266,7 @@ def preview(fid: str, body: PreviewIn, a: Auth = Depends(platform_auth), db: Ses
     src = {"testsrc": f"testsrc2=size={vw}x{vh}:rate=25", "pattern": f"smptebars=size={vw}x{vh}:rate=25"}[body.sample]
     out = Path(tempfile.mkdtemp(dir=storage.root())) / "preview.png"
     cmd = [settings.ffmpeg_bin, "-y", "-v", "error", "-nostdin", "-f", "lavfi", "-i", src, "-loop", "1", "-framerate", "25", "-i", str(storage.path_for(v.storage_key)),
-           "-filter_complex", ";".join(filters), "-map", "[vfr]", "-frames:v", "1", str(out)]
+           "-filter_complex_threads", "1", "-filter_complex", ";".join(filters), "-map", "[vfr]", "-frames:v", "1", str(out)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
         if r.returncode != 0 or not out.exists():
