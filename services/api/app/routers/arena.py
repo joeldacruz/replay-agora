@@ -42,7 +42,7 @@ def _arena_out(a: Arena, role: str) -> dict:
 
 @router.get("")
 def get_arena(c: ArenaCtx = Depends(staff)):
-    return _arena_out(c.arena, c.membership.role)
+    return _arena_out(c.arena, c.role)
 
 
 class ArenaPatch(BaseModel):
@@ -82,7 +82,7 @@ def patch_arena(body: ArenaPatch, c: ArenaCtx = Depends(admin), db: Session = De
             setattr(a, attr, ch[k])
     audit.record(db, c.user.id, a.id, "arena.update", "arena", a.id, ch)
     db.commit()
-    return _arena_out(a, c.membership.role)
+    return _arena_out(a, c.role)
 
 
 # QR identifica a arena, mas nao concede acesso a replays privados.

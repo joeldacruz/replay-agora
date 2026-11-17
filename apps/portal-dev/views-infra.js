@@ -106,12 +106,34 @@ async function devicesTab(ctx, s) {
   }) }, icon('scan', { size: 16 }), 'Detectar dispositivos'), el('a', { class: 'p-btn p-btn--outline', href: '#/botoeiras' }, 'Configurar botoeiras')), out);
 }
 
+function installGuide(s) {
+  const online = s.state === 'online' || s.state === 'delayed';
+  const stateText = online ? 'Agente identificado pela API. Confira a última comunicação antes de testar dispositivos.' :
+    s.state === 'never_connected' ? 'O servidor ainda não enviou seu primeiro heartbeat.' :
+    s.state === 'revoked' ? 'Identidade revogada. Não reutilize credenciais antigas.' :
+    'Agente sem comunicação recente. Verifique o serviço local e a conectividade HTTPS.';
+  return section('Instalação e vinculação do agente',
+    el('p', { class: 'p-lead' }, 'A descoberta de equipamentos acontece no computador da arena. O Portal DEV não acessa diretamente a rede local ou a porta USB.'),
+    el('div', { class: online ? 'p-banner p-banner--ok' : 'p-banner' }, stateText),
+    kv('Arena vinculada', s.arenaName), kv('Identificação do servidor', s.name),
+    kv('Última comunicação', fmt.ago(s.lastHeartbeatAt)),
+    el('ol', { class: 'p-list' },
+      el('li', {}, 'Instale a versão homologada do agente Replay Agora no Linux ou Windows da arena, sem parar o motor legado.'),
+      el('li', {}, 'Guarde o arquivo de credenciais baixado no cadastro em local restrito (modo 0600 no Linux). Nunca envie tokens por chat ou e-mail.'),
+      el('li', {}, 'Configure a URL HTTPS da API central e registre o agente. A comunicação deve ser iniciada somente pelo servidor local.'),
+      el('li', {}, 'Quando aparecer como conectado, use Testar comunicação e depois Detectar dispositivos.'),
+      el('li', {}, 'Identifique cada botoeira fisicamente antes de associá-la à quadra; descobrir uma porta USB não identifica qual botão foi pressionado.')
+    ),
+    el('p', { class: 'p-muted' }, 'O Portal ainda não instala nem atualiza o agente automaticamente. A instalação deve seguir o procedimento técnico homologado; nenhuma busca na rede é realizada antes de sua solicitação.')
+  );
+}
+
 function connTab(ctx, s) {
-  return el('div', { class: 'p-two' }, section('Identidade do agente', kv('Estado', s.status === 'revoked' ? 'revogado' : 'ativo'), kv('Computador (registrado)', s.hostname), kv('Versão', s.agentVersion), el('p', { class: 'p-muted' }, 'Token e chave de assinatura não podem ser consultados. Para reinstalar o agente, reemita as credenciais: o agente atual é desconectado imediatamente.'),
+  return el('div', { class: 'p-list' }, installGuide(s), el('div', { class: 'p-two' }, section('Identidade do agente', kv('Estado', s.status === 'revoked' ? 'revogado' : 'ativo'), kv('Computador (registrado)', s.hostname), kv('Versão', s.agentVersion), el('p', { class: 'p-muted' }, 'Token e chave de assinatura não podem ser consultados. Para reinstalar o agente, reemita as credenciais: o agente atual é desconectado imediatamente.'),
     el('div', { class: 'p-row' }, el('button', { class: 'p-btn p-btn--outline', type: 'button', onclick: ctx.guard(async () => { if (await confirmSheet('Reemitir credenciais? O agente atual deixa de funcionar e a nova instalação deverá usar as novas credenciais.', 'Reemitir')) { const r = await ctx.api.post(`${P}/servers/${s.id}/credentials`, {}); credentialsSheet(ctx, r.credentials, s.name, 'Novas credenciais'); } }) }, icon('key', { size: 16 }), 'Reemitir credenciais'),
       el('button', { class: 'p-btn p-btn--danger', type: 'button', disabled: s.status === 'revoked', onclick: ctx.guard(async () => { if (await confirmSheet(`Revogar o agente de "${s.name}"? Use em caso de comprometimento. O servidor perde o acesso imediatamente; configurações pendentes ficam retidas.`, 'Revogar agente')) { await ctx.api.post(`${P}/servers/${s.id}/revoke`, {}); toast('Agente revogado'); ctx.go(); } }) }, 'Revogar agente'))),
   section('Editar servidor', el('form', { class: 'p-form', style: 'padding:0', onsubmit: ctx.guard(async (e) => { e.preventDefault(); const o = Object.fromEntries(new FormData(e.currentTarget)); await ctx.api.patch(`${P}/servers/${s.id}`, o); toast('Servidor atualizado'); ctx.go(); }) },
-    fld('Nome', input('name', { value: s.name, required: true })), fld('Descrição', input('description', { value: s.description })), el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Salvar'))));
+    fld('Nome', input('name', { value: s.name, required: true })), fld('Descrição', input('description', { value: s.description })), el('button', { class: 'p-btn p-btn--primary', type: 'submit' }, 'Salvar')))));
 }
 
 // ================================================================================== Quadras

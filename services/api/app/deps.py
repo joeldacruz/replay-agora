@@ -73,14 +73,53 @@ def arena_context(db: Session, user: User, arena_id: str, roles: tuple[str, ...]
     return arena, m
 
 
+
+def arena_or_platform_auth(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Auth:
+    """Aceita gestao de arena ou plataforma com MFA valido."""
+    claims = decode_access_token(_bearer(authorization))
+
+    if not claims or claims.get("scope") != "full":
+        raise HTTPException(401, "sessao invalida ou expirada")
+
+    app = claims.get("app")
+
+    if app == "arena":
+        return arena_auth(authorization, db)
+
+    if app == "platform":
+        return platform_auth(
+            _platform_base(authorization, db)
+        )
+
+    raise HTTPException(
+        403, "credencial nao pertence a gestao"
+    )
+
+
 class ArenaGate:
     """Dependência para rotas /api/arena/{arena_id}/... com papéis permitidos."""
 
     def __init__(self, *roles: str):
         self.roles = roles or ARENA_STAFF
 
-    def __call__(self, arena_id: str, a: Auth = Depends(arena_auth), db: Session = Depends(get_db)):
-        arena, m = arena_context(db, a.user, arena_id, self.roles)
+    def __call__(self, arena_id: str, a: Auth = Depends(arena_or_platform_auth), db: Session = Depends(get_db)):
+        if a.app == "platform":
+            arena = db.get(Arena, arena_id)
+
+            if not arena:
+                raise HTTPException(404, "arena nao encontrada")
+
+            if arena.status != "active":
+                raise HTTPException(403, "arena suspensa")
+
+            return ArenaCtx(a.user, arena, None)
+
+        arena, m = arena_context(
+            db, a.user, arena_id, self.roles
+        )
         return ArenaCtx(a.user, arena, m)
 
 
@@ -88,7 +127,13 @@ class ArenaGate:
 class ArenaCtx:
     user: User
     arena: Arena
-    membership: Membership
+    membership: Membership | None
+
+    @property
+    def role(self) -> str:
+        if self.membership is None:
+            return "global_admin"
+        return self.membership.role
 
 
 def video_visible_to(db: Session, user: User, video) -> bool:
