@@ -1,0 +1,5 @@
+# Exemplo para replayagora-replay01.service
+# Os novos arquivos recebem permissao 640
+# quando criados pelo FFmpeg com modo base 666.
+[Service]
+UMask=0027

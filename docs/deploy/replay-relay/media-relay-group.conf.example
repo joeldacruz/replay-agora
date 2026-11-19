@@ -1,0 +1,5 @@
+# Exemplo para replayagora-media-relay.service
+# Ajustar o grupo conforme o usuario gravador da arena.
+# Preservar demais restricoes e capacidades do servico.
+[Service]
+SupplementaryGroups=replayadmin
