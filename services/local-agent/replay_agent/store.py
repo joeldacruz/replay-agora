@@ -52,6 +52,7 @@ class LocalStore:
         self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._lock = threading.RLock()
+        self.last_reconcile_unknown = 0
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
@@ -100,11 +101,16 @@ class LocalStore:
 
     def reconcile_files(self, limit: int = 2000) -> int:
         """Confere se os MP4 ainda existem. Muda `file_ok` e recoloca na fila de sincronização o que mudou,
-        para a central parar de oferecer (ou voltar a oferecer) o vídeo. Não apaga nada."""
-        import os
-        changed = 0
+        para a central parar de oferecer (ou voltar a oferecer) o vídeo. Não apaga nada.
+        Só ausência DEFINITIVA (ENOENT/ENOTDIR/não regular) rebaixa; erro de permissão/E-S não muda nada (conta em `last_reconcile_unknown`)."""
+        from .filecheck import probe_file
+        changed = self.last_reconcile_unknown = 0
         for r in self._x("SELECT local_id, path, file_ok FROM replays WHERE deleted=0 ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall():
-            ok = int(os.path.isfile(r["path"]))
+            pr = probe_file(r["path"])
+            if not pr.ok and not pr.definitive_absence:
+                self.last_reconcile_unknown += 1
+                continue
+            ok = int(pr.ok)
             if ok != r["file_ok"]:
                 self._x("UPDATE replays SET file_ok=?, sync_state=CASE WHEN sync_state='rejected' THEN sync_state ELSE 'pending' END WHERE local_id=?",
                         (ok, r["local_id"]))
