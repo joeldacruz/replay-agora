@@ -424,3 +424,32 @@ body.j-body {
   .j-arena-card { gap: 10px; padding: 12px; }
   .j-arena-id { padding-left: 8px; }
 }
+
+
+/* Player Replay Agora: vídeo pode girar, controles nunca giram. */
+.j-player:has(.j-custom-player) { display:block; aspect-ratio:auto; overflow:visible; background:transparent; box-shadow:none; }
+.j-custom-player { position:relative; width:100%; min-width:0; background:#000; color:#fff; border-radius:18px; overflow:hidden; box-shadow:0 9px 28px rgba(0,0,0,.25); }
+.j-video-viewport { position:relative; width:100%; aspect-ratio:16/9; overflow:hidden; background:#000; }
+.j-custom-player.is-portrait { width:min(100%, 440px, calc(77svh * 9 / 16)); margin-inline:auto; }
+.j-custom-player.is-portrait .j-video-viewport { aspect-ratio:9/16; }
+.j-video-viewport video { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:contain; transform:rotate(var(--j-rotate, 0deg)); background:#000; }
+.j-video-viewport.is-quarter-turned video { left:50%; top:50%; inset:auto; width:auto; height:auto; width:100%; height:100%; transform:translate(-50%,-50%) rotate(var(--j-rotate, 0deg)); }
+/* Para 90/270 graus, inverte as dimensões da caixa do elemento de vídeo antes de girá-la. */
+.j-video-viewport.is-quarter-turned { container-type:size; }
+@supports (width: 1cqh) {
+  .j-video-viewport.is-quarter-turned video { width:100cqh; height:100cqw; }
+}
+.j-video-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:#071632; }
+.j-video-button { flex:none; min-width:42px; min-height:42px; border:0; border-radius:10px; color:#fff; background:rgba(255,255,255,.12); font:700 16px/1 system-ui,sans-serif; cursor:pointer; }
+.j-video-button:focus-visible,.j-video-progress:focus-visible { outline:2px solid #ff7a66; outline-offset:2px; }
+.j-video-clock { flex:none; font-size:12px; font-variant-numeric:tabular-nums; }
+.j-video-progress { flex:1 1 110px; width:100%; min-width:68px; height:24px; accent-color:#ff7564; cursor:pointer; }
+.j-custom-player:fullscreen { display:flex; flex-direction:column; justify-content:center; border-radius:0; width:100%; height:100%; }
+.j-custom-player:fullscreen .j-video-viewport { flex:1; min-height:0; width:100%; aspect-ratio:auto; }
+.j-custom-player:fullscreen .j-video-controls { flex:none; }
+@media (max-width:430px) {
+  .j-video-controls { gap:6px; padding-inline:8px; }
+  .j-video-button { min-width:38px; min-height:40px; }
+  .j-video-clock { font-size:11px; }
+  .j-video-progress { flex-basis:100%; order:-1; }
+}
