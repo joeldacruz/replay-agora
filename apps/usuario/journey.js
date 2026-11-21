@@ -226,7 +226,7 @@ function replayCard(ctx, v) {
   });
   return el('article', { class: 'j-card j-replay' + (unavailable ? ' is-unavailable' : '') },
     el('a', { class: 'j-replay-link', href: '#/v/' + encodeURIComponent(v.id), 'aria-label': `Assistir replay ${v.courtLabel || ''} ${valid ? fmt.shortDateTime(d) : ''}` },
-      thumb({ url: v.thumbnailUrl, duration: fmt.dur(v.duration), unavailable }),
+      thumb({ url: v.thumbnailUrl, duration: fmt.dur(v.duration), unavailable, rotationDeg: v.rotationDeg }),
       el('span', { class: 'j-replay-info' },
         el('strong', {}, v.courtLabel || 'Quadra'),
         el('span', { class: 'j-meta' }, icon('calendar', { size: 18 }), valid ? fmt.shortDateTime(d) : 'Sem data'))),
