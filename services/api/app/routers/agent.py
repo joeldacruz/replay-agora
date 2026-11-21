@@ -324,6 +324,16 @@ async def sync_thumbnail(local_id: str, request: Request,
     content = b"".join(chunks)
     if len(content) < 64 or not content.startswith(b"\\xff\\xd8\\xff") or not content.endswith(b"\\xff\\xd9"):
         raise HTTPException(422, "JPEG inválido")
+    # Não confiar apenas nos marcadores de início/fim: rejeitar JPEG truncado ou forjado.
+    from io import BytesIO
+    from PIL import Image, UnidentifiedImageError
+    try:
+        with Image.open(BytesIO(content)) as im:
+            if im.format != "JPEG" or not (1 <= im.width <= 2048 and 1 <= im.height <= 2048):
+                raise HTTPException(422, "dimensões ou formato JPEG inválidos")
+            im.verify()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(422, "JPEG inválido") from None
     requested_hash = request.headers.get("x-thumb-sha256")
     if requested_hash != hashlib.sha256(content).hexdigest():
         raise HTTPException(422, "integridade da miniatura")
