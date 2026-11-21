@@ -22,13 +22,17 @@ def _headers(world, arena="A", node=None, jpeg=None):
 
 
 def _register(client, world, arena="A"):
-    h = _headers(world, arena)\n    h.pop("Content-Type", None)\n    r = client.post(f"{BASE}/register", headers=h,
+    h = _headers(world, arena)
+    h.pop("Content-Type", None)
+    r = client.post(f"{BASE}/register", headers=h,
                     json={"nodeId": f"node-{arena}-0001"})
     assert r.status_code == 200, r.text
 
 
 def _create_replay(client, world, arena="A", local_id="thumb-demo-001"):
-    h = _headers(world, arena)\n    h.pop("Content-Type", None)\n    r = client.post(f"{BASE}/sync/replays", headers=h,
+    h = _headers(world, arena)
+    h.pop("Content-Type", None)
+    r = client.post(f"{BASE}/sync/replays", headers=h,
                     json={"replays": [{
                         "localId": local_id, "courtKey": f"{arena}_01",
                         "capturedAt": "2026-11-20T12:00:00Z",
