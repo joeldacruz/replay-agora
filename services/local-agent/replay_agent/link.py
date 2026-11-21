@@ -4,6 +4,9 @@ Regras: (1) nunca envia arquivo; (2) falha da central NUNCA interrompe o motor; 
 (4) troca de epoch (failover) => revalida registro e reenvia a janela recente (a central deduplica por localId).
 """
 import json
+import hashlib
+
+from .thumbnail import extract_thumbnail, ThumbnailUnavailable
 import random
 import threading
 import time
@@ -105,6 +108,32 @@ class CentralLink:
             if not any(by_id.get(r["local_id"]) for r in rows):
                 return sent
 
+    def _sync_thumbnails(self) -> None:
+        """Melhor esforço: no máximo duas imagens por tick, sem afetar captura nem metadados."""
+        for replay in self.store.pending_thumbnails(2):
+            local_id = replay["local_id"]
+            try:
+                jpeg = extract_thumbnail(replay["path"])
+                headers = {
+                    "Content-Type": "image/jpeg",
+                    "X-Thumb-Sha256": hashlib.sha256(jpeg).hexdigest(),
+                }
+                from urllib.parse import quote
+                self.client.request_raw(
+                    "POST", "/sync/replays/" + quote(local_id, safe="") + "/thumbnail",
+                    content=jpeg, headers=headers, timeout=20
+                )
+                self.store.mark_thumbnail(local_id, "synced")
+            except ThumbnailUnavailable:
+                # Arquivo truncado/sem frame: não trava a fila nem a captura.
+                self.store.mark_thumbnail(local_id, "failed")
+            except (CentralUnavailable, CentralRejected):
+                # Central indisponível ou implantação parcial: retentar no próximo tick.
+                break
+            except Exception:
+                # Falha da miniatura jamais bloqueia sincronização ou motor da quadra.
+                break
+
     def tick(self) -> dict:
         """Um ciclo completo. Retorna o resultado; nunca propaga erro de rede."""
         try:
@@ -131,6 +160,7 @@ class CentralLink:
                 self._apply(self.client.call("GET", "/config"))
             self.store.set_central_protected(self.client.call("GET", "/sync/protection")["localIds"])
             synced = self._sync()
+            self._sync_thumbnails()
             self.state, self.last_error, self.fail_streak = "online", None, 0
             self.last_ok_at = time.time()
             return {"online": True, "synced": synced, "pending": self.store.count("pending")}
