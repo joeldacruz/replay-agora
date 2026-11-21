@@ -90,7 +90,14 @@ def test_sync_is_idempotent_and_metadata_only(client, world):
     assert [x["status"] for x in r2] == ["duplicate", "duplicate"] and [x["videoId"] for x in r2] == [x["videoId"] for x in r1]
     db = SessionLocal()
     vids = db.query(Video).filter(Video.local_id.like("sim-A-%")).all()
-    assert len(vids) == 2 and all(v.storage_location == "agent" and v.storage_key == "" and v.visibility == "private" for v in vids)
+    # Regra vigente da central 0013: arquivo disponível e não protegido é visível na arena.
+    assert len(vids) == 2 and all(
+        v.storage_location == "agent"
+        and v.storage_key == ""
+        and v.visibility == "arena"
+        and v.thumb_key is None
+        for v in vids
+    )
     assert {v.court_id for v in vids} == {world.A.c1, world.A.c2}
     db.close()
 
