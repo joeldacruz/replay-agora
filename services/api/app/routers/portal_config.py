@@ -3,6 +3,9 @@
 Princípios: senha de câmera é write-only (cifrada, nunca devolvida); nenhum endpoint executa shell nem aceita URL/caminho do
 sistema; toda referência cruzada (câmera↔quadra↔servidor↔moldura) é validada DENTRO da mesma arena; toda mutação gera auditoria.
 """
+
+from typing import Literal
+RotationAngle = Literal[0, 90, 180, 270]
 import json
 import re
 from datetime import timedelta
@@ -202,6 +205,8 @@ class CameraIn(BaseModel):
     fps: float | None = None
     codec: str = "h264"
     profile: str = Field("", max_length=40)
+    rotationDeg: RotationAngle = 0
+    allowPlayerRotation: bool = False
     active: bool = True
     isPrimary: bool = True
 
@@ -223,6 +228,8 @@ class CameraPatch(BaseModel):
     fps: float | None = None
     codec: str | None = None
     profile: str | None = Field(None, max_length=40)
+    rotationDeg: RotationAngle | None = None
+    allowPlayerRotation: bool | None = None
     active: bool | None = None
     isPrimary: bool | None = None
 
@@ -246,6 +253,8 @@ def camera_out(db: Session, c: Camera) -> dict:
             "name": c.name, "vendor": c.vendor, "model": c.model, "host": c.host, "rtspPort": c.rtsp_port, "transport": c.transport,
             "rtspPath": c.rtsp_path, "username": c.username, "hasSecret": bool(c.secret_enc), "secretVersion": c.secret_version,
             "width": c.width, "height": c.height, "fps": c.fps, "codec": c.codec, "profile": c.profile, "active": c.active, "isPrimary": c.is_primary,
+            "rotationDeg": c.rotation_deg,
+            "allowPlayerRotation": c.allow_player_rotation,
             "version": c.row_version, "lastTest": json.loads(c.last_test_json) if c.last_test_json else None, "updatedAt": iso(c.updated_at)}
 
 
@@ -279,9 +288,14 @@ def create_camera(body: CameraIn, a: Auth = Depends(platform_auth), db: Session 
                                    "transport": body.transport, "codec": body.codec, "fps": body.fps, "width": body.width, "height": body.height})
     cam = Camera(arena_id=body.arenaId, court_id=body.courtId, server_id=body.serverId, name=body.name.strip(), vendor=body.vendor, model=body.model,
                  host=f["host"], rtsp_port=body.rtspPort, transport=body.transport, rtsp_path=f["rtsp_path"], username=body.username,
-                 width=body.width, height=body.height, fps=body.fps, codec=body.codec, profile=body.profile, active=body.active, is_primary=body.isPrimary)
+                 width=body.width, height=body.height, fps=body.fps, codec=body.codec, profile=body.profile,
+                 rotation_deg=body.rotationDeg,
+                 allow_player_rotation=body.allowPlayerRotation,
+                 active=body.active, is_primary=body.isPrimary)
     if body.password:
         cam.secret_enc, cam.secret_version = secretbox.seal(rc.validate_password(body.password)), 1
+    if body.rotationDeg not in (0, 90, 180, 270):
+        raise HTTPException(422, "orientacao invalida")
     db.add(cam)
     db.flush()
     audit.record(db, a.user.id, cam.arena_id, "platform.camera_create", "camera", cam.id,
@@ -309,11 +323,15 @@ def patch_camera(cid: str, body: CameraPatch, a: Auth = Depends(platform_auth), 
         raise HTTPException(409, {"message": "A câmera foi alterada por outra pessoa. Recarregue antes de salvar.", "currentVersion": c.row_version})
     ch = body.model_dump(exclude_unset=True, exclude={"expectedVersion"})
     _check_refs(db, c.arena_id, ch.get("courtId"), ch.get("serverId"))
-    mapping = {"courtId": "court_id", "serverId": "server_id", "rtspPort": "rtsp_port", "rtspPath": "rtsp_path", "isPrimary": "is_primary"}
+    mapping = {"courtId": "court_id", "serverId": "server_id", "rtspPort": "rtsp_port", "rtspPath": "rtsp_path", "isPrimary": "is_primary",
+               "rotationDeg": "rotation_deg",
+               "allowPlayerRotation": "allow_player_rotation"}
     val = rc.validate_camera_fields({mapping.get(k, k): v for k, v in ch.items() if k in ("host", "rtspPort", "rtspPath", "username", "transport", "codec", "fps", "width", "height")})
     for k, v in ch.items():
         attr = mapping.get(k, k)
         setattr(c, attr, val.get(attr, v) if attr in val else v)
+    if c.rotation_deg not in (0, 90, 180, 270):
+        raise HTTPException(422, "orientacao invalida")
     c.row_version += 1
     c.updated_at = utcnow()
     audit.record(db, a.user.id, c.arena_id, "platform.camera_update", "camera", c.id, ch)

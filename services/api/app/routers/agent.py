@@ -207,6 +207,8 @@ def command_result(cmd_id: str, body: CmdResult, ag: ArenaAgent = Depends(bound)
 
 
 # ---------------- sincronização de metadados de replays ----------------
+from typing import Literal
+
 class ReplayIn(BaseModel):
     localId: str = Field(pattern=LOCAL_ID_RE)  # id estável gerado no computador da arena => chave de idempotência
     courtKey: str = Field(pattern=KEY_RE)
@@ -217,6 +219,7 @@ class ReplayIn(BaseModel):
     height: int = Field(0, ge=0, le=8192)
     hasAudio: bool = False
     videoCodec: str | None = Field(None, max_length=30)
+    rotationDeg: Literal[0, 90, 180, 270] = 0
     protected: bool = False
     deletedLocally: bool = False
     fileAvailable: bool = True  # o agente confirma que o MP4 existe em disco
@@ -250,8 +253,8 @@ def _apply(db: Session, ag: ArenaAgent, it: ReplayIn, ct: Court) -> dict:
         db.flush()
     ev.status = "completed"
     v = Video(arena_id=ag.arena_id, court_id=ct.id, event_id=ev.id, code=_code(db), storage_key="", thumb_key=None,
-              bytes=it.bytes, duration=it.durationS, width=it.width, height=it.height, video_codec=it.videoCodec,
-              title=it.title or "", has_audio=it.hasAudio, visibility="private", processing_status="ready", captured_at=at,
+              bytes=it.bytes, duration=it.durationS, width=it.width, height=it.height, video_codec=it.videoCodec, rotation_deg=it.rotationDeg,
+              title=it.title or "", has_audio=it.hasAudio, visibility=("arena" if (it.fileAvailable and not it.deletedLocally and not it.protected) else "private"), processing_status="ready", captured_at=at,
               storage_location="agent", local_id=it.localId, protected=it.protected,
               media_state="ok" if it.fileAvailable else "missing",
               deleted_at=utcnow() if it.deletedLocally else None)

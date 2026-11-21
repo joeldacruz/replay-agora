@@ -10,6 +10,7 @@ def video_out(v: Video, court: Court | None, user_id: str, admin: bool = False, 
     out = {
         "id": v.id, "code": v.code, "title": v.title or f"Replay {v.code}", "arenaId": v.arena_id,
         "courtId": v.court_id, "courtLabel": court.label if court else None,
+        "rotationDeg": v.rotation_deg,
         "capturedAt": iso(v.captured_at), "duration": round(v.duration, 1), "hasAudio": v.has_audio,
         "processingStatus": v.processing_status, "width": v.width, "height": v.height,
         "thumbnailUrl": sign("thumb", v.id, user_id) if v.thumb_key else None,

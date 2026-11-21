@@ -1,7 +1,7 @@
 // App do Jogador — bootstrap: sessão, roteamento e contexto compartilhado. Toda a interface está em journey.js / kit.js / journey.css.
 import { mount, createApi, createRouter, registerSW, toast, GOOGLE_ERR, googleReturnParams, googleExchange } from '/shared/ui.js';
-import { el, icon } from './kit.js';
-import { validSelection, journeyHome, journeyAddArena, journeyArena, journeyProfile, journeyWatch, journeyAuth, finishLogin } from './journey.js';
+import { el, icon } from './kit.js?v=20261120-89W';
+import { validSelection, journeyHome, journeyAddArena, journeyArena, journeyProfile, journeyWatch, journeyAuth, finishLogin } from './journey.js?v=20261120-89W';
 
 const root = document.getElementById('app');
 const api = createApi('ra_user_token', () => (location.hash = '#/login'));

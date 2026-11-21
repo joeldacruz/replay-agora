@@ -184,6 +184,18 @@ def claim(body: Claim, a: Auth = Depends(user_auth), db: Session = Depends(get_d
 def get_video(video_id: str, a: Auth = Depends(user_auth), db: Session = Depends(get_db)):
     v = _get_visible(db, a, video_id)
     out = video_out(v, db.get(Court, v.court_id), a.user.id, avail=delivery.availability(db, v))
+    # Permissao atual definida exclusivamente pelo Portal Dev.
+    from ..models import Camera
+    camera = (db.query(Camera)
+              .filter(Camera.arena_id == v.arena_id,
+                      Camera.court_id == v.court_id,
+                      Camera.active.is_(True))
+              .order_by(Camera.is_primary.desc(),
+                        Camera.created_at)
+              .first())
+    out["allowPlayerRotation"] = (
+        bool(camera.allow_player_rotation) if camera else False
+    )
     out["sponsors"] = [o["name"] for o in policy.select_overlays(db, v)]
     return out
 

@@ -424,3 +424,254 @@ body.j-body {
   .j-arena-card { gap: 10px; padding: 12px; }
   .j-arena-id { padding-left: 8px; }
 }
+
+
+/* Replay Agora - 75N.89A: player limpo e icones */
+.j-app--watch .j-watch-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.j-app--watch .j-watch-body .j-actions.j-icon-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(12px, 5vw, 26px);
+  max-width: none;
+}
+.j-app--watch .j-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 58px;
+  min-width: 58px;
+  padding: 0;
+  border: 1px solid #cfdaeb;
+  border-radius: 18px;
+  color: #092958;
+  background: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.j-app--watch .j-icon-action:disabled {
+  opacity: .4;
+  cursor: default;
+}
+.j-app--watch .j-icon-action:focus-visible {
+  outline: 3px solid #21bbec;
+  outline-offset: 3px;
+}
+.j-app--watch .j-watch-body > .j-status {
+  text-align: center;
+}
+
+
+/* 75N.89I - Player imersivo, sem moldura e sem patrocinadores */
+.j-app--watch {
+  padding-bottom: 0;
+  background: #050911;
+}
+.j-app--watch .j-nav {
+  display: none;
+}
+.j-app--watch .j-watch-body {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.j-app--watch .j-player {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: max(58svh, calc(100dvh - 185px));
+  min-height: 320px;
+  max-height: 100dvh;
+  aspect-ratio: auto;
+  border-radius: 0;
+  background: #000;
+  overflow: hidden;
+  box-shadow: none;
+}
+.j-app--watch .j-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.j-app--watch .j-actions.j-icon-actions {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  right: max(10px, env(safe-area-inset-right));
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.j-app--watch .j-icon-action {
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  min-height: 54px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(5, 9, 17, .76);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.35);
+}
+.j-app--watch .j-icon-action:focus-visible,
+.j-app--watch .j-watch-play-fallback:focus-visible {
+  outline: 3px solid #31c4f3;
+  outline-offset: 3px;
+}
+.j-app--watch .j-watch-play-fallback {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  color: #071b3a;
+  background: rgba(255,255,255,.95);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.j-app--watch .j-watch-body > .j-status {
+  margin: 0;
+  padding: 12px 16px;
+  text-align: center;
+  color: #fff;
+}
+@media (min-width: 900px) {
+  .j-app--watch .j-watch-body {
+    max-width: 1000px;
+    margin-inline: auto;
+  }
+}
+
+
+/* 75N.89J - Tela cheia real dentro do navegador */
+.j-app--watch .j-header,
+.j-app--watch .j-nav {
+  display: none !important;
+}
+.j-app--watch .j-watch-body {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  display: block !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
+  overflow: hidden !important;
+}
+.j-app--watch .j-player {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+.j-app--watch .j-player video {
+  position: absolute !important;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  transform: translate(-50%, -50%) rotate(var(--ra-rotation, 0deg));
+  transform-origin: center center;
+  background: #000;
+}
+.j-app--watch .j-player[data-rotated="yes"] video {
+  width: 100dvh !important;
+  height: 100vw !important;
+}
+.j-app--watch .j-actions.j-icon-actions {
+  position: absolute !important;
+  z-index: 10002 !important;
+  top: 50% !important;
+  right: max(10px, env(safe-area-inset-right)) !important;
+  left: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  width: auto !important;
+  height: auto !important;
+  transform: translateY(-50%) !important;
+}
+.j-app--watch .j-icon-action {
+  flex: 0 0 54px !important;
+  width: 54px !important;
+  height: 54px !important;
+  border-radius: 50% !important;
+}
+.j-app--watch .j-watch-overlay-back,
+.j-app--watch .j-watch-overlay-rotate {
+  position: absolute;
+  z-index: 10003;
+  top: max(12px, env(safe-area-inset-top));
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255,255,255,.65);
+  border-radius: 50%;
+  background: rgba(0,0,0,.65);
+  color: white;
+  font-size: 29px;
+  line-height: 1;
+  cursor: pointer;
+}
+.j-app--watch .j-watch-overlay-back {
+  left: max(12px, env(safe-area-inset-left));
+}
+.j-app--watch .j-watch-overlay-rotate {
+  right: max(12px, env(safe-area-inset-right));
+}
+.j-app--watch .j-watch-play-fallback {
+  z-index: 10004;
+}
+.j-app--watch .j-watch-body > .j-status {
+  position: absolute;
+  z-index: 10005;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 8%;
+  width: 84%;
+  pointer-events: none;
+}

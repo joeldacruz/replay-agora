@@ -185,12 +185,27 @@ export async function cameras(ctx) {
         el('div', { class: 'p-fields' }, fld('Usuário', input('username', { value: c?.username || '', autocomplete: 'off' })), fld(c?.hasSecret ? 'Nova senha (deixe em branco para manter)' : 'Senha', input('password', { type: 'password', autocomplete: 'new-password', placeholder: c?.hasSecret ? '••••••••  (credencial configurada)' : '' }), c?.hasSecret ? 'Uma credencial está configurada. Ela nunca é exibida.' : '')),
         el('div', { class: 'p-fields' }, fld('Transporte', select('transport', [['tcp', 'TCP (recomendado)'], ['udp', 'UDP']], c?.transport || 'tcp')), fld('Codec', select('codec', [['h264', 'H.264'], ['h265', 'H.265']], c?.codec || 'h264')), fld('FPS', input('fps', { type: 'number', min: 1, max: 120, step: 0.5, value: c?.fps || 25 }))),
         el('div', { class: 'p-fields' }, fld('Largura (px)', input('width', { type: 'number', value: c?.width || '' })), fld('Altura (px)', input('height', { type: 'number', value: c?.height || '' })), fld('Perfil de captura', input('profile', { value: c?.profile || '' }))),
-        check('active', 'Câmera ativa', c ? c.active : true), check('isPrimary', 'Câmera principal da quadra', c ? c.isPrimary : true)];
+        fld('Orientação padrão do vídeo',
+          select('rotationDeg', [
+            ['0', '0° — Normal'],
+            ['90', '90° — Direita'],
+            ['180', '180° — Invertido'],
+            ['270', '270° — Esquerda']
+          ], String(c?.rotationDeg ?? 0)),
+          'Definida pelo desenvolvedor. Aplicada automaticamente aos novos replays.'),
+        check('allowPlayerRotation',
+          'Permitir ao jogador girar o vídeo (ON/OFF)',
+          c ? Boolean(c.allowPlayerRotation) : false),
+        check('active', 'Câmera ativa', c ? c.active : true),
+        check('isPrimary', 'Câmera principal da quadra', c ? c.isPrimary : true)];
       prof.onchange = () => { const p = profiles.find((x) => x.id === prof.value); if (!p) return; const q = (n) => document.querySelector(`dialog [name=${n}]`); q('rtspPort').value = p.port; q('rtspPath').value = p.path; q('vendor').value = p.vendor; if (p.models.length && !q('model').value) q('model').value = p.models[0]; };
       return f;
     };
     const body = (o, c) => ({ name: o.name, courtId: o.courtId || null, serverId: o.serverId || null, vendor: o.vendor, model: o.model, host: o.host, rtspPort: +o.rtspPort, rtspPath: o.rtspPath, username: o.username,
-      transport: o.transport, codec: o.codec, fps: o.fps ? +o.fps : null, width: o.width ? +o.width : null, height: o.height ? +o.height : null, profile: o.profile, active: o.active === 'on', isPrimary: o.isPrimary === 'on' });
+      transport: o.transport, codec: o.codec, fps: o.fps ? +o.fps : null, width: o.width ? +o.width : null, height: o.height ? +o.height : null, profile: o.profile,
+      rotationDeg: Number(o.rotationDeg),
+      allowPlayerRotation: o.allowPlayerRotation === 'on',
+      active: o.active === 'on', isPrimary: o.isPrimary === 'on' });
     const add = () => sheet({ title: 'Nova câmera', wide: true, submit: 'Cadastrar', fields: form(), onSubmit: async (fd) => { const o = Object.fromEntries(fd); await ctx.api.post(`${P}/cameras`, { arenaId: S.arenaId, ...body(o), password: o.password || null }); toast('Câmera cadastrada'); ctx.go(); } });
     const edit = (c) => sheet({ title: 'Editar câmera', wide: true, fields: form(c), onSubmit: async (fd) => {
       const o = Object.fromEntries(fd); const r = await ctx.api.patch(`${P}/cameras/${c.id}`, { expectedVersion: c.version, ...body(o) });

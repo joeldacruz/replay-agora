@@ -1,7 +1,7 @@
 // Jornada do jogador:  QR/código → Arena → Quadra → Data → Horário → Replays → Assistir → Baixar/Compartilhar.
 // Usa somente endpoints autorizados do app do usuário. O QR apenas IDENTIFICA a arena (slug): não é token nem dá acesso a vídeos privados.
 import { toast, copy, googleEnabled, googleStart, googleIdentity, googleLinkStart, googleUnlink } from '/shared/ui.js';
-import { el, icon, brand, waves, qrArt, thumb, fmt } from './kit.js';
+import { el, icon, brand, waves, qrArt, thumb, fmt } from './kit.js?v=20261120-89W';
 
 const state = { arena: '', court: '', date: '', hour: '', showAll: false, filtersOpen: false };
 const resetFilters = () => Object.assign(state, { court: '', date: '', hour: '', showAll: false, filtersOpen: false });
@@ -224,14 +224,12 @@ function replayCard(ctx, v) {
     document.querySelectorAll('.j-menu:not([hidden])').forEach((m) => m !== menu && m.setAttribute('hidden', ''));
     const open = menu.hasAttribute('hidden'); menu.toggleAttribute('hidden', !open); more.setAttribute('aria-expanded', String(open));
   });
-  const code = v.title && !/^Replay /.test(v.title) ? v.title : v.code;
   return el('article', { class: 'j-card j-replay' + (unavailable ? ' is-unavailable' : '') },
     el('a', { class: 'j-replay-link', href: '#/v/' + encodeURIComponent(v.id), 'aria-label': `Assistir replay ${v.courtLabel || ''} ${valid ? fmt.shortDateTime(d) : ''}` },
       thumb({ url: v.thumbnailUrl, duration: fmt.dur(v.duration), unavailable }),
       el('span', { class: 'j-replay-info' },
         el('strong', {}, v.courtLabel || 'Quadra'),
-        el('span', { class: 'j-meta' }, icon('calendar', { size: 18 }), valid ? fmt.shortDateTime(d) : 'Sem data'),
-        code ? el('span', { class: 'j-meta' }, icon('ticket', { size: 18 }), code) : '')),
+        el('span', { class: 'j-meta' }, icon('calendar', { size: 18 }), valid ? fmt.shortDateTime(d) : 'Sem data'))),
     el('div', { class: 'j-replay-actions' },
       el('a', { class: 'j-btn j-btn--outline-dark', href: '#/v/' + encodeURIComponent(v.id) }, icon('playCircle', { size: 20 }), 'Assistir'),
       el('button', { class: 'j-btn j-btn--outline-dark', type: 'button', onclick: shareReplay(ctx, v) }, icon('share', { size: 20 }), 'Compartilhar')),
@@ -320,10 +318,41 @@ export async function journeyArena(params, ctx) {
 
   // --- atalhos
   const toFilters = el('button', { class: 'j-tile', type: 'button', 'aria-expanded': String(state.filtersOpen), 'aria-controls': 'j-filters' }, icon('court', { size: 30 }), el('span', {}, 'Quadras'));
+  // Preseleciona hoje apenas ao abrir os filtros sem data definida.
+  function todayForArena() {
+    const zone = arena.timezone || 'America/Sao_Paulo';
+    let parts;
+    try {
+      parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(new Date());
+    } catch (_) {
+      parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(new Date());
+    }
+    const part = (type) => parts.find((p) => p.type === type)?.value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  }
+
   toFilters.addEventListener('click', () => {
     state.filtersOpen = filters.hasAttribute('hidden');
-    filters.toggleAttribute('hidden', !state.filtersOpen); toFilters.setAttribute('aria-expanded', String(state.filtersOpen));
-    if (state.filtersOpen) filters.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    if (state.filtersOpen && !state.date) {
+      state.date = todayForArena();
+      date.value = state.date;
+      state.showAll = false;
+      refresh();
+    }
+
+    filters.toggleAttribute('hidden', !state.filtersOpen);
+    toFilters.setAttribute('aria-expanded', String(state.filtersOpen));
+
+    if (state.filtersOpen) {
+      filters.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   });
   const toReplays = el('button', { class: 'j-tile j-tile--primary', type: 'button' }, icon('play', { size: 30 }), el('span', {}, 'Replays'));
   toReplays.addEventListener('click', () => { document.getElementById('j-replays')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -353,7 +382,13 @@ export async function journeyWatch(p, ctx) {
   const actionStatus = el('p', { class: 'j-status', role: 'status', 'aria-live': 'polite' });
   const unavailable = v.playable === false && v.processingStatus === 'ready';
   const d = new Date(v.capturedAt); const valid = !Number.isNaN(d.getTime());
-  const downloadBtn = el('button', { class: 'j-btn j-btn--primary', type: 'button', disabled: unavailable }, icon('download', { size: 24 }), 'Baixar');
+  const downloadBtn = el('button', {
+    class: 'j-icon-action',
+    type: 'button',
+    disabled: unavailable,
+    'aria-label': 'Baixar replay',
+    title: 'Baixar replay'
+  }, icon('download', { size: 26 }));
 
   async function waitDownload(jobId) {
     const start = location.hash;
@@ -381,20 +416,96 @@ export async function journeyWatch(p, ctx) {
     } catch (e) { actionStatus.textContent = 'Download indisponível: ' + e.message; } finally { downloadBtn.disabled = unavailable; }
   });
 
+  const soundBtn = el('button', {
+    class: 'j-icon-action',
+    type: 'button',
+    'aria-label': 'Ativar som',
+    title: 'Ativar som',
+    'aria-pressed': 'false',
+    disabled: true
+  }, icon('volumeOff', { size: 26 }));
+
+  function updateSound(video) {
+    const audible = !video.muted;
+    soundBtn.replaceChildren(
+      icon(audible ? 'volumeOn' : 'volumeOff', { size: 26 })
+    );
+    soundBtn.setAttribute(
+      'aria-label', audible ? 'Desativar som' : 'Ativar som'
+    );
+    soundBtn.title = audible ? 'Desativar som' : 'Ativar som';
+    soundBtn.setAttribute('aria-pressed', String(audible));
+  }
+
+  soundBtn.addEventListener('click', () => {
+    const video = playerBox.querySelector('video');
+    if (!video) return;
+    video.muted = !video.muted;
+    updateSound(video);
+  });
+
   root.append(
     header({ title: 'Assistir replay', back: ['#/replays', 'Voltar aos replays'] }),
     el('div', { class: 'j-watch-body' },
       playerBox,
-      el('section', { class: 'j-card j-pad j-info', 'aria-label': 'Informações do replay' },
-        el('h2', {}, v.courtLabel || 'Replay'),
-        el('div', { class: 'j-info-grid' },
-          el('span', { class: 'j-meta' }, icon('calendar', { size: 20 }), valid ? d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'),
-          el('span', { class: 'j-meta' }, icon('clock', { size: 20 }), valid ? fmt.time(d) : '—'),
-          v.duration ? el('span', { class: 'j-meta' }, icon('playCircle', { size: 20 }), fmt.dur(v.duration)) : '')),
-      el('div', { class: 'j-actions' }, downloadBtn,
-        el('button', { class: 'j-btn j-btn--outline-dark', type: 'button', onclick: shareReplay(ctx, v) }, icon('share', { size: 24 }), 'Compartilhar')),
+      el('div', { class: 'j-actions j-icon-actions',
+        role: 'group', 'aria-label': 'Acoes do replay' },
+        soundBtn,
+        downloadBtn,
+        el('button', {
+          class: 'j-icon-action',
+          type: 'button',
+          'aria-label': 'Compartilhar replay',
+          title: 'Compartilhar replay',
+          onclick: shareReplay(ctx, v)
+        }, icon('share', { size: 26 }))),
       actionStatus),
+
     bottomNav('/replays'));
+
+  // A orientacao e definida pelo desenvolvedor e recebida da API.
+  // O ajuste manual, quando permitido, vale apenas para esta reproducao.
+  const initialRotation = Number(v.rotationDeg ?? 0);
+  let angle = [0, 90, 180, 270].includes(initialRotation)
+    ? initialRotation : 0;
+
+  const canRotate = v.allowPlayerRotation === true;
+
+  function applyOrientation() {
+    playerBox.dataset.rotation = String(angle);
+    playerBox.dataset.rotated =
+      angle === 90 || angle === 270 ? 'yes' : 'no';
+    playerBox.style.setProperty('--ra-rotation', angle + 'deg');
+  }
+
+  const backOverlay = el('button', {
+    class: 'j-watch-overlay-back',
+    type: 'button',
+    'aria-label': 'Voltar aos replays',
+    title: 'Voltar aos replays',
+    onclick: () => { location.hash = '#/replays'; }
+  }, '←');
+
+  const watchBody = root.querySelector('.j-watch-body');
+  if (!watchBody) throw new Error('Area do player ausente');
+
+  watchBody.append(backOverlay);
+
+  if (canRotate) {
+    const rotateOverlay = el('button', {
+      class: 'j-watch-overlay-rotate',
+      type: 'button',
+      'aria-label': 'Girar video 90 graus',
+      title: 'Girar video 90 graus',
+      onclick: () => {
+        angle = (angle + 90) % 360;
+        applyOrientation();
+      }
+    }, '↻');
+    watchBody.append(rotateOverlay);
+  }
+
+  applyOrientation();
 
   const retry = (msg) => el('div', { class: 'j-player-msg', role: 'status' }, el('strong', {}, 'Vídeo indisponível no momento'), el('span', {}, msg || 'A arena está temporariamente offline.'),
     el('button', { class: 'j-btn j-btn--primary j-btn--sm', type: 'button', onclick: () => journeyWatch(p, ctx) }, 'Tentar novamente'));
@@ -405,7 +516,50 @@ export async function journeyWatch(p, ctx) {
   addEventListener('hashchange', () => clearTimeout(timer), { once: true });
   function display(preview) {
     if (stale()) return;
-    if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(el('video', { src: preview.url, controls: '', playsinline: '', poster: v.thumbnailUrl || null, 'aria-label': 'Replay' })); return; }
+    if (preview.status === 'ready' && preview.url) {
+      const video = el('video', {
+        src: preview.url,
+        controls: '',
+        autoplay: '',
+        playsinline: '',
+        preload: 'auto',
+        poster: v.thumbnailUrl || null,
+        'aria-label': 'Replay'
+      });
+      video.muted = false;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.addEventListener('volumechange', () => updateSound(video));
+      playerBox.replaceChildren(video);
+      soundBtn.disabled = false;
+      updateSound(video);
+      const playing = video.play();
+      if (playing && typeof playing.catch === 'function') {
+        playing.catch(() => {
+          if (!playerBox.contains(video) || location.hash !== start) return;
+          const retryPlay = el('button', {
+            class: 'j-watch-play-fallback',
+            type: 'button',
+            'aria-label': 'Tocar para reproduzir com som',
+            title: 'Reproduzir com som'
+          }, icon('play', { size: 32 }));
+
+          retryPlay.addEventListener('click', async () => {
+            video.muted = false;
+            try {
+              await video.play();
+              retryPlay.remove();
+            } catch (_) {
+              actionStatus.textContent =
+                'Toque no controle de reprodução do vídeo.';
+            }
+          });
+
+          playerBox.append(retryPlay);
+        });
+      }
+      return;
+    }
     if (preview.status === 'unavailable') { playerBox.replaceChildren(retry(preview.error)); return; }
     if (preview.status === 'failed') { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.')); return; }
     playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Preparando seu replay… ' + (preview.progress || 0) + '%'));

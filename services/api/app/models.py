@@ -257,6 +257,7 @@ class Video(Base):
     height: Mapped[int] = mapped_column(Integer, default=0)
     video_codec: Mapped[str | None] = mapped_column(String(30), nullable=True)
     has_audio: Mapped[bool] = mapped_column(Boolean, default=False)
+    rotation_deg: Mapped[int] = mapped_column(Integer, default=0)
     visibility: Mapped[str] = mapped_column(String(20), default="private")  # private|arena
     processing_status: Mapped[str] = mapped_column(String(20), default="ready")
     captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -448,6 +449,8 @@ class Camera(Base):
     codec: Mapped[str] = mapped_column(String(10), default="h264")
     profile: Mapped[str] = mapped_column(String(40), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    rotation_deg: Mapped[int] = mapped_column(Integer, default=0)
+    allow_player_rotation: Mapped[bool] = mapped_column(Boolean, default=False)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=True)
     row_version: Mapped[int] = mapped_column(Integer, default=1)  # controle otimista de concorrência
     last_test_json: Mapped[str | None] = mapped_column(Text, nullable=True)

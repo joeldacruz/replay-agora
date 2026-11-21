@@ -138,7 +138,10 @@ def build_snapshot(db: Session, server: LocalServer) -> dict:
         if cam:
             camera = {"id": cam.id, "name": cam.name, "host": cam.host, "port": cam.rtsp_port, "transport": cam.transport, "path": cam.rtsp_path,
                       "username": cam.username, "hasSecret": bool(cam.secret_enc), "secretVersion": cam.secret_version,
-                      "width": cam.width, "height": cam.height, "fps": cam.fps, "codec": cam.codec, "profile": cam.profile}
+                      "width": cam.width, "height": cam.height,
+                      "fps": cam.fps, "codec": cam.codec,
+                      "profile": cam.profile,
+                      "rotationDeg": cam.rotation_deg}
         frames = {"enabled": bool(cs.frames_enabled), "horizontal": None, "vertical": None}
         for orient, fid, out in (("horizontal", cs.frame_h_id, cs.out_h), ("vertical", cs.frame_v_id, cs.out_v)):
             fr = db.get(Frame, fid) if fid else None

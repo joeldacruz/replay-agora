@@ -3,7 +3,7 @@ import { createApi, createRouter, GOOGLE_ERR, googleEnabled, googleStart, google
 import { el, icon, brandLogo, toast, fld, input } from './kit.js';
 import { painel, planos, auditoria } from './views-core.js';
 import { arenas, arenaDetalhe, usuarios } from './views-usuarios.js';
-import { servidores, servidorDetalhe, quadras, cameras, botoeiras, replayCaptura, servicos, monitoramento } from './views-infra.js';
+import { servidores, servidorDetalhe, quadras, cameras, botoeiras, replayCaptura, servicos, monitoramento } from './views-infra.js?v=20261120-90J';
 import { molduras, molduraEditor } from './views-frames.js';
 
 const root = document.getElementById('app');

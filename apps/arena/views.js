@@ -36,7 +36,7 @@ function replayCard(ctx, v, refresh) {
     ctx.isAdmin() ? el('button', { class: 'g-btn g-btn--ghost g-btn--sm', type: 'button', 'aria-label': 'Excluir replay ' + v.code, onclick: guard(async () => {
       if (await confirmSheet(`Excluir definitivamente o replay ${v.code}? O arquivo e as exportações serão removidos.`, 'Excluir')) { await ctx.api.del(`${ctx.base()}/videos/${v.id}?confirm=true`); toast('Replay excluído'); refresh(); }
     }) }, icon('trash', { size: 18 })) : '') : '';
-  return el('article', { class: 'g-replay' },
+  return el('article', { class: 'g-replay', 'data-replay-id': v.id, 'data-replay-version': JSON.stringify([v.visibility, v.playable, v.processingStatus, v.hasAudio, v.thumbnailUrl, v.duration, v.capturedAt]) },
     el('div', { class: 'g-thumb' }, v.thumbnailUrl ? el('img', { src: v.thumbnailUrl, alt: '', loading: 'lazy' }) : '', v.duration ? el('span', { class: 'g-thumb-time' }, fmt.dur(v.duration)) : ''),
     el('div', { class: 'g-replay-info' }, el('strong', {}, v.courtLabel || 'Quadra'), el('small', {}, `${fmt.dt(v.capturedAt)} · ${v.code}`),
       el('div', { class: 'g-more', style: 'margin:0' }, published ? pill('Publicado', 'ok') : pill('Aguardando', 'warn'), v.hasAudio ? '' : pill('Sem áudio'), unavailable ? pill('Indisponível', 'bad') : '')),
@@ -46,7 +46,7 @@ function replayCard(ctx, v, refresh) {
 export async function replays(ctx) {
   const courts = await ctx.api.get(ctx.base() + '/courts');
   if (filters.court && !courts.some((c) => c.id === filters.court)) filters.court = '';
-  const PAGE = 20; let offset = 0; const list = el('div', { class: 'g-stack' }); const more = el('div', { style: 'text-align:center' });
+  const PAGE = 20; let offset = 0; const arenaBase = ctx.base(); let busy = false; const list = el('div', { class: 'g-stack' }); const more = el('div', { style: 'text-align:center' });
   const chips = el('div', { class: 'g-chips g-chips--3', role: 'radiogroup', 'aria-label': 'Situação' });
   const courtChips = el('div', { class: 'g-chips', role: 'radiogroup', 'aria-label': 'Quadra' });
   const chip = (label, on, fn) => el('button', { class: 'g-chip' + (on ? ' is-on' : ''), type: 'button', role: 'radio', 'aria-checked': String(on), onclick: fn }, label);
@@ -55,17 +55,119 @@ export async function replays(ctx) {
     courtChips.replaceChildren(chip('Todas as quadras', !filters.court, () => { filters.court = ''; drawChips(); load(true); }), ...courts.map((c) => chip(c.label, filters.court === c.id, () => { filters.court = c.id; drawChips(); load(true); })));
   };
   async function load(reset) {
-    if (reset) { offset = 0; list.replaceChildren(); }
-    const qs = new URLSearchParams({ limit: PAGE, offset }); if (filters.vis) qs.set('visibility', filters.vis); if (filters.court) qs.set('courtId', filters.court);
-    const rows = await ctx.api.get(`${ctx.base()}/videos?${qs}`);
-    list.append(...rows.map((v) => replayCard(ctx, v, () => load(true))));
-    offset += rows.length;
-    if (!list.children.length) list.append(el('div', { class: 'g-card g-empty' }, filters.vis || filters.court ? 'Nenhum replay com estes filtros.' : 'Nenhum replay ainda.'));
-    more.replaceChildren(rows.length === PAGE ? el('button', { class: 'g-btn g-btn--outline', type: 'button', onclick: guard(() => load(false)) }, 'Carregar mais') : '');
+    if (busy) return;
+    busy = true;
+    try {
+      const qs = new URLSearchParams({ limit: PAGE, offset: reset ? 0 : offset });
+      if (filters.vis) qs.set('visibility', filters.vis);
+      if (filters.court) qs.set('courtId', filters.court);
+      const rows = await ctx.api.get(`${ctx.base()}/videos?${qs}`);
+      if (!list.isConnected || ctx.base() !== arenaBase ||
+          location.hash.split('?')[0] !== '#/replays') return;
+      if (reset) { offset = 0; list.replaceChildren(); }
+      else if (!list.querySelector('article.g-replay')) list.replaceChildren();
+      list.append(...rows.map((v) => replayCard(ctx, v, () => load(true))));
+      offset += rows.length;
+      if (!list.children.length) list.append(el('div', { class: 'g-card g-empty' },
+        filters.vis || filters.court ? 'Nenhum replay com estes filtros.' : 'Nenhum replay ainda.'));
+      more.replaceChildren(rows.length === PAGE
+        ? el('button', { class: 'g-btn g-btn--outline', type: 'button',
+            onclick: guard(() => load(false)) }, 'Carregar mais') : '');
+    } finally {
+      busy = false;
+    }
   }
+  // Atualizacao incremental: nao recria a pagina e nao interrompe o player.
+  async function refreshLatest() {
+    if (busy || !list.isConnected || ctx.base() !== arenaBase ||
+        location.hash.split('?')[0] !== '#/replays' ||
+        document.visibilityState === 'hidden' ||
+        document.querySelector('dialog[open]')) return;
+
+    const selectedVis = filters.vis;
+    const selectedCourt = filters.court;
+    const qs = new URLSearchParams({ limit: PAGE, offset: 0 });
+    if (selectedVis) qs.set('visibility', selectedVis);
+    if (selectedCourt) qs.set('courtId', selectedCourt);
+
+    const rows = await ctx.api.get(`${arenaBase}/videos?${qs}`);
+
+    if (!list.isConnected || ctx.base() !== arenaBase ||
+        location.hash.split('?')[0] !== '#/replays' ||
+        selectedVis !== filters.vis || selectedCourt !== filters.court ||
+        document.querySelector('dialog[open]')) return;
+
+    const previous = Array.from(list.children).filter(
+      (node) => node.matches('article.g-replay')
+    );
+    const byId = new Map(previous.map(
+      (node) => [node.dataset.replayId, node]
+    ));
+
+    const head = rows.map((v) => {
+      const candidate = replayCard(ctx, v, () => load(true));
+      const existing = byId.get(String(v.id));
+      return existing &&
+        existing.dataset.replayVersion === candidate.dataset.replayVersion
+          ? existing : candidate;
+    });
+
+    const oldHead = previous.slice(0, PAGE);
+    const unchanged = oldHead.length === head.length &&
+      oldHead.every((node, index) => node === head[index]);
+
+    if (unchanged) return;
+
+    const ids = new Set(head.map((node) => node.dataset.replayId));
+    const extra = offset > PAGE
+      ? previous.filter((node) => !ids.has(node.dataset.replayId))
+      : [];
+
+    // Mantem cartoes adicionais quando "Carregar mais" ja foi utilizado.
+    const scroll = window.scrollY;
+    list.replaceChildren(...head, ...extra);
+    offset = head.length + extra.length;
+
+    if (!list.children.length) {
+      list.append(el('div', { class: 'g-card g-empty' },
+        'Nenhum replay com estes filtros.'));
+    }
+
+    more.replaceChildren(
+      rows.length === PAGE
+        ? el('button', {
+            class: 'g-btn g-btn--outline',
+            type: 'button',
+            onclick: guard(() => load(false))
+          }, 'Carregar mais')
+        : ''
+    );
+
+    if (window.scrollY !== scroll) window.scrollTo(0, scroll);
+  }
+
   drawChips();
   ctx.page({ title: 'Replays', content: [el('div', { class: 'g-card g-stack' }, chips, courts.length > 1 ? courtChips : ''), list, more] });
   await load(true);
+
+  // Um unico agendamento por instancia; encerra quando a tela e removida.
+  function scheduleRefresh() {
+    if (!list.isConnected || ctx.base() !== arenaBase ||
+        location.hash.split('?')[0] !== '#/replays') return;
+
+    setTimeout(async () => {
+      if (!list.isConnected || ctx.base() !== arenaBase ||
+          location.hash.split('?')[0] !== '#/replays') return;
+      try {
+        await refreshLatest();
+      } catch (_) {
+        // Falha temporaria: manter a lista exibida e tentar novamente.
+      } finally {
+        scheduleRefresh();
+      }
+    }, 10000);
+  }
+  scheduleRefresh();
 }
 
 // ------------------------------------------------------------------ Perfil
