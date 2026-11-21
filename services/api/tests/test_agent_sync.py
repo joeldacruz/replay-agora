@@ -102,6 +102,27 @@ def test_sync_is_idempotent_and_metadata_only(client, world):
     db.close()
 
 
+def test_sync_protected_or_missing_replay_remains_private(client, world):
+    """A visibilidade deve seguir a política já existente da central 0013."""
+    reg(client, world)
+    batch = [
+        item("sim-A-protect-001", protected=True),
+        item("sim-A-missing-001", fileAvailable=False),
+    ]
+    r = sync(client, world, batch)
+    assert r.status_code == 200, r.text
+    assert [x["status"] for x in r.json()["results"]] == ["created", "created"]
+    db = SessionLocal()
+    try:
+        vids = db.query(Video).filter(Video.local_id.in_(
+            ["sim-A-protect-001", "sim-A-missing-001"]
+        )).all()
+        assert len(vids) == 2
+        assert all(v.visibility == "private" for v in vids)
+    finally:
+        db.close()
+
+
 def test_concurrent_identical_syncs_create_no_duplicates(world):
     with TestClient(app) as c0:
         reg(c0, world)
