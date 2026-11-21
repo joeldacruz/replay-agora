@@ -322,7 +322,7 @@ async def sync_thumbnail(local_id: str, request: Request,
             raise HTTPException(413, "miniatura acima de 256 KiB")
         chunks.append(chunk)
     content = b"".join(chunks)
-    if len(content) < 64 or not content.startswith(b"\\xff\\xd8\\xff") or not content.endswith(b"\\xff\\xd9"):
+    if len(content) < 64 or not content.startswith(bytes.fromhex("FFD8FF")) or not content.endswith(bytes.fromhex("FFD9")):
         raise HTTPException(422, "JPEG inválido")
     # Não confiar apenas nos marcadores de início/fim: rejeitar JPEG truncado ou forjado.
     from io import BytesIO
