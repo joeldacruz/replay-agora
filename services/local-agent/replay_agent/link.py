@@ -1,6 +1,6 @@
 """Ligação com a central: registro, heartbeat, config, sincronização idempotente de metadados.
 
-Regras: (1) nunca envia arquivo; (2) falha da central NUNCA interrompe o motor; (3) reenvio é sempre seguro;
+Regras: (1) MP4 nunca é enviado; JPEG pequeno é enviado separadamente; (2) falha da central NUNCA interrompe o motor; (3) reenvio é sempre seguro;
 (4) troca de epoch (failover) => revalida registro e reenvia a janela recente (a central deduplica por localId).
 """
 import json
