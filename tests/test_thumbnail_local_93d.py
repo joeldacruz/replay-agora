@@ -2,7 +2,7 @@
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -19,7 +19,7 @@ class ThumbnailTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "replay.mp4"
             path.write_bytes(b"mock-original-mp4")
-            jpeg = b"\\xff\\xd8\\xff" + b"x" * 96 + b"\\xff\\xd9"
+            jpeg = bytes.fromhex("FFD8FF") + b"x" * 96 + bytes.fromhex("FFD9")
             with patch("replay_agent.thumbnail.subprocess.run",
                        return_value=SimpleNamespace(returncode=0, stdout=jpeg)) as runner:
                 self.assertEqual(extract_thumbnail(str(path)), jpeg)
@@ -41,7 +41,7 @@ class ThumbnailTests(unittest.TestCase):
             sqlite_path = Path(directory) / "local.sqlite"
             store = LocalStore(str(sqlite_path))
             replay_id = "abc123456"
-            store.add_replay(replay_id, "quadra01", datetime.utcnow(), str(mp4),
+            store.add_replay(replay_id, "quadra01", datetime.now(timezone.utc), str(mp4),
                              4, 3.5, 1920, 1080, False, "h264")
             self.assertEqual(len(store.pending_thumbnails()), 0)
             store.mark(replay_id, "synced")
