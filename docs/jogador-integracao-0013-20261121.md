@@ -1,37 +1,61 @@
-# Replay Agora — integração do Jogador sobre a central 0013
+# Replay Agora — integração do Jogador e miniaturas (21/11/2026)
 
-Base: `checkpoint/central-0013-20261121` (`0bbe8c2`). Nunca aplicar código da branch antiga sobre o servidor.
+**Base do PR #18:** `checkpoint/central-0013-20261121` (`0bbe8c2`). **Código implantado na central:** `dbe33eb` em 21/11, na branch local `deploy/jogador-75N93N-20261121-204443`. **Servidor central:** `cmtb-srv01`, API 127.0.0.1:**18082**.
 
-## 1. Player vertical (implementado no frontend desta branch)
+Este documento reflete a execução real: não confundir o HEAD atual de documentação com o commit implantado. Para panorama e critérios de aceite consultar [estado operacional](ESTADO-OPERACIONAL-20261121.md) e [pendências](PENDENCIAS-INTEGRACAO-ARENA-20261121.md).
 
-- Preserva fullscreen em tela do navegador, barra de ações lateral, áudio, compartilhamento, download e retry.
-- Substitui os controles nativos do `<video>` por play/pause, seek e tempo no contêiner `j-playback-bar`.
-- Rotação 0/90/180/270 incide apenas no `<video>`, nunca no seek nem no tempo.
-- Permissão `allowPlayerRotation` permanece sob controle do Portal Dev; não altera MP4.
-- CSS do app de usuário e versão do SW atualizadas.
+## 1. Player vertical — instalado na central, reprodução real pendente
 
-## 2. Miniatura real — implementação inicial na branch, homologação pendente
+- `apps/usuario/journey.js`: barra própria `j-playback-bar` com play/pause, seek e tempo; o transform de rotação 0/90/180/270 é aplicado **somente** ao elemento `video`.
+- `apps/usuario/journey.css`: fullscreen dentro do navegador, ações, controles horizontais, ajustes de safe-area.
+- `apps/usuario/kit.js`: miniatura assinada com fallback e rotação visual; `apps/usuario/sw.js`: cache `replay-usuario-v24`.
+- Regra `allowPlayerRotation` vinda da API/Portal Dev continua controlando a exibição do botão manual.
+- Sem modificações no MP4, nas câmeras, no backend da seleção de música ou no sistema de patrocínio.
+- Página de teste visual: `docs/test-player-rotation-93L.html`; página com MP4 local: `docs/test-player-mp4-local-93M.html`.
+- Evidência de visualização preliminar em Chrome desktop 0°/90°. **Não concluídos:** vídeo real no app, dispositivos móveis, rotação 180°/270°, Seek e áudio na sessão integrada.
 
-O card já consome `thumbnailUrl` assinado gerado por `video_out` quando `Video.thumb_key` existe; se ausente, mostra placeholder azul. O checkpoint central NÃO produz JPEG automaticamente para replays armazenados no agente da arena.
+## 2. Miniaturas — API central instalada; adaptador da arena não integrado
 
-Fluxo implementado nesta branch, sem deploy:
+### Contrato instalado
 
-1. O agente extrai JPEG pequeno via FFmpeg do MP4 local consolidado, sem alterar o MP4 nem a captura RTSP.
-2. Uma fila persistida em SQLite (coluna local `thumb_state`) separa a sincronização da miniatura da sincronização de metadados.
-3. O agente envia no máximo duas miniaturas por ciclo via `CentralClient.request_raw`, usando a autenticação existente.
-4. Endpoint `POST /api/agent/v1/sync/replays/{local_id}/thumbnail` valida vínculo da arena, tamanho de 256 KiB, JPEG e SHA-256. A central persiste a miniatura e preenche `Video.thumb_key`, sem nova migração central.
-5. O catálogo já consome `thumbnailUrl` assinado, e o App aplica a rotação visual por replay; na ausência de JPEG usa o placeholder azul.
-6. Testes unitários offline foram adicionados em `tests/test_thumbnail_local_93d.py`.
+`POST /api/agent/v1/sync/replays/{local_id}/thumbnail`:
 
-**Limitações atuais:** falta validar segurança em integração HTTP autenticada, comportamento real do FFmpeg no servidor da arena, capacidade e testes completos do player. A geração fica na versão futura do agente e não foi implantada na arena. Replays sem JPEG continuam acessíveis. O algoritmo de extração de JPEG mantém a orientação física do MP4 e a tela aplica a rotação pelo metadado; conferir isso com MP4 real (0/90/180/270).
+- Requer credencial de agente existente, vínculo de arena e `nodeId`, e assinatura HMAC/nonce caso a credencial use chave.
+- Rejeita replay de outra arena, `localId` inexistente, removido ou não armazenado no agente.
+- Recebe **JPEG**, máximo 256 KiB, confere hash `X-Thumb-Sha256`, marcadores `FFD8FF`/`FFD9` e decodificação/dimensões com Pillow.
+- Armazena em área privada da central, preenche `Video.thumb_key`, resposta `created`/ `exists` idempotente. Não exige nova migração SQL.
+- O jogador lê `thumbnailUrl` assinado pela API. `/media/{token}` revalida usuário e acesso a vídeo, com `Cache-Control: private, no-store`; replay sem imagem usa placeholder.
 
-## Homologação obrigatória antes de publicar
+### Implementação de referência x arena real
 
-- Provar correspondência exata dos hashes base 0013 no servidor; não modificar o servidor com git pull.
-- Verificar JS syntax e execução do player em Chrome Android, Safari iPhone e desktop, fullscreen, seek e áudio, 0/90/180/270.
-- Testar botão oculto com `allowPlayerRotation=false`, disponível com `true`.
-- Testar fallback sem JPEG, com thumbnail válida e com URL expirada.
-- Verificar Service Worker atualizado. Nunca cachear `/api`, `/media` ou vídeos privados.
-- API, agente, NGINX e Cloudflare fora do escopo deste patch de player.
+- `services/local-agent/replay_agent/thumbnail.py`: extração FFmpeg, quadro de 1 segundo, largura máxima 480, sem reencode do MP4.
+- `services/local-agent/replay_agent/store.py` e `link.py`: fila `thumb_state` e no máximo dois JPEGs por ciclo, tolerando falhas.
+- Esse `replay_agent` integra a base de **referência/simulador** do GitHub e **não** substitui os processos atuais da arena.
+- Na arena real a integração deverá ocorrer sobre `/opt/replayagora-stage/adaptador-incremental/auto_replays.py` e catálogo `/opt/replayagora-stage/media-only/catalogo.sqlite`, preservando o mapeamento real de `localId` e a comunicação por heartbeat/relay.
+- Os dois computadores continuam mantendo MP4s na arena; miniatura JPEG é o único arquivo novo que circula para a central.
 
-**Status:** frontend integrado ao checkpoint; miniaturas e teste E2E ainda pendentes. Sem deploy automático.
+## 3. Homologações efetivamente concluídas
+
+| Etapa | Resultado |
+| --- | --- |
+| 75N.93F-R1 | 3 testes unitários aprovados |
+| 75N.93G | FFmpeg produziu JPEG 480×270, 12.158 bytes, MP4 original inalterado |
+| 75N.93I-R2 | 3 testes HTTP de miniaturas aprovados em banco/storage isolados |
+| 75N.93J-R1 | 67 testes selecionados de regressão aprovados; 14 warnings Starlette/HTTPX |
+| 75N.93L | Teste visual preliminar de rotação no Chrome desktop, capturas 0°/90° |
+| 75N.93N-R1 | Backup SQLite, deploy central `dbe33eb`, reinício, health e endpoints HTTP OK |
+| 75N.93O | Instalação conferida: `j-playback-bar`, SW v24, `sync_thumbnail`, API HTTP 200 |
+
+**Backup:** `/home/joel/replayagora-backups/75N93N-20261121-204443/replay.db`. Sem migração nem mudanças relatadas em NGINX, Cloudflare e serviços das quadras nessa etapa.
+
+## 4. Aceite restante antes de finalizar PR #18
+
+- [ ] Rodar reprodução integrada de MP4 real com áudio, seek, fim do vídeo e controles em desktop/Android/iPhone, 0°/90°/180°/270°.
+- [ ] Verificar regra `allowPlayerRotation` ligada/desligada na tela integrada.
+- [ ] Registrar no GitHub o código sanitizado do `auto_replays.py` e compatibilidade com o catálogo real, sem segredos nem MP4s.
+- [ ] Implantar **somente** módulo auxiliar de thumbnails na arena, sem reiniciar buffer, replay, botoeira ou relay.
+- [ ] Verificar timer real de `replayagora-auto-replays`, fila e últimas execuções, sem assumir falha a partir de `inactive (dead)`.
+- [ ] Validar JPEG de replay antigo (backfill) e novos replays das duas quadras, autorização, expiração, placeholder e política de cache.
+- [ ] Rodar suite global e CI no HEAD final da branch antes de merge para destino definido.
+
+**Não fazer merge nem deploy automático da versão do agente de referência no servidor da arena.** O deploy na central ocorreu de forma controlada; a arena ainda demanda integração específica.
