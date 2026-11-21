@@ -67,3 +67,22 @@ git -C /srv/projetos/replay-agora-novo-stage/repo rev-parse --short HEAD
 ## Trabalhos explicitamente NÃO feitos por esta atualização documental
 
 Não houve acesso SSH aos dois servidores por meio da integração GitHub; não houve importação do `auto_replays.py` operacional, das units, nem de mídia/banco de arena. Não houve deploy, reinício, promoção de standby, alteração de DNS ou geração de miniaturas reais da arena.
+
+## Etapa 75N.93R — inventário de compatibilidade versionado
+
+Script: [`scripts/inventario-adaptador-arena-75N93R.py`](../scripts/inventario-adaptador-arena-75N93R.py). Não modifica serviços nem lê conteúdo dos arquivos de configuração. Produz somente estado restrito de unidades systemd, SHA256/tamanhos do código operacional, nomes de tabelas/colunas do catálogo SQLite e existência das pastas de replay. **Não imprime linhas de replays nem credenciais.** Revise a saída antes de compartilhá-la.
+
+No `replayagora-srv01`, o operador deve executar a **versão pinada do commit** `8bd3bbd9859171505a42a7196809b60d6196707e`, com cópia temporária, sem pipelines de execução remota e sem sudo:
+
+```bash
+URL="https://raw.githubusercontent.com/joeldacruz/replay-agora/8bd3bbd9859171505a42a7196809b60d6196707e/scripts/inventario-adaptador-arena-75N93R.py"
+TMP="$(mktemp /tmp/replay-inventario-75N93R-XXXXXX.py)"
+curl --fail --location --silent --show-error "$URL" -o "$TMP" || exit 1
+python3 "$TMP"
+rm -f "$TMP"
+```
+
+`sqlite3` será aberto com `mode=ro&immutable=1`, não criará novos arquivos nem bloqueará o catálogo. Em bancos com WAL ainda não checkpointado, o esquema visto por `immutable=1` pode estar desatualizado; para código posterior, confirmar em snapshot de leitura apropriado. Esse inventário **não é backup** e **não conta** replays sincronizados.
+
+A saída do inventário identifica o contrato real a ser adaptado. Não presumir que o serviço `auto-replays` inativo está com erro, nem copiar a implementação simulada do `services/local-agent` sobre o motor real.
+
