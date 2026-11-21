@@ -102,10 +102,12 @@ function thumbArt() {
     el('defs', {}, el('linearGradient', { id: 'jt-g', x1: '0', y1: '0', x2: '1', y2: '1' }, el('stop', { offset: '0', 'stop-color': '#0a5fae' }), el('stop', { offset: '1', 'stop-color': '#04235f' }))),
     el('rect', { width: '160', height: '100', fill: 'url(#jt-g)' }));
 }
-export function thumb({ url, duration, unavailable }) {
+export function thumb({ url, duration, unavailable, rotationDeg = 0 }) {
   const box = el('span', { class: 'j-thumb' });
   if (url) {
-    const img = el('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' });
+    const angle = [0, 90, 180, 270].includes(Number(rotationDeg)) ? Number(rotationDeg) : 0;
+    box.dataset.rotation = String(angle);
+    const img = el('img', { src: url, alt: 'Prévia do replay', loading: 'lazy', decoding: 'async' });
     img.addEventListener('error', () => img.replaceWith(thumbArt()), { once: true });   // miniatura inválida → placeholder padrão
     box.append(img);
   } else box.append(thumbArt());
