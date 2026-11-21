@@ -514,12 +514,47 @@ export async function journeyWatch(p, ctx) {
   let timer; const start = location.hash;
   const stale = () => { if (location.hash !== start) { clearTimeout(timer); return true; } return false; };
   addEventListener('hashchange', () => clearTimeout(timer), { once: true });
+  // Barra customizada fora do elemento <video>: permanece horizontal em 0/90/180/270 graus.
+  function playbackControls(video) {
+    const toggle = el('button', { type: 'button', class: 'j-playback-btn',
+      'aria-label': 'Pausar vídeo' }, '❚❚');
+    const seek = el('input', { type: 'range', class: 'j-playback-seek', min: '0', max: '1000',
+      value: '0', step: '1', 'aria-label': 'Posição do replay' });
+    const timeLabel = el('span', { class: 'j-playback-time' }, '0:00 / 0:00');
+    const format = (n) => Number.isFinite(n) && n >= 0
+      ? Math.floor(n / 60) + ':' + String(Math.floor(n % 60)).padStart(2, '0') : '0:00';
+    const sync = () => {
+      const duration = video.duration;
+      const ratio = Number.isFinite(duration) && duration > 0
+        ? Math.min(1, Math.max(0, video.currentTime / duration)) : 0;
+      seek.value = String(Math.round(ratio * 1000));
+      timeLabel.textContent = format(video.currentTime) + ' / ' + format(duration);
+      toggle.textContent = video.paused ? '▶' : '❚❚';
+      toggle.setAttribute('aria-label', video.paused ? 'Reproduzir vídeo' : 'Pausar vídeo');
+    };
+    toggle.addEventListener('click', () => {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    });
+    seek.addEventListener('input', () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      video.currentTime = video.duration * Number(seek.value) / 1000;
+      sync();
+    });
+    for (const event of ['loadedmetadata', 'durationchange', 'timeupdate', 'play', 'pause', 'ended']) {
+      video.addEventListener(event, sync);
+    }
+    const bar = el('div', { class: 'j-playback-bar', role: 'group',
+      'aria-label': 'Reprodução do vídeo' }, toggle, seek, timeLabel);
+    sync();
+    return bar;
+  }
+
   function display(preview) {
     if (stale()) return;
     if (preview.status === 'ready' && preview.url) {
       const video = el('video', {
         src: preview.url,
-        controls: '',
         autoplay: '',
         playsinline: '',
         preload: 'auto',
@@ -530,7 +565,7 @@ export async function journeyWatch(p, ctx) {
       video.autoplay = true;
       video.playsInline = true;
       video.addEventListener('volumechange', () => updateSound(video));
-      playerBox.replaceChildren(video);
+      playerBox.replaceChildren(video, playbackControls(video));
       soundBtn.disabled = false;
       updateSound(video);
       const playing = video.play();
