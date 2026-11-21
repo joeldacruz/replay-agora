@@ -2,6 +2,7 @@
 // Usa somente endpoints autorizados do app do usuário. O QR apenas IDENTIFICA a arena (slug): não é token nem dá acesso a vídeos privados.
 import { toast, copy, googleEnabled, googleStart, googleIdentity, googleLinkStart, googleUnlink } from '/shared/ui.js';
 import { el, icon, brand, waves, qrArt, thumb, fmt } from './kit.js';
+import { createReplayPlayer } from './player-controls.js';
 
 const state = { arena: '', court: '', date: '', hour: '', showAll: false, filtersOpen: false };
 const resetFilters = () => Object.assign(state, { court: '', date: '', hour: '', showAll: false, filtersOpen: false });
@@ -405,7 +406,7 @@ export async function journeyWatch(p, ctx) {
   addEventListener('hashchange', () => clearTimeout(timer), { once: true });
   function display(preview) {
     if (stale()) return;
-    if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(el('video', { src: preview.url, controls: '', playsinline: '', poster: v.thumbnailUrl || null, 'aria-label': 'Replay' })); return; }
+    if (preview.status === 'ready' && preview.url) { playerBox.replaceChildren(createReplayPlayer({ url: preview.url, poster: v.thumbnailUrl || null, rotationDeg: v.rotationDeg, allowPlayerRotation: v.allowPlayerRotation === true })); return; }
     if (preview.status === 'unavailable') { playerBox.replaceChildren(retry(preview.error)); return; }
     if (preview.status === 'failed') { playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, preview.error || 'Não foi possível preparar o replay.')); return; }
     playerBox.replaceChildren(el('div', { class: 'j-player-msg' }, 'Preparando seu replay… ' + (preview.progress || 0) + '%'));
