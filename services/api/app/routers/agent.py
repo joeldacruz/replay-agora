@@ -290,6 +290,62 @@ def sync_replays(body: SyncIn, ag: ArenaAgent = Depends(bound), db: Session = De
                                                                       arena.storage_warn_pct, arena.storage_critical_pct)}
 
 
+# JPEG pequeno enviado pela própria arena, após a criação do replay.
+# O MP4 permanece na arena e a URL de leitura continua sendo assinada em /media.
+@router.post("/sync/replays/{local_id}/thumbnail")
+async def sync_thumbnail(local_id: str, request: Request,
+                         ag: ArenaAgent = Depends(bound),
+                         db: Session = Depends(get_db)):
+    import os
+    import tempfile
+
+    if not __import__("re").fullmatch(LOCAL_ID_RE, local_id):
+        raise HTTPException(422, "identificador inválido")
+    v = (db.query(Video)
+         .filter(Video.arena_id == ag.arena_id, Video.local_id == local_id)
+         .first())
+    if not v or v.deleted_at is not None or v.storage_location != "agent":
+        raise HTTPException(404, "replay não encontrado nesta arena")
+    if v.thumb_key:
+        return {"ok": True, "status": "exists"}
+
+    # Limite de tamanho lido em streaming; nunca aceitar MP4 nem payloads arbitrários.
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "image/jpeg":
+        raise HTTPException(415, "somente image/jpeg")
+    size = request.headers.get("content-length")
+    if size and (not size.isdigit() or int(size) > 256 * 1024):
+        raise HTTPException(413, "miniatura acima de 256 KiB")
+    chunks, n = [], 0
+    async for chunk in request.stream():
+        n += len(chunk)
+        if n > 256 * 1024:
+            raise HTTPException(413, "miniatura acima de 256 KiB")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    if len(content) < 64 or not content.startswith(b"\\xff\\xd8\\xff") or not content.endswith(b"\\xff\\xd9"):
+        raise HTTPException(422, "JPEG inválido")
+    requested_hash = request.headers.get("x-thumb-sha256")
+    if requested_hash != hashlib.sha256(content).hexdigest():
+        raise HTTPException(422, "integridade da miniatura")
+
+    key = storage.make_key(ag.arena_id, "thumbs", v.id + ".jpg")
+    target = storage.ensure_parent(key)
+    fd, temp = tempfile.mkstemp(prefix=".thumb-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(temp, 0o600)
+        os.replace(temp, target)
+        v.thumb_key = key
+        db.commit()
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+    return {"ok": True, "status": "created"}
+
+
 @router.get("/sync/protection")
 def protection(limit: int = Query(5000, ge=1, le=20000), ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Lista autoritativa de replays protegidos (a central é a fonte). O agente nunca remove o que está aqui."""
