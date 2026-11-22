@@ -413,12 +413,13 @@ def test_full_journey_offline_capture_reconnect_then_playable(client, world, tmp
         ar.engine.stop()
 
 
-def test_legacy_manifest_reaches_player(rig):
+def test_legacy_manifest_reaches_player(rig, monkeypatch):
     """Da revisão v3 em disco ao MP4 e JPEG que chegam à API do jogador."""
     import json
     import shutil
     from datetime import timezone
 
+    from replay_agent import legacy_publish
     from replay_agent.legacy_publish import load_offline_remote, publish_sample
     from replay_agent.renderjobs import RenderError
     from replay_agent.thumbnail import extract_thumbnail
@@ -448,17 +449,26 @@ def test_legacy_manifest_reaches_player(rig):
     target = rig.tmp / "A" / "replays" / "bridge"
     base = {"source": source, "trigger_offset": 2.5, "captured_at": T0.replace(tzinfo=timezone.utc)}
 
-    def publish(key, enabled, **changes):
+    def publish(key, enabled, *, local_id=None, **changes):
         return publish_sample(remote, rig.agent.store, target, enabled,
-                              court_key=key, local_id=f"bridge-{key}", **(base | changes))
+                              court_key=key, local_id=local_id or f"bridge-{key}", **(base | changes))
 
     assert publish("A_01", {"A_02"}) is None
     with pytest.raises(RenderError, match="pós-roll"):
-        publish("A_02", {"A_02"}, trigger_offset=4.5)
+        publish("A_02", {"A_02"}, local_id="bridge-incomplete", trigger_offset=4.5)
+
+    with monkeypatch.context() as patch:
+        def interruption(*args, **kwargs):
+            raise OSError("interrupção após fixar o perfil")
+
+        patch.setattr(legacy_publish, "cut_window", interruption)
+        with pytest.raises(OSError, match="interrupção"):
+            publish("A_02", {"A_02"})
+
     assert rig.agent.store.get("bridge-A_02") is None
+    remote.state["activeVersion"] = 4
     vertical = publish("A_02", {"A_02"})
     assert vertical.name == "vertical.mp4"
-    remote.state["activeVersion"] = 4
     horizontal = publish("A_01", {"A_01", "A_02"})
     assert horizontal.name == "horizontal.mp4"
     assert publish("A_02", {"A_01", "A_02"}) == vertical
