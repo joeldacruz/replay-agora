@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 SCHEMA = """
@@ -41,10 +42,15 @@ class ThumbnailQueue:
         with self._connect() as db:
             db.executescript(SCHEMA)
 
+    @contextmanager
     def _connect(self):
         db = sqlite3.connect(self.path, timeout=5)
-        db.execute("PRAGMA busy_timeout=5000")
-        return db
+        try:
+            db.execute("PRAGMA busy_timeout=5000")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def enqueue(self, local_ids, now: float | None = None) -> int:
         now = time.time() if now is None else float(now)
