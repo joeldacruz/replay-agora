@@ -1,6 +1,6 @@
 # Homologação da ponte entre o Portal Dev e o motor legado
 
-A ponte em `services/local-agent/replay_agent/legacy_bridge.py` é chamada explicitamente com um MP4 de amostra. A configuração vem do estado ativo de um `RemoteManager` isolado. A ponte entrega um diretório com as variantes, a miniatura da variante do jogador e um manifesto de entrega. O manifesto é um contrato de homologação e ainda precisa de um consumidor no sincronizador legado.
+A ponte em `services/local-agent/replay_agent/legacy_bridge.py` é chamada explicitamente com um MP4 de amostra. A configuração vem do estado ativo de um `RemoteManager` isolado. A ponte entrega um diretório com as variantes, a miniatura da variante do jogador e um manifesto de entrega. O consumidor de homologação em `legacy_publish.py` cadastra a variante pelo `LocalStore`. O `CentralLink` e o `RelayServer` existentes entregam essa variante. A adoção pelo sincronizador instalado na arena depende da leitura do adaptador operacional.
 
 ## Diagnóstico
 
@@ -22,3 +22,17 @@ A ponte em `services/local-agent/replay_agent/legacy_bridge.py` é chamada expli
 2. Em uma central e um catálogo descartáveis, usar cópias de amostras para testar as duas quadras simultaneamente. Exercitar ambos os formatos na mesma revisão, alteração de configuração durante o processamento, PNG inválido e reenvio do mesmo replay. Conferir ausência de duplicação e a continuidade do fluxo legado na falha.
 3. Verificar no app autenticado qual MP4 toca, faz seek (HTTP 206) e baixa. Comparar dimensões, duração, orientação e JPEG ao manifesto e conferir que a origem tem o mesmo SHA-256.
 4. Antes de propor adoção em produção, obter inventário somente leitura das duas unidades de replay, do agente, dos timers, do catálogo e do launcher do relay. Confirmar a semântica das janelas, a ordenação de formatos e o orçamento de processamento. A ligação ao sincronizador de produção requer aprovação depois dessa validação.
+
+
+## Execução isolada e implantação gradual
+
+`load_offline_remote(data_dir)` lê a revisão v3 de `data_dir/remote/state.json` e os PNGs de `data_dir/remote/frames`. Use uma árvore descartável e uma revisão sintética. Essa chamada não inicializa `AgentService`, não consulta pendências e não abre equipamentos. O teste `test_remote_config_e2e.py` cobre o ciclo Portal/API/agente com hardware simulado.
+
+`publish_sample` recebe o timestamp UTC do acionamento, seu offset em segundos na amostra contínua e a chave da quadra. Usa recodificação com seek preciso e rejeita janela fora do vídeo. Mantém um lote atômico por identidade e reaproveita o lote em caso de falha antes do cadastro. O catálogo mantém somente a variante escolhida por replay. O vínculo deve ser usado em um catálogo exclusivo de homologação, com raiz de mídia permitida pelo relay. A publicação no catálogo é seguida pelo sync e pela geração da miniatura a partir da variante escolhida. O MP4 original permanece fora da raiz publicada.
+
+1. **Verificação prévia somente leitura.** Ler o fonte operacional do `auto_replays.py` e do launcher e confirmar chaves das quadras, identidade de replay, diretórios observados, schema, transações, tratamento de repetição e comportamento da miniatura. Confirmar a cobertura temporal dos segmentos da Quadra 02. A referência arquivada da Quadra 01 confirma a leitura do catálogo pelo sincronizador JPEG, mas o fonte do adaptador incremental não está nessa referência.
+2. **Homologação inicial exclusivamente na Quadra 02.** Usar cópias de vídeo e central, catálogo, credenciais e caminhos descartáveis. Permitir apenas a chave da Quadra 02 no consumidor. Confirmar janela por quadros marcados, molduras/formato, reenvio do mesmo evento, arquivo/miniatura no app e ausência de cadastro para a Quadra 01. Repetir com layout inválido e pós-roll incompleto.
+3. **Piloto operacional com aprovação posterior.** Integrar o consumidor no ponto de cadastro confirmado no adaptador real. Em modo sombra, comparar variante e origem, medindo tempo do corte e CPU. Só liberar o cadastro processado da Quadra 02 depois de validar a ausência de duplicatas, a capacidade do buffer e a continuidade do fluxo legado.
+4. **Rollback.** Retirar a Quadra 02 da lista de quadras habilitadas para novos eventos e retomar a seleção legada nesses eventos. Manter arquivos, registros e rotas dos replays já publicados para preservar links. Confirmar esse comportamento no adaptador real antes do piloto. A Quadra 01 entra em uma etapa posterior, com sua chave e revisão independentes.
+
+Para verificar a integração do protótipo, executar `python -m pytest -q services/local-agent/tests/test_legacy_bridge.py services/local-agent/tests/test_delivery.py services/local-agent/tests/test_remote_config_e2e.py`. O PR em rascunho #19 usa a CI existente, com checkout e FFmpeg isolados.
