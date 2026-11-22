@@ -101,3 +101,15 @@ Inspeção `ast` por operador do arquivo operacional `/opt/replayagora-stage/ada
 ## Evidência 75N.93U — contrato estrutural (21/11/2026)
 
 Inspeção AST da implementação efetivamente instalada: em `auto_replays.py` linha 255 são carregadas credenciais JSON; em 266–267, `make_http` e `CentralClient` são construídos com credenciais existentes e `node`; em 272, `local_id` é lido diretamente de `row`; em 273 monta-se um payload de replay; em 288 ocorre `client.call` com payload agrupado; 293–305 inspecionam resposta e 309–323 persistem resultado. O código contém duas chamadas `uuid5` (175/198), mas ainda não foi estabelecido se o `local_id` dessas linhas é o enviado ou como é calculado, pois strings literais foram intencionalmente ocultadas. Isso demonstra compatibilidade potencial com upload JPEG após `sync/replays`; **não** demonstra que o `CentralClient` instalado aceite corpo binário, por isso a interface precisa ser inspecionada sem exibir chaves antes de codificar o adaptador real. Nenhuma modificação no servidor foi efetuada nesta inspeção.
+
+## Evidência 75N.93AC — catálogo real, leitura agregada
+
+Leitura privilegiada, somente leitura, em `replayagora-srv01`, catálogo `/opt/replayagora-stage/media-only/catalogo.sqlite`:
+- Total **104** registros na tabela `replays`.
+- `QUADRA_01`: `pending=64`, `synced=3` (67).
+- `QUADRA_02`: `pending=37`, `synced=0` (37).
+- Replays elegíveis à ponte JPEG pelo filtro atual: **3** e somente da `QUADRA_01`.
+- `file_ok=0 AND deleted=0`: **2** arquivos indisponíveis (quadra não apurada nessa consulta).
+- `PRAGMA journal_mode`: `delete` (não `wal`).
+
+**Gate de produção:** não agendar envio JPEG ainda. A sincronização de metadados existente é a dependência crítica (101 registros `pending`). Investigar logs e estados agregados sem mostrar tokens, caminhos, `local_id` ou razões textuais sensíveis. O timer `oneshot` termina com sucesso de processo, o que não comprova entrega dos registros pendentes. Nenhuma alteração efetuada na arena na etapa 75N.93AC. O teste de 26/26 casos do protótipo JPEG havia sido aprovado na etapa anterior, mas isso não valida integração operacional da API.
