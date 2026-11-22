@@ -86,3 +86,21 @@ rm -f "$TMP"
 
 A saída do inventário identifica o contrato real a ser adaptado. Não presumir que o serviço `auto-replays` inativo está com erro, nem copiar a implementação simulada do `services/local-agent` sobre o motor real.
 
+
+## Etapa 75N.93V–W — confirmação do cliente e protótipo do adaptador
+
+Inspeção `75N.93V` mostrou que o catálogo usa os campos `row[local_id]`, `row[path]`, `row[bytes]`, `row[court_key]`, `row[captured_at]`, `row[file_ok]`, `row[width]`, `row[height]`, `row[duration]`. O `CentralClient` realmente instalado existe em `/opt/replayagora-stage/repo/services/local-agent/replay_agent/client.py` e expõe `request_raw(self, method, path, content, headers, timeout)`, além de `call` e `_headers`. O código correspondente no GitHub usa Bearer, `X-Agent-Node` e, se configurada, HMAC do corpo via `sign_headers`. O fluxo existente usa o valor `row[local_id]` para sincronizar metadados.
+
+Foi adicionado **protótipo isolado, não instalado**:
+- [`services/arena-adapter/thumbnail_bridge.py`](../services/arena-adapter/thumbnail_bridge.py): consulta apenas metadados dos replays marcados `synced`, evita arquivos excluídos ou inconsistentes, valida raiz autorizada/tamanho, entrega JPEG a um `CentralClient` já autenticado via `request_raw`.
+- [`tests/test_thumbnail_bridge_93w.py`](../tests/test_thumbnail_bridge_93w.py): testes com SQLite e cliente simulados, sem rede ou servidor.
+
+**Não é um serviço pronto para produção**. Não tem cursor persistente/fila, paginação/backfill de todos os replays, controle de carga/retry nem execução com credenciais reais; `eligible_rows` usa `immutable=1`, que pode não considerar mudanças pendentes em WAL, e seu `ORDER BY` privilegia registros antigos quando chamado repetidamente. A hipótese de valores de `sync_state` como `synced` precisa ser confirmada no catálogo real por consulta agregada sem expor dados sensíveis. O adaptador não deve ser chamado em loop contínuo sem adicionar checkpoint/deduplicação local, sob risco de reenvio dos mesmos JPEGs.
+
+Próxima etapa antes de ligar ao timer:
+1. Verificar por agregação os possíveis estados de `sync_state`, `deleted`, `file_ok` e caminhos de armazenamento, sem ler linhas de replays na saída.
+2. Especificar fila auxiliar persistente **fora do catálogo operacional**, com `local_id` + status, último erro categórico, tentativas, backoff e marcação `created/exists`.
+3. Executar a suíte `python3 -m unittest discover -s tests -p 'test_thumbnail_bridge_93w.py'` em cópia isolada do repositório, sem acessar banco de arena ou rede.
+4. Revisar autorização HMAC/credenciais em teste local e comportamento de arquivos incompletos, timeouts, 404, 409, 5xx.
+5. Só então planejar instalação separada, sem reiniciar os serviços de buffers, replays, botão e relay.
+
