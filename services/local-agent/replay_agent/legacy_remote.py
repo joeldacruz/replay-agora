@@ -103,6 +103,12 @@ class LegacyRemote(RemoteManager):
         if result.returncode:
             raise ValueError("PNG ilegível")
 
+    def tick(self, hint):
+        """Callback opt-in do heartbeat isolado. Não consome tarefas ou inventário."""
+        if self.outbox.exists() or (hint and hint.get("linked") and hint.get("pendingVersion")):
+            return self.poll()
+        return None
+
     def poll(self):
         """Busca apenas /remote/pending e preserva o resultado até a confirmação."""
         with self._writer():
