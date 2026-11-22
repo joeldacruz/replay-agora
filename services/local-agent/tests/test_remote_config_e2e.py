@@ -535,3 +535,35 @@ def test_servers_disconnect_is_recorded_after_silence(client, world, H, rig):
     assert srv["state"] == "offline" and srv["events"][0]["kind"] == "disconnected"
     mon = client.get(f"{P}/monitoring", headers=rig.root).json()[0]
     assert mon["status"] == "desconectado" and all(c["camera"]["status"] == "desconectado" for c in mon["courts"])
+
+
+def test_portal_confirms_legacy_profile_without_activating_stack(rig, tmp_path, monkeypatch):
+    import shutil
+
+    from replay_agent.legacy_bridge import replay_profile
+    from replay_agent.legacy_remote import LegacyRemote
+
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("requer FFmpeg e ffprobe")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("o adaptador legado chamou o motor")
+
+    setup_portal(rig, frames=True)
+    # Mesmo contrato usado pelo heartbeat isolado, sem iniciar o AgentService.
+    agent = rig.svc.client
+    assert agent.call("POST", "/register", {
+        "nodeId": agent.node_id, "hostname": "legacy-homolog", "version": "3",
+        "courts": ["A_01", "A_02"],
+    })["agentId"]
+    monkeypatch.setattr(rig.svc, "activate", forbidden)
+    monkeypatch.setattr(rig.svc.stack, "reconfigure", forbidden)
+    rev = publish(rig)
+    adapter = LegacyRemote(agent, tmp_path / "isolated", {"A_01", "A_02"})
+    report = adapter.tick({"linked": True, "pendingVersion": rev["version"], "tasks": 1})
+    assert report["status"] == "aplicado", report
+    assert revs(rig)[rev["version"]]["status"] == "aplicado"
+    assert replay_profile(adapter, "A_01")[1:3] == (3, 1)
+    assert {"horizontal", "vertical"} == set(replay_profile(adapter, "A_01")[4])
+    assert set(replay_profile(adapter, "A_02")[4]) == {"horizontal", "vertical"}
+    assert PW1 not in adapter.state_path.read_text()
