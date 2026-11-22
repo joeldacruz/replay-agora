@@ -152,3 +152,9 @@ Foi adicionado `services/arena-adapter/thumbnail_batch.py` com função pura `pr
 Testes isolados adicionados em `tests/test_thumbnail_batch_93ab.py`: limite de duas, ausência de repetição, recuperação de fila após reabertura, falha de rede, catálogo temporariamente indisponível, limite inválido e resposta inesperada. **Ainda dependem de execução pelo operador.**
 
 **Não é um daemon:** não cria timer, não lê credenciais, não instancia fila de produção nem faz rede sozinho. A busca da página, mapeamento de `local_id`, abertura do cliente HTTP real e controle de cursor periódico continuam dependentes do adaptador operacional. Não ativar na arena antes de validar snapshot WAL e garantir trabalhador único.
+
+## Etapa 75N.93AB-T1 — execução aprovada na arena
+
+O operador executou o commit `8bc8714` em `replayagora-srv01`. Resultado **26 de 26 testes aprovados em 0,041 s**, sem `ResourceWarning` sob `PYTHONWARNINGS=error::ResourceWarning`, usando `python3 -X dev`. Foram executados 7 testes do processador em lote, 8 da ponte/paginação, 3 do extrator de referência e 8 da fila persistente. O teste foi isolado em diretório temporário, sem modificações na gravação, no catálogo real ou nas unidades systemd.
+
+**Próximo gate antes de integrar ao `auto_replays.py`:** levantamento **agregado e somente leitura** das colunas `court_key`, `sync_state`, `file_ok` e `deleted` no catálogo operacional. Não imprimir `local_id`, `path`, nomes dos vídeos, segredos ou linhas individuais. Confirmar compatibilidade do predicado `sync_state='synced' AND deleted=0 AND file_ok=1`, evolução das duas quadras e comportamento WAL. A fila não será agendada até o gate.
