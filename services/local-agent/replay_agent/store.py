@@ -60,6 +60,8 @@ class LocalStore:
             for col, ddl in (("source", "TEXT"), ("button", "TEXT"), ("window_start", "REAL"), ("window_end", "REAL")):
                 if col not in jcols:
                     self._db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ddl}")
+            if "thumb_state" not in cols:
+                self._db.execute("ALTER TABLE replays ADD COLUMN thumb_state TEXT NOT NULL DEFAULT 'pending'")
             if "file_ok" not in cols:  # bancos criados por versões anteriores
                 self._db.execute("ALTER TABLE replays ADD COLUMN file_ok INTEGER NOT NULL DEFAULT 1")
 
@@ -79,6 +81,18 @@ class LocalStore:
 
     def pending(self, limit: int = 100) -> list[sqlite3.Row]:
         return self._x("SELECT * FROM replays WHERE sync_state='pending' ORDER BY created_at LIMIT ?", (limit,)).fetchall()
+
+    def pending_thumbnails(self, limit: int = 2) -> list[sqlite3.Row]:
+        """Somente MP4 existentes e metadados já reconhecidos pela central."""
+        return self._x(
+            "SELECT * FROM replays WHERE sync_state='synced' AND thumb_state='pending' "
+            "AND file_ok=1 AND deleted=0 ORDER BY created_at LIMIT ?", (limit,)
+        ).fetchall()
+
+    def mark_thumbnail(self, local_id: str, state: str) -> None:
+        if state not in ("synced", "failed"):
+            raise ValueError("estado de miniatura inválido")
+        self._x("UPDATE replays SET thumb_state=? WHERE local_id=?", (state, local_id))
 
     def count(self, state: str | None = None) -> int:
         if state:

@@ -675,3 +675,72 @@ body.j-body {
   width: 84%;
   pointer-events: none;
 }
+
+
+/* 75N.93D — a barra e o tempo nao participam do transform de rotacao do video. */
+.j-app--watch .j-player .j-playback-bar {
+  position:absolute !important;
+  z-index:10001 !important;
+  left:max(12px, env(safe-area-inset-left)) !important;
+  right:max(12px, env(safe-area-inset-right)) !important;
+  bottom:max(14px, env(safe-area-inset-bottom)) !important;
+  display:flex !important;
+  align-items:center;
+  gap:10px;
+  padding:9px 12px;
+  min-height:48px;
+  width:auto !important;
+  transform:none !important;
+  background:rgba(2,13,31,.85);
+  color:#fff;
+  border-radius:14px;
+  backdrop-filter:blur(8px);
+}
+.j-app--watch .j-playback-btn {
+  flex:none; width:40px; height:40px;
+  border:0; border-radius:9px; color:#fff;
+  background:rgba(255,255,255,.12);
+  cursor:pointer;
+}
+.j-app--watch .j-playback-seek {
+  flex:1 1 auto;
+  min-width:40px; width:100%;
+  height:32px;
+  accent-color:#ff7661;
+  cursor:pointer;
+}
+.j-app--watch .j-playback-time {
+  flex:none;
+  white-space:nowrap;
+  font:600 12px/1.2 system-ui,sans-serif;
+  font-variant-numeric:tabular-nums;
+}
+.j-app--watch .j-playback-btn:focus-visible,
+.j-app--watch .j-playback-seek:focus-visible {
+  outline:2px solid #ff7661;
+  outline-offset:2px;
+}
+.j-app--watch .j-actions.j-icon-actions {
+  bottom:75px !important;
+  top:auto !important;
+  transform:none !important;
+}
+@media (max-width:480px) {
+  .j-app--watch .j-player .j-playback-bar {
+    gap:6px; padding:6px 8px;
+  }
+  .j-app--watch .j-playback-time { font-size:11px; }
+}
+
+/* 75N.93E — miniatura baseada no JPEG original com rotação visual do replay. */
+.j-thumb[data-rotation="90"] img,
+.j-thumb[data-rotation="270"] img {
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  transform: rotate(90deg) scale(.625);
+  transform-origin: center center;
+  background: #000;
+}
+.j-thumb[data-rotation="270"] img { transform: rotate(270deg) scale(.625); }
+.j-thumb[data-rotation="180"] img { transform: rotate(180deg); }

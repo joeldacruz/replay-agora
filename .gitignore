@@ -10,3 +10,20 @@ var/
 *.db
 *.sqlite3
 node_modules/
+# Dados, credenciais e mídia reais das arenas (não versionar)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+*.mp4
+*.mkv
+*.bak
+*.bak-*
+credentials.json
+agent.env
+*.pem
+/arena-media/
+/arena-storage/
+/secrets/
+/runtime-logs/

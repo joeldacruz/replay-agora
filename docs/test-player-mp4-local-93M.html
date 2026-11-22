@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Replay Agora — homologação MP4 local 75N.93M</title>
+<link rel="stylesheet" href="../apps/usuario/journey.css">
+<style>
+html,body{margin:0;background:#050b15;color:#fff;font:14px system-ui,sans-serif}
+#panel{position:fixed;top:68px;left:12px;z-index:10020;background:rgba(6,20,42,.94);border:1px solid #54718a;padding:12px;border-radius:12px;max-width:min(360px,calc(100vw - 24px));box-shadow:0 6px 18px #0007}
+#panel h1{font-size:15px;margin:0 0 9px}
+#panel label{display:block;font-weight:600;margin:8px 0}
+#panel input[type=file]{width:100%;font-size:12px}
+#panel button{background:#16385e;border:1px solid #7089aa;border-radius:6px;color:#fff;padding:7px 11px;margin:3px 3px 3px 0;cursor:pointer}
+#panel button[aria-pressed=true]{background:#bd5640}
+#panel p{font-size:12px;margin:7px 0;line-height:1.4}
+#panel .hint{color:#bdcfde}
+#status{white-space:pre-wrap;word-break:break-word}
+#panelToggle{position:fixed;top:12px;left:70px;z-index:10021;border:1px solid white;background:#092342;color:#fff;padding:10px 12px;border-radius:8px;cursor:pointer}
+#panel[hidden]{display:none}
+.j-app--watch .j-actions.j-icon-actions .j-icon-action{background:#0d294cb0;color:#fff;border:1px solid #fff8;font-size:22px}
+.j-app--watch .j-watch-body > .j-status{display:none}
+#note{position:fixed;bottom:83px;left:12px;z-index:10010;background:#000b;padding:5px 8px;font-size:11px;border-radius:6px;pointer-events:none}
+</style>
+</head>
+<body>
+<main class="j-app j-app--watch">
+  <div class="j-watch-body">
+    <div class="j-player" id="player">
+      <video id="video" playsinline preload="metadata" aria-label="Vídeo local de teste"></video>
+      <div class="j-playback-bar" role="group" aria-label="Controles de reprodução">
+        <button class="j-playback-btn" id="play" type="button" aria-label="Reproduzir vídeo" disabled>▶</button>
+        <input class="j-playback-seek" id="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Posição do replay" disabled>
+        <span class="j-playback-time" id="clock">0:00 / 0:00</span>
+      </div>
+    </div>
+    <div class="j-actions j-icon-actions" role="group" aria-label="Ações do replay">
+      <button type="button" class="j-icon-action" id="sound" title="Ativar ou desativar som" aria-label="Desativar som" disabled>♫</button>
+    </div>
+    <button type="button" class="j-watch-overlay-back" id="back" title="Exibir painel" aria-label="Exibir painel">←</button>
+    <button type="button" class="j-watch-overlay-rotate" id="rotate" title="Girar vídeo" aria-label="Girar 90 graus">↻</button>
+  </div>
+</main>
+<button id="panelToggle" type="button" aria-controls="panel" aria-expanded="true">Ocultar painel</button>
+<aside id="panel">
+  <h1>Replay Agora · MP4 local · 75N.93M</h1>
+  <label for="file">Escolha um MP4 do computador (não será enviado)</label>
+  <input id="file" type="file" accept="video/mp4,.mp4">
+  <p class="hint">O arquivo é lido pelo próprio Chrome via URL local. Não há chamadas à API nem upload.</p>
+  <p>Orientação da imagem:</p>
+  <div id="angles">
+    <button type="button" data-angle="0">0°</button>
+    <button type="button" data-angle="90">90°</button>
+    <button type="button" data-angle="180">180°</button>
+    <button type="button" data-angle="270">270°</button>
+  </div>
+  <p>Confirme play, pausa, avanço/retorno, relógio e som; observe se os controles permanecem horizontais.</p>
+  <p id="status" role="status">Selecione um MP4 para iniciar.</p>
+</aside>
+<div id="note">Homologação local · sem API · sem gravação · sem upload</div>
+<script>
+(() => {
+  'use strict';
+  const video = document.getElementById('video');
+  const player = document.getElementById('player');
+  const file = document.getElementById('file');
+  const play = document.getElementById('play');
+  const seek = document.getElementById('seek');
+  const clock = document.getElementById('clock');
+  const sound = document.getElementById('sound');
+  const status = document.getElementById('status');
+  const panel = document.getElementById('panel');
+  const toggle = document.getElementById('panelToggle');
+  const buttons = [...document.querySelectorAll('[data-angle]')];
+  let objectUrl = null;
+  const fmt = n => Number.isFinite(n) && n >= 0 ?
+    Math.floor(n / 60) + ':' + String(Math.floor(n % 60)).padStart(2, '0') : '0:00';
+  function sync() {
+    const duration = video.duration;
+    seek.value = String(Number.isFinite(duration) && duration > 0 ?
+      Math.round(1000 * Math.max(0, Math.min(1, video.currentTime / duration))) : 0);
+    clock.textContent = fmt(video.currentTime) + ' / ' + fmt(duration);
+    play.textContent = video.paused ? '▶' : '❚❚';
+    play.setAttribute('aria-label', video.paused ? 'Reproduzir vídeo' : 'Pausar vídeo');
+    sound.textContent = video.muted ? '♪̸' : '♫';
+    sound.setAttribute('aria-label', video.muted ? 'Ativar som' : 'Desativar som');
+    const ready = video.readyState >= 1 && Number.isFinite(duration) && duration > 0;
+    play.disabled = !ready;
+    seek.disabled = !ready;
+    sound.disabled = !ready;
+  }
+  function setAngle(angle) {
+    if (![0,90,180,270].includes(angle)) return;
+    player.dataset.rotation = String(angle);
+    player.dataset.rotated = angle === 90 || angle === 270 ? 'yes' : 'no';
+    player.style.setProperty('--ra-rotation', angle + 'deg');
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.angle) === angle)));
+    status.textContent = (file.files[0]?.name || 'Sem MP4') + ' · rotação ' + angle +
+      '° · barra sem rotação (CSS independente)';
+  }
+  buttons.forEach(b => b.addEventListener('click', () => setAngle(Number(b.dataset.angle))));
+  document.getElementById('rotate').addEventListener('click', () =>
+    setAngle((Number(player.dataset.rotation) + 90) % 360));
+  file.addEventListener('change', () => {
+    video.pause();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+    const selected = file.files[0];
+    if (!selected) {
+      video.removeAttribute('src'); video.load(); sync();
+      status.textContent = 'Selecione um MP4 para iniciar.';
+      return;
+    }
+    if (!selected.name.toLowerCase().endsWith('.mp4')) {
+      status.textContent = 'Escolha um arquivo com extensão .mp4.';
+      video.removeAttribute('src'); video.load(); sync();
+      return;
+    }
+    objectUrl = URL.createObjectURL(selected);
+    video.src = objectUrl;
+    video.load();
+    status.textContent = 'Abrindo vídeo local: ' + selected.name;
+  });
+  play.addEventListener('click', () => {
+    if (video.paused) video.play().catch(e => {
+      status.textContent = 'O Chrome não conseguiu reproduzir: ' + e.message;
+    });
+    else video.pause();
+  });
+  seek.addEventListener('input', () => {
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      video.currentTime = video.duration * Number(seek.value) / 1000;
+      sync();
+    }
+  });
+  sound.addEventListener('click', () => { video.muted = !video.muted; sync(); });
+  for (const ev of ['loadedmetadata','durationchange','timeupdate','play','pause','ended','volumechange'])
+    video.addEventListener(ev, sync);
+  video.addEventListener('error', () => {
+    const code = video.error?.code;
+    status.textContent = 'Erro ao decodificar MP4 no Chrome (código ' + (code || '?') +
+      '). Experimente MP4 com vídeo H.264.';
+    sync();
+  });
+  toggle.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    toggle.textContent = panel.hidden ? 'Exibir painel' : 'Ocultar painel';
+    toggle.setAttribute('aria-expanded', String(!panel.hidden));
+  });
+  document.getElementById('back').addEventListener('click', () => {
+    panel.hidden = false;
+    toggle.textContent = 'Ocultar painel';
+    toggle.setAttribute('aria-expanded', 'true');
+  });
+  addEventListener('pagehide', () => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+  setAngle(0);sync();
+})();
+</script>
+</body>
+</html>

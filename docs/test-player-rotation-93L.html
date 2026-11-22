@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Replay Agora — teste isolado da orientação</title>
+  <link rel="stylesheet" href="../apps/usuario/journey.css">
+  <style>
+    html,body{margin:0;background:#030a18;color:white;font:15px system-ui,sans-serif}
+    #test-panel{position:fixed;top:70px;left:12px;z-index:10009;background:rgba(9,23,51,.94);padding:12px;border-radius:12px;max-width:min(350px,calc(100vw - 24px));box-shadow:0 4px 15px #0009}
+    #test-panel h1{font-size:15px;margin:0 0 6px}
+    #test-panel p{font-size:12px;margin:8px 0 0}
+    #test-panel button{border-radius:6px;border:1px solid #fff6;background:#183b69;color:white;padding:7px 9px;margin:2px;cursor:pointer}
+    #test-panel button[aria-pressed=true]{background:#c25441}
+    .j-app--watch .j-actions.j-icon-actions .j-icon-action{font-size:18px;color:#fff;background:#1b3857aa;border:1px solid #fff8}
+    .j-app--watch .j-playback-bar button{font-size:17px}
+    #diagnostic{word-break:break-word}
+    .demo-note{position:fixed;left:12px;bottom:85px;z-index:10007;font-size:11px;color:#fff;background:#0009;padding:4px 8px;border-radius:5px}
+  </style>
+</head>
+<body>
+  <main class="j-app j-app--watch">
+    <div class="j-watch-body">
+      <div class="j-player" id="player">
+        <video id="video" muted playsinline preload="none" aria-label="Quadro visual simulado de replay"></video>
+        <div class="j-playback-bar" role="group" aria-label="Barra de reprodução simulada">
+          <button class="j-playback-btn" id="play" type="button" aria-label="Simular reprodução">▶</button>
+          <input class="j-playback-seek" type="range" min="0" max="1000" value="420" aria-label="Simular posição">
+          <span class="j-playback-time" id="clock">0:08 / 0:20</span>
+        </div>
+      </div>
+      <div class="j-actions j-icon-actions" aria-label="Ações simuladas">
+        <button class="j-icon-action" type="button" title="Som fictício">♫</button>
+        <button class="j-icon-action" type="button" title="Download fictício">↓</button>
+        <button class="j-icon-action" type="button" title="Compartilhar fictício">↗</button>
+      </div>
+      <button type="button" class="j-watch-overlay-back" title="Sem navegação neste teste">←</button>
+      <button type="button" class="j-watch-overlay-rotate" id="rotate" title="Girar 90 graus">↻</button>
+    </div>
+  </main>
+  <aside id="test-panel">
+    <h1>Replay Agora · Homologação visual 75N.93L</h1>
+    <div id="angles">
+      <button type="button" data-angle="0">0°</button>
+      <button type="button" data-angle="90">90°</button>
+      <button type="button" data-angle="180">180°</button>
+      <button type="button" data-angle="270">270°</button>
+    </div>
+    <p>Verifique: imagem gira; barra, relógio e ações não giram. Teste a barra e diferentes tamanhos da janela.</p>
+    <p id="diagnostic"></p>
+  </aside>
+  <p class="demo-note">Somente simulação visual · sem API, câmeras ou MP4</p>
+  <script>
+    (() => {
+      const player = document.getElementById('player');
+      const video = document.getElementById('video');
+      const diagnostic = document.getElementById('diagnostic');
+      const angles = [...document.querySelectorAll('[data-angle]')];
+      const art = '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">' +
+        '<rect width="960" height="540" fill="#12457a"/><rect x="25" y="25" width="910" height="490" rx="18" fill="none" stroke="#fff" stroke-width="12"/>' +
+        '<circle cx="480" cy="270" r="110" fill="none" stroke="#fff" stroke-width="10"/><path d="M480 25V515M25 270H935" stroke="#fff" stroke-width="8"/>' +
+        '<text x="480" y="240" text-anchor="middle" font-family="Arial" fill="#fff" font-size="52" font-weight="bold">VÍDEO</text>' +
+        '<text x="480" y="315" text-anchor="middle" font-family="Arial" fill="#fff" font-size="50" font-weight="bold">SIMULADO</text>' +
+        '<text x="75" y="95" font-family="Arial" fill="#fff" font-size="36">CIMA ↑</text></svg>';
+      video.poster = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(art);
+      function setAngle(angle) {
+        player.dataset.rotation = String(angle);
+        player.dataset.rotated = angle === 90 || angle === 270 ? 'yes' : 'no';
+        player.style.setProperty('--ra-rotation', angle + 'deg');
+        angles.forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.angle) === angle)));
+        requestAnimationFrame(() => {
+          const v = getComputedStyle(video);
+          const bar = document.querySelector('.j-playback-bar');
+          const b = getComputedStyle(bar);
+          diagnostic.textContent = 'Ângulo: ' + angle + '° | transform vídeo: ' + v.transform +
+            ' | transform barra: ' + b.transform + ' | janela: ' + innerWidth + '×' + innerHeight;
+        });
+      }
+      angles.forEach(b => b.addEventListener('click', () => setAngle(Number(b.dataset.angle))));
+      document.getElementById('rotate').addEventListener('click', () =>
+        setAngle((Number(player.dataset.rotation) + 90) % 360));
+      document.querySelector('.j-playback-seek').addEventListener('input', e => {
+        const sec = Math.round(Number(e.target.value) * 20 / 1000);
+        document.getElementById('clock').textContent =
+          '0:' + String(sec).padStart(2, '0') + ' / 0:20';
+      });
+      document.getElementById('play').addEventListener('click', e => {
+        e.currentTarget.textContent = e.currentTarget.textContent === '▶' ? '❚❚' : '▶';
+      });
+      addEventListener('resize', () => setAngle(Number(player.dataset.rotation)));
+      setAngle(0);
+    })();
+  </script>
+</body>
+</html>

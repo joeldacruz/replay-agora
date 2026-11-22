@@ -10,11 +10,31 @@
 
 **Regra inegociável:** o app da arena **nunca** oferece administração global. O app do usuário **não** possui telas de administração. O portal do desenvolvedor **não** é o app da arena; tem acesso global administrativo sob autenticação forte, trilha de auditoria e controles de privacidade.
 
+## Estado operacional de homologação — 21/11/2026
+
+**Atenção: esta seção prevalece sobre relatos históricos antigos do MVP abaixo.** A integração da arena real e a implantação central evoluíram após a criação original deste README.
+
+- **Central `cmtb-srv01`:** serviço `replayagora-novo-stage.service` ativo, API na porta local **18082**, apps Jogador/Gestão respondendo HTTP 200; commit **`dbe33eb`** implantado em 21/11/2026, a partir do checkpoint `0013`. Banco SQLite preservado e backup confirmado.
+- **Arena `replayagora-srv01`:** duas quadras com `buffer.py` e `replay.py` ativos, botoeira, heartbeat, relay de MP4 e catálogo SQLite locais. **Os MP4 permanecem na arena.** O sincronizador incremental real `auto_replays.py` foi desenvolvido/instalado separadamente; seu estado periódico atual depende de verificação do timer.
+- **Miniaturas:** endpoint JPEG autenticado já implantado na API central. A extração e a fila JPEG existentes neste repositório pertencem ao **agente de referência**; **ainda não foram integradas ao `auto_replays.py` real** e ainda não fornecem thumbnails automaticamente para as duas quadras.
+- **Player:** barra personalizada separada da rotação e Service Worker `v24` estão instalados na central; foram validados sintaxe, testes da API e uma prévia visual limitada. A reprodução real no aplicativo instalado, particularmente Safari/iPhone, ainda precisa de homologação.
+- **Git:** PR [#18](https://github.com/joeldacruz/replay-agora/pull/18) permanece em *draft* sobre `checkpoint/central-0013-20261121`; os commits documentais posteriores ao deploy **não estão instalados automaticamente**.
+
+Documentos operacionais atualizados:
+
+- [Estado operacional e evidências](docs/ESTADO-OPERACIONAL-20261121.md)
+- [Pendências priorizadas e critérios de aceite](docs/PENDENCIAS-INTEGRACAO-ARENA-20261121.md)
+- [Integração do jogador e miniaturas](docs/jogador-integracao-0013-20261121.md)
+
+**Regra:** não substituir `/srv/replayagora/quadra01|02/app/`, `/opt/replayagora-stage/media-only/` ou `/opt/replayagora-stage/adaptador-incremental/` pelo simulador do GitHub; não publicar bancos reais, credenciais, gravações ou logs brutos.
+
+---
+
 ## O que já existe e o que falta
 
 **Implementado nesta branch (MVP de desenvolvimento, validado só com mídia sintética):** API, worker FFmpeg e as três interfaces separadas (`apps/usuario`, `apps/arena`, `apps/portal-dev`). Veja [Executar localmente](#executar-localmente) e [docs/SEGURANCA-E-PENDENCIAS.md](docs/SEGURANCA-E-PENDENCIAS.md).
 
-**Continua não existindo/validado:** integração com câmeras RTSP, Arduino e o motor local real. O código atual de Python/FFmpeg do servidor da arena **não está neste GitHub** e não foi tocado.
+**Observação histórica do MVP:** em sua versão inicial, a integração com as câmeras RTSP, Arduino e o motor real ainda não havia sido validada. **Em 21/11/2026 os serviços reais estavam ativos na arena**, mas seus arquivos operacionais completos ainda não foram importados/revisados neste repositório; consulte o estado operacional acima.
 
 ### Arena local, testes confirmados (03/11/2026)
 
