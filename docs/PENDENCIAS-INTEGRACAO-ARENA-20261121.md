@@ -118,3 +118,11 @@ A biblioteca adicional [`services/arena-adapter/thumbnail_queue.py`](../services
 - Para múltiplos processos trabalhadores, o lease deve receber token/fencing para impedir o trabalhador antigo de confirmar o item já reatribuído. Até então, usar **somente um worker**.
 - A política de falhas definitivas/transitórias deve ser revista com códigos HTTP reais; nunca marcar definitivamente como inválido só por indisponibilidade da central.
 - A escrita do SQLite auxiliar é intencional e ocorre **apenas se a biblioteca for instanciada** com arquivo específico; não tocar `catalogo.sqlite`.
+
+## Etapa 75N.93Y-T1/93Z — fila homologada e paginação proposta
+
+**Evidência do operador no `replayagora-srv01`:** commit `86a7120`; oito testes da fila `test_thumbnail_queue_93y.py` e seis testes da ponte `test_thumbnail_bridge_93w.py` aprovados (**14/14**), sintaxe válida, sem mudanças no catálogo ou serviços.
+
+A ponte recebeu a opção `after=(captured_at, local_id)` e ordenação determinística por `captured_at, local_id`, permitindo varrer o catálogo por páginas sem repetir os primeiros dois registros indefinidamente. Foram adicionados dois testes: paginação com datas iguais e rejeição de cursor incorreto. **Esses dois testes ainda não foram executados pelo operador na nova revisão.** A fila já preserva estados `synced` quando o mesmo `local_id` é reenfileirado.
+
+**Atenção antes do runtime:** a paginação é uma biblioteca chamada pelo futuro processo, não um processo agendado. Ainda precisam ser definidos snapshot do WAL, cursor/checkpoint persistente da varredura, política de reinício da varredura para novos registros retroativos e retries; validar os valores concretos `sync_state` da arena. `ThumbnailQueue.claim` não usa token de lease; restringir a **um trabalhador** até resolver fencing. Não implantar automaticamente.
