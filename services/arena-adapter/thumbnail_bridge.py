@@ -7,6 +7,7 @@ opera o adaptador existente. Os MP4s nunca são enviados à central.
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import closing
 import hashlib
 import re
 import sqlite3
@@ -44,7 +45,7 @@ def eligible_rows(
     if after is not None:
         predicate += "AND (captured_at > ? OR (captured_at = ? AND local_id > ?)) "
         params = (after[0], after[0], after[1], limit)
-    with sqlite3.connect(uri, uri=True) as db:
+    with closing(sqlite3.connect(uri, uri=True)) as db:
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA query_only=ON")
         rows = db.execute(
