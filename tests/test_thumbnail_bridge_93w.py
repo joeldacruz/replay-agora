@@ -2,6 +2,7 @@
 from pathlib import Path
 import importlib.util
 import sqlite3
+from contextlib import closing
 import hashlib
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ class ThumbnailBridgeTests(unittest.TestCase):
         self.file = self.root / "replay.mp4"
         self.file.write_bytes(b"M" * 256)
         self.catalog = self.root / "catalogo.sqlite"
-        with sqlite3.connect(self.catalog) as db:
+        with closing(sqlite3.connect(self.catalog)) as db, db:
             db.executescript(
                 "CREATE TABLE replays(local_id TEXT, court_key TEXT, path TEXT, "
                 "bytes INTEGER, sync_state TEXT, deleted INTEGER, "
@@ -87,7 +88,7 @@ class ThumbnailBridgeTests(unittest.TestCase):
         client.request_raw.assert_not_called()
 
     def test_pagination_does_not_repeat_old_replays(self):
-        with sqlite3.connect(self.catalog) as db:
+        with closing(sqlite3.connect(self.catalog)) as db, db:
             for key in ("quadra01.abcdef124", "quadra01.abcdef125"):
                 db.execute(
                     "INSERT INTO replays VALUES(?,?,?,?,?,?,?,?)",
@@ -112,7 +113,7 @@ class ThumbnailBridgeTests(unittest.TestCase):
             bridge.eligible_rows(self.catalog, after=("only-one",))
 
     def test_only_synced_records(self):
-        with sqlite3.connect(self.catalog) as db:
+        with closing(sqlite3.connect(self.catalog)) as db, db:
             db.execute("UPDATE replays SET sync_state='pending'")
         self.assertEqual(bridge.eligible_rows(self.catalog), [])
 
