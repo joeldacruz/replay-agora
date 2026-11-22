@@ -4,9 +4,11 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import threading
+import zlib
 
 import pytest
 
@@ -32,9 +34,18 @@ def court(tmp_path, key, orientation, size, rotation):
     w, h = size
     version = f"{int(key):032x}"
     png = tmp_path / f"{version}.png"
-    ffmpeg("-f", "lavfi", "-i", f"color=black@0:s={w}x{h},format=rgba,"
-           "drawbox=x=0:y=0:w=iw:h=ih:t=16:color=blue:replace=1",
-           "-frames:v", "1", "-threads", "1", str(png))
+    def chunk(kind, payload):
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload))
+
+    blue = bytes((0, 0, 255, 255))
+    transparent = bytes(4)
+    rows = b"".join(
+        b"\0" + (blue * w if y < 16 or y >= h - 16 else blue * 16 + transparent * (w - 32) + blue * 16)
+        for y in range(h)
+    )
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" +
+                    chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) +
+                    chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
     frame = {"versionId": version, "sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
              "width": w, "height": h, "out": f"{w}x{h}",
              "window": {"x": 16, "y": 16, "w": w - 32, "h": h - 32},
