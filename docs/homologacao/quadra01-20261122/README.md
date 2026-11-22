@@ -1,6 +1,6 @@
 # Integração operacional da Quadra 01 em 22/11/2026
 
-A homologação física confirmou o fluxo da botoeira até a gravação local do MP4, o cadastro incremental, a aceitação dos metadados pela central e o envio do JPEG pelos timers existentes. A listagem e a reprodução ponta a ponta ainda dependem de teste no aplicativo com uma sessão de jogador autorizada. A central assina a URL de reprodução e solicita o MP4 ao relay da arena.
+A homologação física confirmou o fluxo da botoeira até a gravação local do MP4, o cadastro incremental, a aceitação dos metadados pela central e o envio do JPEG pelos timers existentes. O responsável confirmou posteriormente que visualizou o replay no aplicativo do jogador e que o funcionamento estava correto. Essa confirmação manual não substitui a verificação técnica autenticada de `GET /api/videos`, da resposta HTTP `206 Partial Content` para requisições `Range` nem dos cenários de autorização. A central assina a URL de reprodução e solicita o MP4 ao relay da arena.
 
 Os quatro arquivos Python neste diretório são referências do código operacional. Seus caminhos descrevem o layout legado e exigem revisão antes de qualquer adoção. Esta revisão não instala nem habilita serviços.
 
