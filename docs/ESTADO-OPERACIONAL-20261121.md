@@ -133,3 +133,15 @@ Operador em `replayagora-srv01` reportou: unidade `replayagora-auto-replays.serv
 Busca de até 500 mensagens das duas horas anteriores no journal do serviço: 285 linhas coincidiram com `sync|sincroniz`; 72 com `success|sucesso|created|duplicate`; **zero** com padrões de envio, erro, autenticação, rede ou códigos HTTP. Indicadores de início 71 e término 144, contabilizados por regex, **não são números de tentativas HTTP**. O serviço `oneshot` pode estar registrando apenas mensagens do systemd; não inferir que ocorreu envio, nem que não ocorreu, somente desses padrões.
 
 **Bloqueio mantido:** 101 replays `pending`, sendo 99 `file_ok=1`, nenhum motivo registrado. Próximo diagnóstico deve distinguir mensagens do systemd vs saída do processo e examinar somente *estrutura de controle*, flags e condições do sincronizador operacional, sem mostrar segredos, payloads, logs crus ou alterar serviços. Não agendar integração JPEG ainda.
+
+## Etapa 75N.93AF — limpeza física de vídeos antigos realizada
+
+Relatório apresentado pelo operador em `replayagora-srv01`:
+- Backup online do catálogo concluído: `/root/replayagora-reset-backups/20261122-004622/catalogo.sqlite`.
+- Foram inventariados e **excluídos 127 arquivos MP4**, com 0 ignorados, nos armazenamentos reais `/srv/replayagora-storage/quadra01/replays` e `/srv/replayagora-storage/quadra02/replays` (os caminhos `/srv/replayagora/quadra*/replays` resolvem para os mesmos diretórios).
+- Timer `replayagora-auto-replays.timer` foi suspenso; catálogo operacional não foi modificado pela etapa; captura foi preservada.
+- Exclusão física não é reversível a partir do backup SQLite, que guarda **metadados**, não MP4.
+- O inventário anterior à exclusão tinha 77 MP4 na Quadra 01, 50 MP4 na Quadra 02, total aproximado 0,45 GB.
+- Ainda resta limpar com segurança os **registros antigos** no catálogo e na central, garantindo que vídeos novos gerados após o corte não sejam atingidos.
+
+**Bloqueio de segurança:** não fazer `DELETE FROM replays` global e não reativar o timer antes de identificar chaves/relacionamentos SQLite, serviços que escrevem no catálogo e registros pré/pós-corte. Preservar buffers, botoeiras, diretórios, credenciais e configurações. Limpeza da central é etapa própria, com backup e verificação das referências; não presumir que excluir arquivo local retire vídeo do aplicativo.
