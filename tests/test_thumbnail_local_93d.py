@@ -40,16 +40,22 @@ class ThumbnailTests(unittest.TestCase):
             mp4.write_bytes(b"mock")
             sqlite_path = Path(directory) / "local.sqlite"
             store = LocalStore(str(sqlite_path))
-            replay_id = "abc123456"
-            store.add_replay(replay_id, "quadra01", datetime.now(timezone.utc), str(mp4),
-                             4, 3.5, 1920, 1080, False, "h264")
-            self.assertEqual(len(store.pending_thumbnails()), 0)
-            store.mark(replay_id, "synced")
-            self.assertEqual(len(store.pending_thumbnails()), 1)
-            store.mark_thumbnail(replay_id, "synced")
-            self.assertEqual(len(store.pending_thumbnails()), 0)
-            reopened = LocalStore(str(sqlite_path))
-            self.assertEqual(len(reopened.pending_thumbnails()), 0)
+            try:
+                replay_id = "abc123456"
+                store.add_replay(replay_id, "quadra01", datetime.now(timezone.utc), str(mp4),
+                                 4, 3.5, 1920, 1080, False, "h264")
+                self.assertEqual(len(store.pending_thumbnails()), 0)
+                store.mark(replay_id, "synced")
+                self.assertEqual(len(store.pending_thumbnails()), 1)
+                store.mark_thumbnail(replay_id, "synced")
+                self.assertEqual(len(store.pending_thumbnails()), 0)
+                reopened = LocalStore(str(sqlite_path))
+                try:
+                    self.assertEqual(len(reopened.pending_thumbnails()), 0)
+                finally:
+                    reopened.close()
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":
