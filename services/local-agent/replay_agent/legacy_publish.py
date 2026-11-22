@@ -96,7 +96,7 @@ def publish_sample(remote, store, root, allowed_courts, *, court_key, local_id, 
     if current is not None and Path(current["path"]) != path:
         raise RenderError("catálogo diverge do manifesto")
     meta = source_meta(path, ffprobe)
-    store.add_replay(local_id, court_key, captured_at, str(path), variant["bytes"], meta.duration,
+    store.add_replay(local_id, court_key, captured_at.replace(tzinfo=None), str(path), variant["bytes"], meta.duration,
                      meta.width, meta.height, meta.has_audio, meta.video_codec)
     registered = store.get(local_id)
     if registered["court_key"] != court_key or Path(registered["path"]) != path:
