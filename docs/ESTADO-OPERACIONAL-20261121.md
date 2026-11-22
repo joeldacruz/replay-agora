@@ -182,3 +182,11 @@ Para atender ao reset, a central pode receber **exclusão lógica** estritamente
 Operador executou em `joel@cmtb-srv01` contra `/srv/projetos/replay-agora-novo-stage/var/replay.db` uma transação que verificou `5` vídeos antigos ativos (`captured_at < 2026-11-20`), `21` novos ativos, `26` ativos totais, todos `storage_location=agent`. Resultado: **cinco antigos atualizados com `deleted_at`, `visibility=private` e `media_state=missing`**, **21 novos preservados**. Não foi feito backup novo a pedido do operador, nem reinício da API. O histórico antigo da arena já havia sido limpo (104 registros) e os 127 MP4 antigos excluídos.
 
 **Pendência antes de religar o timer:** confirmar o comportamento do código operacional `/opt/replayagora-stage/adaptador-incremental/auto_replays.py` e de seu baseline, para não reintroduzir os registros antigos. A limpeza da central é **lógica**, não purga física de eventual imagem de miniatura ou arquivo de exportação. O timer da arena deve seguir suspenso até validação.
+
+## Etapa 75N.93AX — teste físico da botoeira: sucesso nas duas quadras
+
+Operador executou monitoramento somente leitura durante acionamento físico único da botoeira. Inicialmente `staging` e `replays` de ambas as quadras vazios. Houve criação transitória de segmentos `.ts`, lista `.txt` e MP4 no `staging` da quadra 02, finalizando com `staging` vazio nas duas quadras e **um novo MP4 em cada diretório ativo**:
+- `/srv/replayagora-storage/quadra01/replays`: 1 MP4 com 3.655.642 bytes;
+- `/srv/replayagora-storage/quadra02/replays`: 1 MP4 com 3.642.521 bytes.
+
+Logo, exportação para SSD funcionou no acionamento observado. Ainda faltam `ffprobe` e decodificação/checagem de integridade, conferência de metadados/catalogação e baseline; `replayagora-auto-replays.timer` permanece suspenso. Os 21 registros anteriores seguem sem arquivos e não devem ser confundidos com os dois novos arquivos gerados após reset.
