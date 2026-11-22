@@ -164,3 +164,15 @@ Operador confirmou execução no `replayagora-srv01`: timer e service `replayago
 **API central:** inspeção do código da branch `feat/jogador-integrado-central-0013-20261121` confirmou endpoint administrativo `DELETE /videos/{video_id}?confirm=true` em `services/api/app/routers/arena.py` (prefixo completo depende da montagem de routers): usa auth de administrador da arena, aplica `deleted_at`, remove miniatura/exports e audita. O endpoint `POST /sync/replays` reconhece `deletedLocally`, mas uma deleção por agente baseada em ID antigo precisa ser confirmada; **não** ressuscitar IDs antigos na arena só para executar isso. Inspecionar **somente leitura** os registros e seus identificadores no SQLite da central para excluir apenas antigos, sem atingir os 21 novos; preservar usuários, arenas e configuração.
 
 **Gate ainda vigente:** não reativar o timer até inspecionar `auto_replays.py` (baseline/configuração) e verificar que registros pré-corte não serão recriados. Limpeza da central ainda não executada.
+
+## Etapa 75N.93AI — inventário central antes da exclusão de registros antigos
+
+Executado pelo operador no `joel@cmtb-srv01`, banco `/srv/projetos/replay-agora-novo-stage/var/replay.db`:
+- Tabela `videos` com campos `arena_id, bytes, captured_at, code, court_id, created_at, deleted_at, duration, event_id, has_audio, height, id, local_id, media_state, mime, processing_status, protected, rotation_deg, storage_key, storage_location, thumb_key, title, video_codec, visibility, width`.
+- **5 registros antigos ativos** (`captured_at < 2026-11-20` e `deleted_at IS NULL`).
+- **21 registros novos ativos** (`captured_at >= 2026-11-20` e `deleted_at IS NULL`).
+- Nenhum antigo já excluído.
+- **26 ativos com `storage_location=agent`**, nenhum ativo com outra modalidade de armazenamento.
+- Nenhuma mutação feita nesta inspeção.
+
+Para atender ao reset, a central pode receber **exclusão lógica** estritamente dos cinco antigos (`deleted_at` preenchido, `visibility=private`, `media_state=missing`), preservando os 21 novos. O usuário dispensou novos backups. **A exclusão lógica apenas oculta os itens; não equivale à exclusão física de miniaturas/exports nem é homologação de remoção completa do banco.** Antes de sincronizar de novo, conferir que o baseline incremental não recria os 104 antigos no catálogo da arena.
