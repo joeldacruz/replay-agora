@@ -67,6 +67,25 @@ class ThumbnailBridgeTests(unittest.TestCase):
                                   (self.root / "outra-arena",))
         client.request_raw.assert_not_called()
 
+    def test_nonexistent_allowed_root_is_rejected_before_upload(self):
+        row = bridge.eligible_rows(self.catalog)[0]
+        client = Mock()
+        missing = self.root / "pasta-ainda-nao-criada"
+        self.assertFalse(missing.exists())
+        with self.assertRaisesRegex(ValueError, "raizes autorizadas"):
+            bridge.send_thumbnail(client, row, lambda _: self.jpeg, (missing,))
+        self.assertFalse(missing.exists())
+        client.request_raw.assert_not_called()
+
+    def test_existing_outside_root_is_rejected(self):
+        row = bridge.eligible_rows(self.catalog)[0]
+        client = Mock()
+        other = self.root / "outra-arena"
+        other.mkdir()
+        with self.assertRaisesRegex(ValueError, "raizes autorizadas"):
+            bridge.send_thumbnail(client, row, lambda _: self.jpeg, (other,))
+        client.request_raw.assert_not_called()
+
     def test_only_synced_records(self):
         with sqlite3.connect(self.catalog) as db:
             db.execute("UPDATE replays SET sync_state='pending'")
