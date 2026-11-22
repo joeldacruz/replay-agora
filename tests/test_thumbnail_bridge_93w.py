@@ -86,6 +86,31 @@ class ThumbnailBridgeTests(unittest.TestCase):
             bridge.send_thumbnail(client, row, lambda _: self.jpeg, (other,))
         client.request_raw.assert_not_called()
 
+    def test_pagination_does_not_repeat_old_replays(self):
+        with sqlite3.connect(self.catalog) as db:
+            for key in ("quadra01.abcdef124", "quadra01.abcdef125"):
+                db.execute(
+                    "INSERT INTO replays VALUES(?,?,?,?,?,?,?,?)",
+                    (key, "QUADRA_01", str(self.file), 256,
+                     "synced", 0, 1, "2026-11-21T12:00:00Z"),
+                )
+        first = bridge.eligible_rows(self.catalog, limit=2)
+        self.assertEqual(len(first), 2)
+        last = first[-1]
+        second = bridge.eligible_rows(
+            self.catalog, limit=2,
+            after=(last["captured_at"], last["local_id"]),
+        )
+        self.assertEqual(len(second), 1)
+        self.assertEqual(
+            [row["local_id"] for row in first + second],
+            ["quadra01.abcdef123", "quadra01.abcdef124", "quadra01.abcdef125"],
+        )
+
+    def test_invalid_cursor(self):
+        with self.assertRaises(ValueError):
+            bridge.eligible_rows(self.catalog, after=("only-one",))
+
     def test_only_synced_records(self):
         with sqlite3.connect(self.catalog) as db:
             db.execute("UPDATE replays SET sync_state='pending'")
