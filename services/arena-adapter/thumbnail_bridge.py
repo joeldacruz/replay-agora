@@ -48,7 +48,7 @@ def send_thumbnail(client, replay: dict, extract, allowed_roots: tuple[Path, ...
     if not LOCAL_ID.fullmatch(local_id):
         raise ValueError("local_id fora do contrato")
     path = Path(replay["path"]).resolve(strict=True)
-    roots = tuple(Path(x).resolve(strict=True) for x in allowed_roots)
+    # Raiz ainda inexistente deve ser rejeitada pela validacao de confinamento,\n    # nao causar FileNotFoundError. Nao cria diretorios e resolve symlinks.\n    roots = tuple(Path(x).resolve(strict=False) for x in allowed_roots)
     if not roots or not any(path.is_relative_to(root) for root in roots):
         raise ValueError("MP4 fora das raizes autorizadas")
     if not path.is_file() or path.suffix.lower() != ".mp4":
