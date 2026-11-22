@@ -145,3 +145,14 @@ Relatório apresentado pelo operador em `replayagora-srv01`:
 - Ainda resta limpar com segurança os **registros antigos** no catálogo e na central, garantindo que vídeos novos gerados após o corte não sejam atingidos.
 
 **Bloqueio de segurança:** não fazer `DELETE FROM replays` global e não reativar o timer antes de identificar chaves/relacionamentos SQLite, serviços que escrevem no catálogo e registros pré/pós-corte. Preservar buffers, botoeiras, diretórios, credenciais e configurações. Limpeza da central é etapa própria, com backup e verificação das referências; não presumir que excluir arquivo local retire vídeo do aplicativo.
+
+## Etapa 75N.93AG — preflight antes do reset lógico
+
+Diagnóstico do operador no `replayagora-srv01` após exclusão de MP4:
+- `replays=104`: `QUADRA_01` 64 pending + 3 synced, `QUADRA_02` 37 pending.
+- `jobs=0`, `renders=0`, `kv=0`.
+- `MIN(created_at)` por quadra em 2026-11-10; `MAX(created_at)` em 2026-11-19, antes do corte da exclusão física em 2026-11-22.
+- **0 MP4 atuais** tanto em `/srv/replayagora-storage/quadra01/replays` como em `quadra02/replays`.
+- `replayagora-auto-replays.timer` e seu serviço inactive; `replayagora-buffer01.service`, `replayagora-buffer02.service`, `replayagora-botoeira01.service`, `replayagora-media-relay.service` active.
+
+O backup existente `/root/replayagora-reset-backups/20261122-004622/catalogo.sqlite` deve ser usado como **lista fechada de `local_id` antigos**. A exclusão lógica local precisa fazer segundo backup imediatamente antes, transação SQLite com `BEGIN IMMEDIATE`, verificar conjunto exato de IDs, inexistência de MP4 novos e integridade relacional, apagar somente os IDs originais e manter o timer suspenso. Não alterar buffers, MP4, serviços nem credenciais. A exclusão de registros na **central** é um procedimento separado: existem ao menos 3 IDs `synced` anteriormente e precisam ser removidos da apresentação ao jogador sem apagar arenas ou dados de autenticação.
