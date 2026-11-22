@@ -35,7 +35,7 @@ def replay_profile(remote, court_key):
         formats = rp["formats"]
         if type(rotation) is not int or rotation not in _ROTATION:
             raise ValueError("rotação inválida")
-        if type(pre) is not int or type(post) is not int or not 1 <= pre <= 120 or not 0 <= post <= 60:
+        if type(pre) not in (int, float) or type(post) not in (int, float) or not 1 <= pre <= 120 or not 0 <= post <= 60:
             raise ValueError("janela inválida")
         if not isinstance(formats, list) or not formats or any(type(f) is not str or f not in _FORMATS for f in formats):
             raise ValueError("formatos inválidos")
@@ -49,7 +49,8 @@ def replay_profile(remote, court_key):
 
 
 def _run(cmd):
-    result = subprocess.run(cmd, capture_output=True, timeout=180)
+    result = subprocess.run([cmd[0], "-filter_threads", "1", "-filter_complex_threads", "1", *cmd[1:]],
+                            capture_output=True, timeout=180)
     if result.returncode:
         raise RenderError("falha no FFmpeg durante o processamento do replay")
 
