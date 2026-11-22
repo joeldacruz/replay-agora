@@ -134,3 +134,11 @@ O operador executou o commit `fdaa9dc` na arena (`replayagora-srv01`) com **19/1
 Na revisão seguinte, a fila mudou seu helper `_connect()` para gerenciar transação e fechamento explícito em `finally`, e a consulta da ponte adotou `contextlib.closing`. Essa correção **ainda não teve regressão executada no servidor**. Não presumir que o warning desapareceu até reexecutar com `PYTHONWARNINGS=error::ResourceWarning`.
 
 A ponte e a fila continuam isoladas e sem agendamento. Antes da instalação real, segue pendente confirmar valores de `sync_state` e comportamento WAL, integrar varredura de catálogo→fila com cursor persistente, limite de dois uploads por tick, retries e garantia de um único worker.
+
+## Etapa 75N.93AA-T1 — ResourceWarning persistente rastreado a fixtures
+
+Operador executou commit `7b0eccf` com `PYTHONWARNINGS=error::ResourceWarning`. Os 19 testes foram aprovados, **mas ocorreram diversos `ResourceWarning: unclosed database` na finalização de objetos SQLite**. Portanto, o resultado **não** comprova eliminação dos warnings; avisos de finalização em Python podem ser `Exception ignored while finalizing` e não falhar o `unittest`.
+
+A inspeção do código revelou conexões SQLite nos testes `tests/test_thumbnail_bridge_93w.py` abertas via `with sqlite3.connect(...) as db:` (o contexto gerencia transação, **não fecha a conexão**) e instâncias `LocalStore` não fechadas explicitamente em `tests/test_thumbnail_local_93d.py`. Os fixtures da ponte foram alterados para `with closing(sqlite3.connect(...)) as db, db:`; o teste do agente agora encerra os dois `LocalStore` no `finally`. Correções de biblioteca de `7b0eccf` continuam válidas. Essas mudanças são **somente nos testes**, ainda pendentes de regressão da revisão nova.
+
+Aceite: executar a suíte sob `-X dev` com `PYTHONWARNINGS=error::ResourceWarning`, inspecionar a saída completa e não aceitar avisos `ResourceWarning` mesmo quando o `unittest` imprime `OK`.
