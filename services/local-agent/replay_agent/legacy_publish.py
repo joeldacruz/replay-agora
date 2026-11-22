@@ -1,5 +1,6 @@
 """Processa uma amostra com a revisão v3 local e cadastra a mídia no agente de homologação."""
 
+from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 import tempfile
 
+from .ffplan import FramePlan
 from .legacy_bridge import _run, render_legacy_replay, replay_profile
 from .remote import RemoteManager
 from .renderjobs import RenderError, probe, source_meta
@@ -40,6 +42,42 @@ def cut_window(source, dest, trigger_offset, pre, post, *, ffmpeg="ffmpeg", ffpr
           "-c:a", "aac", "-map_metadata", "-1", str(dest)])
 
 
+def _pin_profile(remote, court_key, root, reference, identity):
+    """Persiste a revisão da primeira tentativa, inclusive antes de um corte incompleto."""
+    requests = root / ".requests"
+    requests.mkdir(exist_ok=True)
+    receipt = requests / reference
+    if not receipt.is_dir():
+        version, pre, post, rotation, frames = replay_profile(remote, court_key)
+        with tempfile.TemporaryDirectory(dir=requests, prefix=".pin-") as temp:
+            stage = Path(temp) / "receipt"
+            stage.mkdir()
+            plans = {}
+            for orientation, cached in frames.items():
+                if cached is None:
+                    plans[orientation] = None
+                    continue
+                plan, png = cached
+                (stage / f"{orientation}.png").write_bytes(png)
+                plans[orientation] = {**asdict(plan), "path": f"{orientation}.png"}
+            record = {"identity": identity, "version": version, "pre": pre, "post": post,
+                      "rotation": rotation, "frames": plans}
+            (stage / "request.json").write_text(json.dumps(record), encoding="utf-8")
+            try:
+                os.rename(stage, receipt)
+            except OSError:
+                if not receipt.is_dir():
+                    raise
+    record = json.loads((receipt / "request.json").read_text(encoding="utf-8"))
+    if record["identity"] != identity:
+        raise ValueError("identidade de replay já usada para outro acionamento")
+    frames = {
+        orientation: (FramePlan(**plan), (receipt / plan["path"]).read_bytes()) if plan else None
+        for orientation, plan in record["frames"].items()
+    }
+    return record["version"], record["pre"], record["post"], record["rotation"], frames
+
+
 def publish_sample(remote, store, root, allowed_courts, *, court_key, local_id, captured_at,
                    source, trigger_offset, ffmpeg="ffmpeg", ffprobe="ffprobe"):
     """Cadastra a variante do jogador via LocalStore, usado pelo sync e relay existentes.
@@ -59,14 +97,15 @@ def publish_sample(remote, store, root, allowed_courts, *, court_key, local_id, 
     root.mkdir(parents=True, exist_ok=True)
     identity = {"localId": local_id, "courtKey": court_key, "capturedAt": captured_at.isoformat(),
                 "source": str(source), "offsetS": trigger_offset}
-    target = root / hashlib.sha256(local_id.encode()).hexdigest()
+    reference = hashlib.sha256(local_id.encode()).hexdigest()
+    target = root / reference
     current = store.get(local_id)
     if current is not None and Path(current["path"]).parent != target / "media":
         raise ValueError("identidade já cadastrada por outro fluxo")
     if current is not None and not target.is_dir():
         raise RenderError("lote publicado ausente")
     if not target.is_dir():
-        profile = replay_profile(remote, court_key)
+        profile = _pin_profile(remote, court_key, root, reference, identity)
         with tempfile.TemporaryDirectory(dir=root, prefix=".publish-") as temp:
             work = Path(temp)
             bundle = work / "bundle"
