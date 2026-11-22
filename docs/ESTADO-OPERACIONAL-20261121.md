@@ -176,3 +176,9 @@ Executado pelo operador no `joel@cmtb-srv01`, banco `/srv/projetos/replay-agora-
 - Nenhuma mutação feita nesta inspeção.
 
 Para atender ao reset, a central pode receber **exclusão lógica** estritamente dos cinco antigos (`deleted_at` preenchido, `visibility=private`, `media_state=missing`), preservando os 21 novos. O usuário dispensou novos backups. **A exclusão lógica apenas oculta os itens; não equivale à exclusão física de miniaturas/exports nem é homologação de remoção completa do banco.** Antes de sincronizar de novo, conferir que o baseline incremental não recria os 104 antigos no catálogo da arena.
+
+## Etapa 75N.93AJ — exclusão lógica concluída na central
+
+Operador executou em `joel@cmtb-srv01` contra `/srv/projetos/replay-agora-novo-stage/var/replay.db` uma transação que verificou `5` vídeos antigos ativos (`captured_at < 2026-11-20`), `21` novos ativos, `26` ativos totais, todos `storage_location=agent`. Resultado: **cinco antigos atualizados com `deleted_at`, `visibility=private` e `media_state=missing`**, **21 novos preservados**. Não foi feito backup novo a pedido do operador, nem reinício da API. O histórico antigo da arena já havia sido limpo (104 registros) e os 127 MP4 antigos excluídos.
+
+**Pendência antes de religar o timer:** confirmar o comportamento do código operacional `/opt/replayagora-stage/adaptador-incremental/auto_replays.py` e de seu baseline, para não reintroduzir os registros antigos. A limpeza da central é **lógica**, não purga física de eventual imagem de miniatura ou arquivo de exportação. O timer da arena deve seguir suspenso até validação.
