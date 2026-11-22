@@ -16,27 +16,44 @@ LOCAL_ID = re.compile(r"^[A-Za-z0-9_.:-]{8,120}$")
 MAX_JPEG = 256 * 1024
 
 
-def eligible_rows(catalog: Path, limit: int = 2) -> list[dict]:
-    """Consulta apenas replays confirmados e não apagados (snapshot de leitura).
+def eligible_rows(
+    catalog: Path,
+    limit: int = 2,
+    after: tuple[str, str] | None = None,
+) -> list[dict]:
+    """Pagina replays já sincronizados, sem modificar o catálogo.
 
-    immutable=1 evita criação de WAL/SHM. Isso pode omitir commits ainda no WAL:
-    para produção, usar um snapshot consistente fornecido pelo adaptador.
+    Cursor: (captured_at, local_id) do último resultado.
+    immutable=1 evita criar WAL/SHM, mas pode ignorar dados ainda no WAL.
+    Usar snapshot consistente antes de ligar ao timer da arena.
     """
     if not 1 <= limit <= 20:
         raise ValueError("limite invalido")
+    if after is not None and (
+        not isinstance(after, tuple) or len(after) != 2
+        or not all(isinstance(x, str) for x in after)
+    ):
+        raise ValueError("cursor invalido")
     uri = Path(catalog).resolve().as_uri() + "?mode=ro&immutable=1"
+    predicate = (
+        "sync_state='synced' AND deleted=0 AND file_ok=1 "
+        "AND path IS NOT NULL AND length(path)>0 "
+        "AND captured_at IS NOT NULL AND local_id IS NOT NULL "
+    )
+    params: tuple = (limit,)
+    if after is not None:
+        predicate += "AND (captured_at > ? OR (captured_at = ? AND local_id > ?)) "
+        params = (after[0], after[0], after[1], limit)
     with sqlite3.connect(uri, uri=True) as db:
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA query_only=ON")
         rows = db.execute(
-            "SELECT local_id, court_key, path, bytes "
-            "FROM replays "
-            "WHERE sync_state='synced' AND deleted=0 AND file_ok=1 "
-            "AND path IS NOT NULL AND length(path)>0 "
-            "ORDER BY captured_at ASC LIMIT ?", (limit,)
+            "SELECT local_id, court_key, path, bytes, captured_at "
+            "FROM replays WHERE " + predicate +
+            "ORDER BY captured_at ASC, local_id ASC LIMIT ?",
+            params,
         ).fetchall()
-    return [dict(r) for r in rows]
-
+    return [dict(row) for row in rows]
 
 def send_thumbnail(client, replay: dict, extract, allowed_roots: tuple[Path, ...]) -> str:
     """Envia JPEG com HMAC gerado pelo CentralClient.request_raw.
