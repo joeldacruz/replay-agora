@@ -126,3 +126,11 @@ A biblioteca adicional [`services/arena-adapter/thumbnail_queue.py`](../services
 A ponte recebeu a opção `after=(captured_at, local_id)` e ordenação determinística por `captured_at, local_id`, permitindo varrer o catálogo por páginas sem repetir os primeiros dois registros indefinidamente. Foram adicionados dois testes: paginação com datas iguais e rejeição de cursor incorreto. **Esses dois testes ainda não foram executados pelo operador na nova revisão.** A fila já preserva estados `synced` quando o mesmo `local_id` é reenfileirado.
 
 **Atenção antes do runtime:** a paginação é uma biblioteca chamada pelo futuro processo, não um processo agendado. Ainda precisam ser definidos snapshot do WAL, cursor/checkpoint persistente da varredura, política de reinício da varredura para novos registros retroativos e retries; validar os valores concretos `sync_state` da arena. `ThumbnailQueue.claim` não usa token de lease; restringir a **um trabalhador** até resolver fencing. Não implantar automaticamente.
+
+## Etapa 75N.93Z-T1 — testes e ResourceWarning
+
+O operador executou o commit `fdaa9dc` na arena (`replayagora-srv01`) com **19/19 testes aprovados**: 8 testes da ponte/paginação, 8 testes da fila e 3 testes unitários do extrator de referência. O conjunto adicional veio do padrão de descoberta `test_thumbnail_*93*.py`. Foi reportado um `ResourceWarning: unclosed database` durante o primeiro teste, apesar do resultado OK.
+
+Na revisão seguinte, a fila mudou seu helper `_connect()` para gerenciar transação e fechamento explícito em `finally`, e a consulta da ponte adotou `contextlib.closing`. Essa correção **ainda não teve regressão executada no servidor**. Não presumir que o warning desapareceu até reexecutar com `PYTHONWARNINGS=error::ResourceWarning`.
+
+A ponte e a fila continuam isoladas e sem agendamento. Antes da instalação real, segue pendente confirmar valores de `sync_state` e comportamento WAL, integrar varredura de catálogo→fila com cursor persistente, limite de dois uploads por tick, retries e garantia de um único worker.
