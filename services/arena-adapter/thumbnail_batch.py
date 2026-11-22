@@ -19,8 +19,10 @@ def _classify_error(exc: Exception) -> tuple[str, bool]:
     Ausência de arquivo, timeout, HTTP 4xx ou 5xx recebem retry: replay pode
     ainda estar sendo consolidado, sincronizado ou a central pode estar em failover.
     """
+    # Resposta inesperada e erro de validacao podem refletir rollout parcial;
+    # nao descartar permanentemente o replay sem revisao humana.
     if isinstance(exc, (ValueError, TypeError)):
-        return "invalid", True
+        return "temporary", False
     if isinstance(exc, (FileNotFoundError, PermissionError, OSError)):
         return "missing", False
     return "temporary", False
