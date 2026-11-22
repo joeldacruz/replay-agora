@@ -110,3 +110,77 @@ def test_sample(tmp_path, size, output, orientation, rotation, quadrant):
     assert max(pixel(0, h // 2)) < 40
     border = pixel(round(w * 0.05) + 8, h // 2)
     assert border[2] > 160 and max(border[:2]) < 80
+
+
+def test_legacy_remote_retries_confirmation_and_rolls_back(tmp_path):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from replay_agent.client import CentralUnavailable
+    from replay_agent.legacy_publish import load_offline_remote
+    from replay_agent.legacy_remote import LegacyRemote
+
+    remote_dir = tmp_path / "agent"
+    first = court(tmp_path, "01", "horizontal", (320, 240), 0)
+    second = court(tmp_path, "02", "vertical", (240, 320), 90)
+    asset_data = {p.stem: p.read_bytes() for p in tmp_path.glob("*.png")}
+
+    def revision(version, configure=lambda courts: None):
+        courts = deepcopy([first, second])
+        configure(courts)
+        return {"version": version, "snapshot": {"schema": 1, "courts": courts},
+                "secrets": {"camera": {"password": "senha-sintetica"}}, "allowRestart": True,
+                "assets": [{"versionId": key, "url": f"/remote/assets/{key}", "bytes": len(data),
+                            "sha256": hashlib.sha256(data).hexdigest()} for key, data in asset_data.items()]}
+
+    class Central:
+        rev = None
+        lose_answer = False
+        calls = []
+
+        def request_raw(self, method, path, *, timeout):
+            assert method == "GET" and path.startswith("/remote/assets/")
+            return SimpleNamespace(content=asset_data[path.rsplit("/", 1)[-1]], headers={})
+
+        def call(self, method, path, body=None):
+            self.calls.append((method, path))
+            if method == "GET":
+                assert path == "/remote/pending"
+                return self.rev
+            if not path.endswith("/result"):
+                return {"ok": True}
+            assert (remote_dir / "remote" / "legacy-result.json").is_file()
+            if self.lose_answer:
+                self.lose_answer = False
+                raise CentralUnavailable("resposta perdida")
+            return {"status": body["status"]}
+
+    central = Central()
+    central.rev = revision(3)
+    central.lose_answer = True
+    adapter = LegacyRemote(central, remote_dir, {"01", "02"})
+    with pytest.raises(CentralUnavailable):
+        adapter.poll()
+    assert load_offline_remote(remote_dir).active_version == 0
+
+    adapter = LegacyRemote(central, remote_dir, {"01", "02"})
+    assert adapter.tick(None)["status"] == "aplicado"
+    assert central.calls.count(("GET", "/remote/pending")) == 1
+    assert not adapter.outbox.exists()
+    assert "senha-sintetica" not in adapter.state_path.read_text()
+    reader = load_offline_remote(remote_dir)
+    assert replay_profile(reader, "01")[:4] == (3, 1.25, 0.75, 0)
+    assert replay_profile(reader, "02")[:4] == (3, 1.25, 0.75, 90)
+
+    central.rev = revision(4, lambda c: c[1]["camera"].update(rotationDeg=17))
+    rejected = adapter.poll()
+    assert rejected["status"] == "falha" and rejected["activeVersion"] == 3
+    assert load_offline_remote(remote_dir).active_version == 3
+
+    central.rev = revision(5, lambda c: c[1]["camera"].update(rotationDeg=270))
+    assert adapter.poll()["status"] == "aplicado"
+    assert replay_profile(adapter, "01")[3] == 0
+    assert replay_profile(adapter, "02")[3] == 270
+    assert adapter.rollback() is True
+    assert replay_profile(load_offline_remote(remote_dir), "02")[:4] == (3, 1.25, 0.75, 90)
+    assert adapter.poll()["status"] == "falha"
