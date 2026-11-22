@@ -13,6 +13,7 @@ import os
 import subprocess
 import tempfile
 
+from . import framing
 from .ffplan import ExportPlan, FramePlan, build_command
 from .renderjobs import RenderError, probe, source_meta, verify_output
 from .thumbnail import extract_thumbnail
@@ -44,7 +45,16 @@ def replay_profile(remote, court_key):
         frames = {}
         for orientation in formats:
             frame = remote.frame_for(court_key, orientation)
-            frames[orientation] = (frame, Path(frame.path).read_bytes()) if frame else None
+            if frame is None:
+                frames[orientation] = None
+                continue
+            if (frame.out_w % 2 or frame.out_h % 2
+                    or (orientation == "horizontal" and frame.out_w <= frame.out_h)
+                    or (orientation == "vertical" and frame.out_h <= frame.out_w)):
+                raise ValueError("resolução incompatível com o formato")
+            framing.validate_window(frame.window, frame.width, frame.height)
+            framing.compute(frame.layout, frame.out_w, frame.out_h, frame.width, frame.height, frame.window)
+            frames[orientation] = (frame, Path(frame.path).read_bytes())
         return remote.active_version, pre, post, rotation, frames
 
 
