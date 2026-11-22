@@ -142,3 +142,13 @@ Operador executou commit `7b0eccf` com `PYTHONWARNINGS=error::ResourceWarning`. 
 A inspeção do código revelou conexões SQLite nos testes `tests/test_thumbnail_bridge_93w.py` abertas via `with sqlite3.connect(...) as db:` (o contexto gerencia transação, **não fecha a conexão**) e instâncias `LocalStore` não fechadas explicitamente em `tests/test_thumbnail_local_93d.py`. Os fixtures da ponte foram alterados para `with closing(sqlite3.connect(...)) as db, db:`; o teste do agente agora encerra os dois `LocalStore` no `finally`. Correções de biblioteca de `7b0eccf` continuam válidas. Essas mudanças são **somente nos testes**, ainda pendentes de regressão da revisão nova.
 
 Aceite: executar a suíte sob `-X dev` com `PYTHONWARNINGS=error::ResourceWarning`, inspecionar a saída completa e não aceitar avisos `ResourceWarning` mesmo quando o `unittest` imprime `OK`.
+
+## Etapa 75N.93AA-R2 / 93AB — testes sem warnings e executor por lote
+
+O operador executou o commit `7f2290a` com `python3 -X dev` e `PYTHONWARNINGS=error::ResourceWarning`. Resultado: **19/19 testes aprovados, sem `ResourceWarning`**, conferido também por busca na saída. Catálogo e serviços reais preservados.
+
+Foi adicionado `services/arena-adapter/thumbnail_batch.py` com função pura `process_batch` que recebe página de registros, resolver de registro atual, `CentralClient`, extrator JPEG, raízes autorizadas e a função `send_thumbnail`. Ela insere IDs na fila auxiliar, reivindica **no máximo duas miniaturas** por execução, marca `created/exists` como sincronizados e usa backoff para falhas. Casos de erro ambíguos permanecem retentáveis, sem descartar permanentemente replay.
+
+Testes isolados adicionados em `tests/test_thumbnail_batch_93ab.py`: limite de duas, ausência de repetição, recuperação de fila após reabertura, falha de rede, catálogo temporariamente indisponível, limite inválido e resposta inesperada. **Ainda dependem de execução pelo operador.**
+
+**Não é um daemon:** não cria timer, não lê credenciais, não instancia fila de produção nem faz rede sozinho. A busca da página, mapeamento de `local_id`, abertura do cliente HTTP real e controle de cursor periódico continuam dependentes do adaptador operacional. Não ativar na arena antes de validar snapshot WAL e garantir trabalhador único.
