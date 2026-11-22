@@ -77,3 +77,11 @@ Em 20/11 foi relatado `pending=100`, `synced=11` após uma execução controlada
 ## 7. Lacunas que o GitHub ainda não representa
 
 O código operacional efetivamente instalado em `/opt/replayagora-stage/adaptador-incremental/`, `/opt/replayagora-stage/media-only/`, `/srv/replayagora/quadra01|02/app/` e os arquivos de unidades `systemd` não foram recuperados integralmente pela integração GitHub deste chat. Portanto **não afirmar que foram versionados, auditados ou reproduzíveis a partir deste repositório**. Ver [plano de pendências](PENDENCIAS-INTEGRACAO-ARENA-20261121.md).
+
+## Evidência adicional — 75N.93R (21/11/2026)
+
+O inventário **somente leitura**, executado por `replayadmin` na arena, confirmou `replayagora-auto-replays.service` com `Type=oneshot`, `Result=success`, `ExecMainStatus=0`, `ActiveState=inactive` e `replayagora-auto-replays.timer` `ActiveState=active`, `UnitFileState=enabled`, `LastTriggerUSec=Sun 2026-11-22 00:13:48 UTC` (**21/11/2026 21:13:48 UTC−03**). Portanto o estado `inactive (dead)` é compatível com sucesso normal da tarefa. Isso **não comprova**, isoladamente, que todos os metadados foram sincronizados; requer exame dos resultados do catálogo.
+
+Heartbeat, relay, buffers e processadores das quadras 01/02 estavam ativos. As quatro raízes de mídia verificadas (`/srv/replayagora-storage/quadra01|02/replays`, `/srv/replayagora/quadra01|02/replays`) existem. Não afirmar qual delas é a fonte da verdade até ler o adaptador real.
+
+**Limite de permissões:** a execução por `replayadmin` não pôde ler `/opt/replayagora-stage/heartbeat.py`; o catálogo `/opt/replayagora-stage/media-only/catalogo.sqlite` e os caminhos esperados de `auto_replays.py`/`relay_service.py` não puderam ser confirmados (`ausente/inacessivel`). Isso **não comprova ausência**: usar inspeção somente leitura privilegiada de caminhos e SHA256, sem despejar código ou secrets. Os buffers/replayers das duas quadras foram hasheados e não devem ser substituídos pelo agente de referência.
