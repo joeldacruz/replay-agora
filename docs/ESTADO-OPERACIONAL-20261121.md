@@ -125,3 +125,11 @@ Relatório agregado **somente leitura** do operador em `replayagora-srv01`:
 - `replayagora-auto-replays.service`: `Type=oneshot` previamente verificado, `ActiveState=inactive`, `Result=success`, `ExecMainStatus=0`, `NRestarts=0`; timer `ActiveState=active`, `LastTriggerUSec=2026-11-22 00:40:44 UTC`.
 
 **Interpretação limitada**: os estados de catálogo não revelam se o envio foi tentado, recusado, pulado ou não refletido no banco; retorno bem-sucedido do oneshot não confirma sincronização. Fazer diagnóstico somente leitura da unidade e resumos sanitizados do journal; não imprimir logs brutos ou arquivos de credenciais. Manter a ativação JPEG bloqueada enquanto o pipeline de metadados estiver pendente.
+
+## Etapa 75N.93AE — journald do sincronizador (contagens sanitizadas)
+
+Operador em `replayagora-srv01` reportou: unidade `replayagora-auto-replays.service` `LoadState=loaded`, `ActiveState=inactive`, `SubState=dead`, `UnitFileState=static`, `Result=success`, `ExecMainStatus=0`; timer `LoadState=loaded`, `ActiveState=active`, `SubState=waiting`, `UnitFileState=enabled`, `LastTriggerUSec=Sun 2026-11-22 00:41:46 UTC`, `Result=success`.
+
+Busca de até 500 mensagens das duas horas anteriores no journal do serviço: 285 linhas coincidiram com `sync|sincroniz`; 72 com `success|sucesso|created|duplicate`; **zero** com padrões de envio, erro, autenticação, rede ou códigos HTTP. Indicadores de início 71 e término 144, contabilizados por regex, **não são números de tentativas HTTP**. O serviço `oneshot` pode estar registrando apenas mensagens do systemd; não inferir que ocorreu envio, nem que não ocorreu, somente desses padrões.
+
+**Bloqueio mantido:** 101 replays `pending`, sendo 99 `file_ok=1`, nenhum motivo registrado. Próximo diagnóstico deve distinguir mensagens do systemd vs saída do processo e examinar somente *estrutura de controle*, flags e condições do sincronizador operacional, sem mostrar segredos, payloads, logs crus ou alterar serviços. Não agendar integração JPEG ainda.
