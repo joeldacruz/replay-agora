@@ -85,3 +85,11 @@ O inventário **somente leitura**, executado por `replayadmin` na arena, confirm
 Heartbeat, relay, buffers e processadores das quadras 01/02 estavam ativos. As quatro raízes de mídia verificadas (`/srv/replayagora-storage/quadra01|02/replays`, `/srv/replayagora/quadra01|02/replays`) existem. Não afirmar qual delas é a fonte da verdade até ler o adaptador real.
 
 **Limite de permissões:** a execução por `replayadmin` não pôde ler `/opt/replayagora-stage/heartbeat.py`; o catálogo `/opt/replayagora-stage/media-only/catalogo.sqlite` e os caminhos esperados de `auto_replays.py`/`relay_service.py` não puderam ser confirmados (`ausente/inacessivel`). Isso **não comprova ausência**: usar inspeção somente leitura privilegiada de caminhos e SHA256, sem despejar código ou secrets. Os buffers/replayers das duas quadras foram hasheados e não devem ser substituídos pelo agente de referência.
+
+## Evidência 75N.93S — caminhos e esquema confirmados com leitura privilegiada
+
+Saída do operador no `replayagora-srv01`: `/opt/replayagora-stage/heartbeat.py` SHA256 `83b2aa4a3da5ba5c7c96e61a97cf852aad17661c7878a08c735240fe57ea90de`; `/opt/replayagora-stage/adaptador-incremental/auto_replays.py` SHA256 `4075ca6663457fdb340e41cb03ec505be4dfc3a3bc976c11c4f731369fea6539`; `/opt/replayagora-stage/media-only/relay_service.py` SHA256 `edce87d5e64706ad8733d899d90d91ebbbe422c78f6d63458cfa9c4f66b73b34`.
+
+O catálogo real existe em `/opt/replayagora-stage/media-only/catalogo.sqlite` e possui tabelas `job_events`, `jobs`, `kv`, `renders`, `replays` e `trigger_log`. Esquema da tabela `replays` confirmado: `local_id, court_key, captured_at, path, bytes, duration, width, height, has_audio, codec, protected, central_protected, deleted, sync_state, sync_reason, synced_at, created_at, file_ok`. **Ainda não há coluna `thumb_state` nesse catálogo**; a implementação de referência do GitHub usa outro SQLite. Não alterar o catálogo sem plano de migração/backup e teste.
+
+O timer `replayagora-auto-replays.timer` está ativo; a execução anterior do `replayagora-auto-replays.service` terminou com `Result=success` e `ExecMainStatus=0`. Isso confirma execução sem erro do processo, **não** comprova ausência de pendências de replay ou plena publicação. O próximo passo é verificar o fluxo do `auto_replays.py` instalado e sua relação com `local_id`/credenciais, antes de implementar JPEG.
