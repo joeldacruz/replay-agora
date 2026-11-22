@@ -104,3 +104,17 @@ Próxima etapa antes de ligar ao timer:
 4. Revisar autorização HMAC/credenciais em teste local e comportamento de arquivos incompletos, timeouts, 404, 409, 5xx.
 5. Só então planejar instalação separada, sem reiniciar os serviços de buffers, replays, botão e relay.
 
+
+## Etapa 75N.93X-R1/93Y — regressão aprovada e fila auxiliar publicada
+
+O operador executou o commit `60ae79b` em `replayagora-srv01`: sintaxe Python e **6/6 testes** `test_thumbnail_bridge_93w.py` passaram, sem acesso ao catálogo operacional, serviços ou rede.
+
+A biblioteca adicional [`services/arena-adapter/thumbnail_queue.py`](../services/arena-adapter/thumbnail_queue.py) foi publicada com testes [`tests/test_thumbnail_queue_93y.py`](../tests/test_thumbnail_queue_93y.py). Ela cria SQLite **separado** e suporta `enqueue` idempotente, `claim` limitado, leasing com recuperação após expiração, `complete`, `retry` com backoff e `failed` permanente, além de agregados `counts`.
+
+**Limites antes da instalação:**
+- Nenhuma execução automática, timer, credencial ou upload efetivo é acionado por esta biblioteca; ela **não** está instalada na arena.
+- Os testes novos ainda precisam ser executados na versão do GitHub e seu resultado registrado.
+- `eligible_rows` da ponte ainda usa leitura imutável do catálogo e seleção limitada que pode repetir os registros antigos. Requer paginação/cursor e snapshot consistente antes de agendar.
+- Para múltiplos processos trabalhadores, o lease deve receber token/fencing para impedir o trabalhador antigo de confirmar o item já reatribuído. Até então, usar **somente um worker**.
+- A política de falhas definitivas/transitórias deve ser revista com códigos HTTP reais; nunca marcar definitivamente como inválido só por indisponibilidade da central.
+- A escrita do SQLite auxiliar é intencional e ocorre **apenas se a biblioteca for instanciada** com arquivo específico; não tocar `catalogo.sqlite`.
