@@ -113,3 +113,15 @@ Leitura privilegiada, somente leitura, em `replayagora-srv01`, catálogo `/opt/r
 - `PRAGMA journal_mode`: `delete` (não `wal`).
 
 **Gate de produção:** não agendar envio JPEG ainda. A sincronização de metadados existente é a dependência crítica (101 registros `pending`). Investigar logs e estados agregados sem mostrar tokens, caminhos, `local_id` ou razões textuais sensíveis. O timer `oneshot` termina com sucesso de processo, o que não comprova entrega dos registros pendentes. Nenhuma alteração efetuada na arena na etapa 75N.93AC. O teste de 26/26 casos do protótipo JPEG havia sido aprovado na etapa anterior, mas isso não valida integração operacional da API.
+
+## Etapa 75N.93AD — distribuição detalhada das pendências
+
+Relatório agregado **somente leitura** do operador em `replayagora-srv01`:
+- `QUADRA_01`: 64 replays `pending, file_ok=1, deleted=0`; 3 `synced, file_ok=1, deleted=0`.
+- `QUADRA_02`: 35 replays `pending, file_ok=1, deleted=0`; 2 `pending, file_ok=0, deleted=0`; nenhum sincronizado.
+- Dos 101 pendentes, **99 têm `file_ok=1`** e **2 têm `file_ok=0`**, ambos da segunda quadra.
+- **Nenhum** dos 101 pendentes possui `sync_reason` preenchido (segundo consulta de classificação sem imprimir conteúdo).
+- A consulta à tabela `jobs` não retornou linhas.
+- `replayagora-auto-replays.service`: `Type=oneshot` previamente verificado, `ActiveState=inactive`, `Result=success`, `ExecMainStatus=0`, `NRestarts=0`; timer `ActiveState=active`, `LastTriggerUSec=2026-11-22 00:40:44 UTC`.
+
+**Interpretação limitada**: os estados de catálogo não revelam se o envio foi tentado, recusado, pulado ou não refletido no banco; retorno bem-sucedido do oneshot não confirma sincronização. Fazer diagnóstico somente leitura da unidade e resumos sanitizados do journal; não imprimir logs brutos ou arquivos de credenciais. Manter a ativação JPEG bloqueada enquanto o pipeline de metadados estiver pendente.
