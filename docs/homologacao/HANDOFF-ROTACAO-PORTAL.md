@@ -32,3 +32,34 @@ O destino não pode ser instalado dentro das árvores varridas por `glob('replay
 5. Só então alterar, com backup e rollback, o sincronizador real e sua autorização de caminhos; Quadra 01 permanece intacta.
 
 **Não considerar a implementação atual uma integração ativa com o Portal.** O carregamento/autenticação da revisão aplicada ainda depende da implantação controlada de um consumidor de configuração. Não alterar status da v3 artificialmente.
+
+## Exportação autenticada para um ensaio avulso na Quadra 02
+
+O heartbeat fornece os números de revisão pendente e aplicada. A consulta
+`GET /api/agent/v1/remote/pending` entrega a configuração pendente, pode
+alterar seu status para `enviado` e inclui credenciais. O `LegacyRemote.poll()`
+também envia confirmações de recebimento, progresso e resultado. Mantenha esses
+fluxos fora do ensaio de rotação.
+
+1. Um operador do Portal Dev com MFA confirma o ID de `replayagora-srv01`,
+   o número da revisão ativa e a evidência de aplicação integral. Se a
+   revisão estiver pendente ou o resultado for parcial, interrompa.
+2. A partir de `services/local-agent`, execute
+   `python3 -m replay_agent.legacy_rotation_portal --server-id ID --version N --output ARQUIVO_NOVO`.
+   Informe a sessão do Portal somente no prompt sem eco. A ferramenta consulta
+   por HTTPS os recursos de revisão e servidor do Portal, verifica o vínculo
+   e a confirmação ativa e exporta somente a orientação da Quadra 02 e a
+   procedência. Faça a exportação imediatamente antes do ensaio e transfira
+   o arquivo por SSH para uma pasta privada da arena.
+3. Registre o marco em nanossegundos na arena antes de um novo replay,
+   faça o SHA-256 do original finalizado e execute
+   `nice -n 15 python3 -m replay_agent.legacy_rotation_shadow --applied-state ARQUIVO --output PASTA_PRIVADA --since-ns MARCO`.
+   Use uma pasta de variantes fora das árvores de replay. Confira dimensões,
+   duração, decodificação e SHA-256 do original. Um operador com acesso
+   autorizado deve consultar o catálogo em modo somente leitura pelo
+   `localId` e conferir que o caminho e o replay servido pela API continuam
+   correspondendo ao original.
+4. Para interromper o ensaio, encerre a varredura e arquive os artefatos
+   privados. Em caso de reversão no Portal, só exporte novamente quando a
+   nova revisão de reversão estiver efetivamente aplicada. Use uma nova
+   pasta de saída para outro ensaio e preserve os recibos de cada revisão.
