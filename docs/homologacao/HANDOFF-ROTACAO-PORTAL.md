@@ -63,3 +63,51 @@ fluxos fora do ensaio de rotação.
    privados. Em caso de reversão no Portal, só exporte novamente quando a
    nova revisão de reversão estiver efetivamente aplicada. Use uma nova
    pasta de saída para outro ensaio e preserve os recibos de cada revisão.
+
+## Recebimento local de uma revisão pendente
+
+`legacy_rotation_receive.portal_receipt` oferece um callback alternativo para
+o heartbeat isolado. Ele usa o número em `remote.pendingVersion` como dica e
+consulta `GET /api/platform/servers/{id}/revisions/{version}` com a sessão
+MFA de um operador em memória. A consulta de revisão não transiciona seu
+status. O callback valida servidor, arena, versão, esquema e ângulo explícito
+da Quadra 02. A confirmação local não é sincronizada com o Portal e o recibo
+não tem o formato de estado aplicado consumido pela rotação.
+
+Após aprovação, um operador autorizado deve inspecionar o heartbeat real,
+confirmar o formato da resposta e validar a v4 por leitura autenticada. Para
+avaliar a compatibilidade integral com `LegacyRemote`, verificar as chaves
+locais de todas as quadras, a janela e os formatos, além do manifesto e da
+integridade de eventuais molduras em ambiente descartável. A conferência da
+orientação da Quadra 02 cobre apenas esse campo.
+
+O primeiro ensaio pode usar o callback em processo avulso, com a resposta
+autenticada do heartbeat, sessão MFA temporária e diretório privado exclusivo.
+Transmita apenas o campo `remote` a `receipt.tick(...)`, confirme o ID local
+com `receipt.confirm(revision_id)` e use `receipt.rollback()` para restaurar
+o recibo anterior ou descartar o pendente. Mantenha o maior número observado
+para evitar reimportar uma revisão revertida. Ao encerrar o ensaio, feche o
+processo e arquive a pasta privada. Não instale a sessão do operador como
+credencial permanente de serviço. Uma integração permanente requer uma
+credencial de leitura restrita ou endpoint próprio para orientação.
+
+O fluxo acima não chama `LegacyRemote.poll()`, `/remote/pending` ou os
+endpoints de confirmação da revisão. Nenhum serviço operacional participa.
+
+### Consulta avulsa com a sessão MFA do operador
+
+Identifique o ID do servidor e o ID da arena nas telas do Portal Dev.
+Em um terminal interativo, a partir da raiz do repositório, execute:
+
+```bash
+cd services/local-agent
+recibo_dir=$(mktemp -d)
+python3 -m replay_agent.legacy_rotation_receive \
+  --server-id ID_DO_SERVIDOR --arena-id ID_DA_ARENA \
+  --version 4 --directory "$recibo_dir"
+```
+
+Informe a credencial Bearer da sessão autenticada somente no prompt sem eco.
+O Portal precisa indicar v4 como última revisão pendente. O comando guarda
+`rotation-receipt.json` na pasta privada e imprime somente a orientação
+recebida. O recibo serve para conferência no ensaio acompanhado.

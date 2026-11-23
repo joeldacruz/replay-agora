@@ -20,6 +20,17 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+def portal_getter(token):
+    opener = build_opener(NoRedirect())
+
+    def get_json(path):
+        req = Request(ORIGIN + path, headers={"Authorization": "Bearer " + token})
+        with opener.open(req, timeout=15) as response:
+            return json.load(response)
+
+    return get_json
+
+
 def export_state(get_json, server_id, version):
     if version < 1:
         raise ValueError("a versão esperada deve ser positiva")
@@ -65,15 +76,8 @@ def main():
     token = getpass("Token da sessão MFA do Portal Dev: ").strip()
     if not token:
         parser.error("sessão do Portal Dev ausente")
-    opener = build_opener(NoRedirect())
-
-    def get_json(path):
-        req = Request(ORIGIN + path, headers={"Authorization": "Bearer " + token})
-        with opener.open(req, timeout=15) as response:
-            return json.load(response)
-
     try:
-        state = export_state(get_json, args.server_id, args.version)
+        state = export_state(portal_getter(token), args.server_id, args.version)
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as target:
             json.dump(state, target)
