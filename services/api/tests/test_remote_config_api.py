@@ -319,3 +319,57 @@ def test_audit_records_portal_mutations(client, world, H):
     acts = {a.action for a in db.query(AuditLog)}
     db.close()
     assert {"platform.server_create", "platform.camera_create"} <= acts
+
+
+# ---------------------------------------------------------------- manifesto isolado de molduras para a Quadra 02
+def test_current_frame_configuration_is_readonly_and_scoped(monkeypatch):
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from app.routers import agent_remote
+
+    server = SimpleNamespace(id="servidor-quadra02", arena_id="arena-vibe")
+    revision = SimpleNamespace(version=4, status="pendente")
+    profile = {"frameId": "f1", "name": "Tema Praia", "versionId": "v4",
+               "version": 4, "sha256": "a" * 64, "bytes": 123,
+               "width": 1080, "height": 1440,
+               "window": {"x": 0, "y": 70, "w": 1080, "h": 1280},
+               "layout": {"frameFit": "contain"}, "out": "1080x1920"}
+    snapshot = {"courts": [
+        {"key": "QUADRA_01", "active": True,
+         "frames": {"enabled": True, "vertical": {"name": "NAO EXPOR"}},
+         "replay": {"formats": ["vertical"]}},
+        {"key": "QUADRA_02", "active": True,
+         "camera": {"username": "secreto", "host": "192.168.1.18"},
+         "frames": {"enabled": True, "horizontal": None, "vertical": profile},
+         "replay": {"formats": ["horizontal", "vertical"]}},
+    ]}
+    monkeypatch.setattr(agent_remote, "_server", lambda db, ag: server)
+    monkeypatch.setattr(agent_remote.rc, "build_snapshot", lambda db, s: snapshot)
+    monkeypatch.setattr(agent_remote.rc, "latest", lambda db, sid: revision)
+    value = agent_remote.current_frame_configuration(None, object(), "QUADRA_02")
+    assert value["serverId"] == server.id
+    assert value["frames"]["horizontal"] is None
+    assert value["frames"]["vertical"]["versionId"] == "v4"
+    assert value["formats"] == ["horizontal", "vertical"]
+    assert value["configurationState"] == "desired_unapplied"
+    assert "secreto" not in json.dumps(value)
+    assert "NAO EXPOR" not in json.dumps(value)
+    with pytest.raises(HTTPException) as exc:
+        agent_remote.current_frame_configuration(None, object(), "QUADRA_01")
+    assert exc.value.status_code == 404
+
+
+def test_current_frame_configuration_respects_disabled_formats(monkeypatch):
+    from types import SimpleNamespace
+    from app.routers import agent_remote
+    server = SimpleNamespace(id="s", arena_id="a")
+    frame = {"versionId": "v1"}
+    snapshot = {"courts": [{"key": "QUADRA_02", "active": True,
+                "replay": {"formats": ["horizontal"]},
+                "frames": {"enabled": False, "horizontal": frame, "vertical": frame}}]}
+    monkeypatch.setattr(agent_remote, "_server", lambda db, ag: server)
+    monkeypatch.setattr(agent_remote.rc, "build_snapshot", lambda db, s: snapshot)
+    monkeypatch.setattr(agent_remote.rc, "latest", lambda db, sid: None)
+    value = agent_remote.current_frame_configuration(None, object(), "QUADRA_02")
+    assert value["frames"] == {"horizontal": None, "vertical": None}
+    assert value["framesEnabled"] is False
