@@ -231,9 +231,13 @@ def asset(version_id: str, ag: ArenaAgent = Depends(bound), db: Session = Depend
     # servidor; nenhum PNG de outras arenas ou versões desvinculadas é exposto.
     live = rc.build_snapshot(db, s)
     linked = any(
-        frame and frame.get("versionId") == version_id
+        court["active"] and court["frames"]["enabled"]
+        and any(
+            court["frames"].get(orient)
+            and court["frames"][orient].get("versionId") == version_id
+            for orient in court["replay"]["formats"]
+        )
         for court in live["courts"]
-        for frame in (court["frames"].get("horizontal"), court["frames"].get("vertical"))
     )
     if not linked and not any(version_id in r.snapshot_json for r in revs):
         raise HTTPException(404, "arquivo não encontrado")
