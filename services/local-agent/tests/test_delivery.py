@@ -411,3 +411,106 @@ def test_full_journey_offline_capture_reconnect_then_playable(client, world, tmp
         for t in threads:
             t.join(timeout=5)
         ar.engine.stop()
+
+
+def test_legacy_manifest_reaches_player(rig, monkeypatch):
+    """Da revisão v3 em disco ao MP4 e JPEG que chegam à API do jogador."""
+    import json
+    import shutil
+    from datetime import timezone
+
+    from replay_agent import legacy_publish
+    from replay_agent.legacy_publish import load_offline_remote, publish_sample
+    from replay_agent.renderjobs import RenderError
+    from replay_agent.thumbnail import extract_thumbnail
+
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("requer FFmpeg e ffprobe")
+
+    source = rig.tmp / "sample.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "color=black:s=320x240:r=20:d=5,"
+        "drawbox=t=fill:c=red:enable='gte(t,1.25)*lt(t,2.25)',"
+        "drawbox=t=fill:c=blue:enable='gte(t,2.25)*lt(t,3.25)'",
+        "-c:v", "libx264", str(source),
+    ], check=True, capture_output=True, timeout=60)
+    original = hashlib.sha256(source.read_bytes()).hexdigest()
+    remote_dir = rig.tmp / "agent-v3"
+    remote = load_offline_remote(remote_dir)
+    courts = [
+        {"key": k, "active": True, "camera": {"rotationDeg": angle},
+         "replay": {"preS": 1.25, "postS": 0.75, "formats": [orientation]},
+         "frames": {"enabled": False}}
+        for k, angle, orientation in [("A_01", 0, "horizontal"), ("A_02", 90, "vertical")]
+    ]
+    remote.state_path.write_text(json.dumps({"activeVersion": 3, "snapshot": {"courts": courts}}))
+    remote = load_offline_remote(remote_dir)
+    target = rig.tmp / "A" / "replays" / "bridge"
+    base = {"source": source, "trigger_offset": 2.5, "captured_at": T0.replace(tzinfo=timezone.utc)}
+
+    def publish(key, enabled, *, local_id=None, **changes):
+        return publish_sample(remote, rig.agent.store, target, enabled,
+                              court_key=key, local_id=local_id or f"bridge-{key}", **(base | changes))
+
+    assert publish("A_01", {"A_02"}) is None
+    with pytest.raises(RenderError, match="pós-roll"):
+        publish("A_02", {"A_02"}, local_id="bridge-incomplete", trigger_offset=4.5)
+
+    with monkeypatch.context() as patch:
+        def interruption(*args, **kwargs):
+            raise OSError("interrupção após fixar o perfil")
+
+        patch.setattr(legacy_publish, "cut_window", interruption)
+        with pytest.raises(OSError, match="interrupção"):
+            publish("A_02", {"A_02"})
+
+    assert rig.agent.store.get("bridge-A_02") is None
+    remote.state["activeVersion"] = 4
+    vertical = publish("A_02", {"A_02"})
+    assert vertical.name == "vertical.mp4"
+    horizontal = publish("A_01", {"A_01", "A_02"})
+    assert horizontal.name == "horizontal.mp4"
+    assert publish("A_02", {"A_01", "A_02"}) == vertical
+    assert publish("A_02", set()) is None
+    assert rig.agent.store.get("bridge-A_02")["path"] == str(vertical)
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == original
+
+    # O primeiro e o último quadro devem ser vermelhos e azuis, respectivamente.
+    for at, channel in [("0", 0), ("1.95", 2)]:
+        result = subprocess.run(["ffmpeg", "-v", "error", "-i", str(vertical), "-ss", at,
+                                 "-vf", "crop=2:2,format=rgb24", "-frames:v", "1",
+                                 "-f", "rawvideo", "pipe:1"], check=True, capture_output=True, timeout=60)
+        pixel = result.stdout[:3]
+        assert len(pixel) == 3 and pixel[channel] > 170 and sum(pixel) - pixel[channel] < 95
+
+    assert rig.agent.link.tick()["online"]
+    db = SessionLocal()
+    try:
+        videos = db.query(Video).filter(Video.local_id.in_(["bridge-A_01", "bridge-A_02"])).all()
+        by_id = {v.local_id: v for v in videos}
+        assert len(videos) == 2
+        for lid, path, version, size in [
+            ("bridge-A_01", horizontal, 4, (1920, 1080)),
+            ("bridge-A_02", vertical, 3, (1080, 1920)),
+        ]:
+            row = by_id[lid]
+            assert (row.width, row.height, row.rotation_deg) == (*size, 0)
+            assert row.duration == pytest.approx(2.0, abs=0.05)
+            assert row.thumb_key
+            manifest = json.loads((path.parent / "manifest.json").read_text())
+            assert manifest["configVersion"] == version
+            assert (path.parent / "thumbnail.jpg").read_bytes() == extract_thumbnail(str(path))
+            response = rig.client.patch(f"/api/arena/{rig.world.A.id}/videos/{row.id}",
+                                        headers=rig.H("a_admin_arena"), json={"visibility": "arena"})
+            assert response.status_code == 200, response.text
+            rig.ids[lid] = row.id
+    finally:
+        db.close()
+    rig.start()
+    for lid, path in [("bridge-A_01", horizontal), ("bridge-A_02", vertical)]:
+        data = path.read_bytes()
+        response = rig.client.get(url_for(rig, lid), headers={"Range": "bytes=0-511"})
+        assert response.status_code == 206 and response.content == data[:512]
+        download = rig.client.get(link(rig, lid))
+        assert download.status_code == 200 and download.content == data

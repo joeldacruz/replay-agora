@@ -34,6 +34,52 @@ def _rev(db: Session, s: LocalServer, version: int) -> ConfigRevision:
     return r
 
 
+def rotation_configuration(db: Session, ag: ArenaAgent, court_key: str) -> dict:
+    """Consulta SOMENTE-LEITURA da orientação desejada no snapshot mais recente.
+
+    Não consome /pending, não confirma aplicação, não expõe segredos de RTSP e
+    não altera o estado de ConfigRevision. 'desired_unapplied' NÃO significa
+    que o AgentService, controladores ou quadras foram configurados.
+    """
+    from fastapi import HTTPException
+    s = _server(db, ag)
+    if court_key != "QUADRA_02":
+        raise HTTPException(404, "quadra fora do piloto de orientação")
+    rev = (db.query(ConfigRevision).filter_by(server_id=s.id)
+           .order_by(ConfigRevision.version.desc()).first())
+    if not rev or rev.status in ("falha", "revertido", "substituido"):
+        raise HTTPException(409, "nenhuma configuração vigente disponível")
+    snapshot = json.loads(rev.snapshot_json)
+    if (snapshot.get("serverId") != s.id or snapshot.get("arenaId") != s.arena_id):
+        raise HTTPException(409, "snapshot não pertence ao servidor autenticado")
+    courts = [court for court in snapshot.get("courts", [])
+              if isinstance(court, dict) and court.get("key") == court_key]
+    if len(courts) != 1 or courts[0].get("active") is not True:
+        raise HTTPException(409, "quadra ausente ou inativa")
+    cam = courts[0].get("camera")
+    angle = cam.get("rotationDeg") if isinstance(cam, dict) else None
+    if type(angle) is not int or angle not in (0, 90, 180, 270):
+        raise HTTPException(409, "orientação inválida ou ausente")
+    return {
+        "serverId": s.id,
+        "arenaId": s.arena_id,
+        "courtKey": court_key,
+        "revisionId": rev.id,
+        "version": rev.version,
+        "revisionStatus": rev.status,
+        "configurationState": ("applied" if rev.status == "aplicado" and
+                               s.applied_version == rev.version else "desired_unapplied"),
+        "rotationDeg": angle,
+    }
+
+
+@router.get("/rotation/{court_key}")
+def get_rotation(court_key: str, ag: ArenaAgent = Depends(bound),
+                 db: Session = Depends(get_db)):
+    """Orientação sem efeito colateral; autenticada como agente do servidor."""
+    return rotation_configuration(db, ag, court_key)
+
+
 @router.get("/pending")
 def pending(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Próxima configuração a aplicar (a mais nova; versões antigas não aplicadas já foram substituídas) + segredos + arquivos."""

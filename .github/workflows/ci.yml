@@ -31,3 +31,17 @@ jobs:
         env:
           RUN_DOCKER_HOMOLOGACAO: SIM
         run: bash scripts/docker-smoke.sh
+  legacy_bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -r services/api/requirements-dev.txt
+      - name: Testes da ponte e da entrega ao jogador
+        run: |
+          pytest -q -rA services/local-agent/tests/test_legacy_bridge.py \
+            services/local-agent/tests/test_delivery.py::test_legacy_manifest_reaches_player \
+            services/local-agent/tests/test_remote_config_e2e.py::test_portal_confirms_legacy_profile_without_activating_stack
