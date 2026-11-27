@@ -156,8 +156,8 @@ export async function molduraEditor(ctx, { id }) {
     section('Fundo fora da moldura', sel('Fundo', [['blur', 'Vídeo desfocado'], ['black', 'Preto'], ['color', 'Cor sólida']], () => (L.background.startsWith('color') ? 'color' : L.background), (v) => { L.background = v === 'color' ? 'color:' + state.color : v; }),
       fld('Cor sólida', input('x', { type: 'color', value: state.color, oninput: (e) => { state.color = e.target.value; if (L.background.startsWith('color')) { L.background = 'color:' + state.color; draw(); } } }))));
 
-  const presetSelect = sel('Enquadramento automático', PRESETS,
-    () => 'auto',
+  const presetSelect = sel('Enquadramento da moldura', PRESETS,
+    () => ({ contain: 'auto', cover: 'fill', width: 'wide', height: 'tall' })[L.frameFit] || 'auto',
     (value) => {
       // Os quatro modos mantêm a proporção original da arte.
       L.frameFit = ({ auto: 'contain', fill: 'cover', wide: 'width', tall: 'height' })[value] || 'contain';
