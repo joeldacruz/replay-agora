@@ -3,6 +3,14 @@ import { el, icon, fmt, pill, badge, toast, sheet, confirmSheet, fld, input, sel
 
 const P = '/api/platform';
 const ORIENT = { horizontal: 'Horizontal', vertical: 'Vertical', other: 'Outro' };
+const THEMES = { default: 'Identidade da arena', court: 'Por quadra', event: 'Eventos e datas especiais', sponsor: 'Patrocinadores' };
+const themeName = (frame) => THEMES[frame.kind] || 'Outros temas';
+const PRESETS = [
+  ['auto', 'Automático — mostrar a moldura inteira'],
+  ['fill', 'Preencher a tela — pode recortar as bordas'],
+  ['wide', 'Ajustar pela largura'],
+  ['tall', 'Ajustar pela altura'],
+];
 const SIZES = [['1920x1080', '1920 × 1080 (horizontal Full HD)'], ['1080x1920', '1080 × 1920 (vertical Full HD)'], ['1280x720', '1280 × 720'], ['720x1280', '720 × 1280'], ['1080x1080', '1080 × 1080 (quadrado)']];
 
 // ------------------------------------------------------------------ geometria: ESPELHO exato de services/api/app/framing.py (arredondamento Python = pares)
@@ -44,14 +52,38 @@ export async function molduras(ctx) {
     fd.set('arenaId', S.arenaId); if (!fd.get('courtId')) fd.delete('courtId');
     const r = await ctx.api.form('POST', `${P}/frames`, fd); toast(`${r.length} moldura(s) importada(s)`); ctx.go();
   } });
+  // Escolha rápida de um tema já cadastrado, sem abrir o editor técnico.
+  const assignFrame = (frame) => sheet({
+    title: 'Usar moldura pronta',
+    fields: [
+      el('p', { class: 'p-lead' }, `Tema: ${frame.name}. Escolha a quadra. Não será aplicada nenhuma revisão automaticamente.`),
+      fld('Quadra', select('courtId', courts.map((c) => [c.id, c.label]), courts[0]?.id)),
+      fld('Formato', select('orient', [['horizontal', 'Horizontal'], ['vertical', 'Vertical']], frame.orientation === 'vertical' ? 'vertical' : 'horizontal')),
+    ],
+    onSubmit: async (fd) => {
+      const values = Object.fromEntries(fd);
+      const court = courts.find((c) => c.id === values.courtId);
+      if (!court) throw new Error('Selecione uma quadra válida.');
+      if (!court.settings?.serverId) throw new Error('A quadra precisa estar vinculada a um servidor.');
+      if (frame.orientation !== values.orient) throw new Error('Escolha uma moldura do mesmo formato da exportação.');
+      const field = values.orient === 'vertical' ? 'frameVId' : 'frameHId';
+      await ctx.api.put(`${P}/courts/${court.id}/settings`, {
+        ...court.settings, expectedVersion: court.settings.version, [field]: frame.id,
+      });
+      toast(`Moldura "${frame.name}" associada a ${court.label}. A aplicação no servidor continua pendente.`);
+      ctx.go();
+    },
+  });
   const cards = await Promise.all(list.map(async (f) => {
     let url = null;
     try { url = await imageUrl(ctx, f.id); } catch { /* sem miniatura */ }
     return el('div', { class: 'p-card p-frame-card' }, el('div', { class: 'p-frame-thumb' }, url ? el('img', { src: url, alt: 'Moldura ' + f.name }) : ''),
       el('div', { class: 'p-row p-row--between' }, el('h2', {}, f.name), f.available ? pill('active', 'Disponível') : pill('stopped', 'Indisponível')),
-      el('p', { class: 'p-muted' }, f.description || 'sem descrição'), kv('Formato', ORIENT[f.orientation]), kv('Arquivo', `${f.current.width}×${f.current.height} · v${f.current.version} · ${fmt.bytes(f.current.bytes)}`),
+      el('p', { class: 'p-muted' }, f.description || themeName(f)), kv('Tema', themeName(f)), kv('Formato', ORIENT[f.orientation]), kv('Arquivo', `${f.current.width}×${f.current.height} · v${f.current.version} · ${fmt.bytes(f.current.bytes)}`),
       kv('SHA-256', f.current.sha256.slice(0, 12) + '…'), kv('Usada por', f.usedBy.length ? f.usedBy.map((u) => u.court).join(', ') : 'nenhuma quadra'),
-      el('div', { class: 'p-row' }, el('a', { class: 'p-btn p-btn--primary p-btn--sm', href: `#/molduras/${f.id}` }, icon('edit', { size: 14 }), 'Editar composição'),
+      el('div', { class: 'p-row' },
+        el('button', { class: 'p-btn p-btn--primary p-btn--sm', type: 'button', disabled: !f.available, onclick: () => assignFrame(f) }, icon('check', { size: 14 }), 'Escolher para quadra'),
+        el('a', { class: 'p-btn p-btn--outline p-btn--sm', href: `#/molduras/${f.id}` }, icon('edit', { size: 14 }), 'Ajustar'),
         el('button', { class: 'p-btn p-btn--outline p-btn--sm', type: 'button', onclick: ctx.guard(async () => { await ctx.api.patch(`${P}/frames/${f.id}`, { available: !f.available }); ctx.go(); }) }, f.available ? 'Indisponibilizar' : 'Disponibilizar'),
         el('button', { class: 'p-btn p-btn--ghost p-btn--sm', type: 'button', onclick: ctx.guard(async () => { if (await confirmSheet(`Excluir a moldura "${f.name}" e todas as versões?`, 'Excluir')) { await ctx.api.del(`${P}/frames/${f.id}`); ctx.go(); } }) }, icon('trash', { size: 14 }))));
   }));
@@ -61,7 +93,9 @@ export async function molduras(ctx) {
   });
   ctx.shell({ title: 'Molduras e Identidade Visual', subtitle: 'Biblioteca de molduras da arena, com composição, versões e distribuição ao servidor local.', actions: el('button', { class: 'p-btn p-btn--primary', type: 'button', onclick: importSheet }, icon('upload', { size: 18 }), 'Importar moldura'),
     content: el('div', { class: 'p-list' }, el('div', { class: 'p-ctxbar' }, el('span', {}, 'Arena: ', el('b', {}, ctx.arena().name))),
-      cards.length ? el('div', { class: 'p-grid' }, cards) : empty('Nenhuma moldura cadastrada nesta arena.', el('button', { class: 'p-btn p-btn--primary', type: 'button', onclick: importSheet }, 'Importar a primeira moldura')),
+      section('Escolha uma moldura pronta', el('p', { class: 'p-muted' },
+        'Escolha uma arte disponível por tema e formato. Para criar variações (praia, torneio, datas especiais ou patrocinadores), importe outros PNGs transparentes. Ajustes técnicos são opcionais.'),
+        cards.length ? el('div', { class: 'p-grid' }, cards) : empty('Nenhuma moldura cadastrada nesta arena.', el('button', { class: 'p-btn p-btn--primary', type: 'button', onclick: importSheet }, 'Importar a primeira moldura'))),
       courts.length ? section('Molduras por quadra', el('div', { class: 'p-list' }, assoc)) : '') });
 }
 
@@ -108,7 +142,7 @@ export async function molduraEditor(ctx, { id }) {
   const range = (label, get, set, min, max, step) => fld(`${label}: ${get()}`, input('x', { type: 'range', min, max, step, value: get(), oninput: (e) => { set(+e.target.value); e.target.closest('label').firstChild.textContent = `${label}: ${(+e.target.value).toFixed(2)}`; draw(); } }));
   const layerBox = (label, key) => { const c = check('x', label, state.show[key]); c.querySelector('input').onchange = (e) => { state.show[key] = e.target.checked; draw(); }; return c; };
 
-  const controls = el('div', { class: 'p-list' },
+  const advancedControls = el('div', { class: 'p-list' },
     section('Saída', sel('Resolução de saída', SIZES, () => state.size, (v) => { state.size = v; }),
       el('div', { class: 'p-row' }, layerBox('Moldura', 'frame'), layerBox('Vídeo', 'video'), layerBox('Contornos', 'outline'))),
     section('Moldura (nunca é esticada)', sel('Ajuste', [['contain', 'Caber inteira (contain)'], ['cover', 'Preencher a tela (cover)'], ['width', 'Ajustar à largura'], ['height', 'Ajustar à altura']], () => L.frameFit, (v) => { L.frameFit = v; }),
@@ -122,6 +156,25 @@ export async function molduraEditor(ctx, { id }) {
     section('Fundo fora da moldura', sel('Fundo', [['blur', 'Vídeo desfocado'], ['black', 'Preto'], ['color', 'Cor sólida']], () => (L.background.startsWith('color') ? 'color' : L.background), (v) => { L.background = v === 'color' ? 'color:' + state.color : v; }),
       fld('Cor sólida', input('x', { type: 'color', value: state.color, oninput: (e) => { state.color = e.target.value; if (L.background.startsWith('color')) { L.background = 'color:' + state.color; draw(); } } }))));
 
+  const presetSelect = sel('Enquadramento da moldura', PRESETS,
+    () => ({ contain: 'auto', cover: 'fill', width: 'wide', height: 'tall' })[L.frameFit] || 'auto',
+    (value) => {
+      // Os quatro modos mantêm a proporção original da arte.
+      L.frameFit = ({ auto: 'contain', fill: 'cover', wide: 'width', tall: 'height' })[value] || 'contain';
+      L.frameScale = 1;
+      L.dx = 0;
+      L.dy = 0;
+      L.margin = { top: 0, right: 0, bottom: 0, left: 0 };
+      L.videoFit = 'cover';
+      L.videoZoom = 1;
+      L.vdx = L.vdy = 0;
+    });
+  const controls = el('div', { class: 'p-list' },
+    section('Configuração simples', el('p', { class: 'p-muted' },
+      'Escolha um enquadramento e veja a prévia. A moldura nunca será deformada. O modo automático preserva a arte inteira.'),
+      presetSelect,
+      el('p', { class: 'p-muted' }, 'Ajustes finos, janela do vídeo e fundo estão disponíveis apenas no modo avançado.')),
+    el('details', {}, el('summary', {}, 'Modo avançado — escala, zoom e posição'), advancedControls));
   const save = ctx.guard(async () => {
     const r = await ctx.api.put(`${P}/frames/${f.id}/layout`, { layout: L, window: W, note: 'composição ajustada no editor' });
     toast(`Composição salva como versão ${r.current.version}. Aplique no servidor para distribuir.`); ctx.go();
