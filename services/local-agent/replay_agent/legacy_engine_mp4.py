@@ -163,8 +163,7 @@ def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
     part = Path(part_name)
     try:
         cmd = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
-               "-f", "concat", "-safe", "0", "-i", str(concat_list),
-               "-map", "0:v:0", "-map", "0:a:0?"]
+               "-f", "concat", "-safe", "0", "-i", str(concat_list)]
         if frame_info is not None:
             from . import framing
             png, (out_w, out_h), layout, geom = frame_info
@@ -179,14 +178,14 @@ def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
                 frame="1:v", out="final_video")
             cmd += ["-loop", "1", "-framerate", "25", "-i", str(png),
                     "-filter_complex", ";".join(rot_filters + chain),
-                    "-map", "[final_video]", "-c:v", "libx264",
+                    "-map", "[final_video]", "-map", "0:a:0?", "-c:v", "libx264",
                     "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
                     "-c:a", "copy"]
         elif angle:
-            cmd += ["-vf", FILTERS[angle], "-c:v", "libx264", "-preset", "veryfast",
+            cmd += ["-map", "0:v:0", "-map", "0:a:0?", "-vf", FILTERS[angle], "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "copy"]
         else:
-            cmd += ["-c", "copy"]
+            cmd += ["-map", "0:v:0", "-map", "0:a:0?", "-c", "copy"]
         cmd += ["-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
                 "-f", "mp4", "-y", str(part)]
         try:
