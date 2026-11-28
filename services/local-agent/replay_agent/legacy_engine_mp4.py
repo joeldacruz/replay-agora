@@ -16,6 +16,7 @@ registro; nunca se inventa revisão.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -30,6 +31,62 @@ ALLOWED_ANGLES = (0, 90, 180, 270)
 FILTERS = {0: None, 90: "transpose=clock", 180: "hflip,vflip", 270: "transpose=cclock"}
 FINAL_NAME = re.compile(r"^replay-[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.mp4$")
 THUMB_MAX_BYTES = 262144
+
+
+def _frame_plan(frame: dict):
+    """Valida arte/recibo sem depender da API ou do servidor central."""
+    from . import framing
+    if not isinstance(frame, dict):
+        raise PublishError("perfil de moldura inválido")
+    p = Path(frame.get("localPath", ""))
+    if not p.is_file() or p.is_symlink() or p.suffix.lower() != ".png":
+        raise PublishError("PNG privado de moldura indisponível")
+    sha = frame.get("sha256")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise PublishError("SHA-256 de moldura inválido")
+    if hashlib.sha256(p.read_bytes()).hexdigest() != sha:
+        raise PublishError("PNG de moldura diverge do SHA-256")
+    width, height = frame.get("width"), frame.get("height")
+    if type(width) is not int or type(height) is not int:
+        raise PublishError("dimensões de moldura inválidas")
+    try:
+        size = framing.parse_size(frame["out"])
+        layout = framing.validate_layout(frame["layout"])
+        window = framing.validate_window(frame["window"], width, height)
+        geom = framing.compute(layout, *size, width, height, window)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PublishError("composição da moldura inválida") from exc
+    return p, size, layout, geom
+
+
+def frame_from_receipt(receipt, orientation="horizontal"):
+    """Seleciona a versão cacheada; nenhum segundo MP4 é criado.
+
+    A ausência de recibo retorna None (compatível com o motor legado).
+    Recibos inválidos falham explicitamente antes de gerar o MP4.
+    """
+    if orientation not in ("horizontal", "vertical"):
+        raise PublishError("formato de moldura inválido")
+    path = Path(receipt)
+    if not path.exists():
+        return None
+    if path.is_symlink() or path.stat().st_mode & 0o077:
+        raise PublishError("recibo privado de moldura inválido")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise PublishError("recibo de moldura ilegível") from exc
+    if data.get("courtKey") != COURT_KEY:
+        raise PublishError("recibo de outra quadra")
+    if not data.get("framesEnabled"):
+        return None
+    if orientation not in data.get("formats", []):
+        raise PublishError("formato não habilitado na quadra")
+    frame = data.get("frames", {}).get(orientation)
+    if not frame:
+        raise PublishError("formato ativo sem moldura")
+    _frame_plan(frame)
+    return frame
 
 
 class PublishError(RuntimeError):
@@ -83,10 +140,11 @@ def _video(meta) -> dict:
 
 def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
                 duration_tolerance=1.5, ffmpeg="ffmpeg", ffprobe="ffprobe",
-                timeout=180) -> dict:
+                timeout=180, frame=None) -> dict:
     """Gera, verifica e publica ``final``. Retorna metadados do arquivo FINAL."""
     if type(angle) is not int or angle not in ALLOWED_ANGLES:
         raise PublishError("orientação inválida")
+    frame_info = _frame_plan(frame) if frame is not None else None
     final = Path(final)
     work_dir = Path(work_dir)
     if not FINAL_NAME.match(final.name):
@@ -105,13 +163,33 @@ def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
     part = Path(part_name)
     try:
         cmd = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
-               "-f", "concat", "-safe", "0", "-i", str(concat_list),
-               "-map", "0:v:0", "-map", "0:a:0?"]
-        if angle:
-            cmd += ["-vf", FILTERS[angle], "-c:v", "libx264", "-preset", "veryfast",
+               "-f", "concat", "-safe", "0", "-i", str(concat_list)]
+        if frame_info is not None:
+            from . import framing
+            png, (out_w, out_h), layout, geom = frame_info
+            src = _video(_probe(_first_input(concat_list), ffprobe))
+            src_w, src_h = src["width"], src["height"]
+            # Rotação e composição no MESMO filtro e no MESMO encode.
+            rot_w, rot_h = (src_h, src_w) if angle in (90, 270) else (src_w, src_h)
+            vid = framing.video_geometry(geom["window"], rot_w, rot_h, layout)
+            rot_filters = [f"[0:v]{FILTERS[angle]}[oriented]"] if angle else []
+            chain = framing.build_filters(
+                geom, vid, layout, src="oriented" if angle else "0:v",
+                frame="1:v", out="final_video")
+            cmd += ["-loop", "1", "-framerate", "25", "-i", str(png),
+                    "-filter_complex", ";".join(rot_filters + chain),
+                    "-map", "[final_video]", "-map", "0:a:0?", "-c:v", "libx264",
+                    "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+                    "-c:a", "copy"]
+        elif angle:
+            cmd += ["-map", "0:v:0", "-map", "0:a:0?", "-vf", FILTERS[angle], "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "copy"]
         else:
-            cmd += ["-c", "copy"]
+            cmd += ["-map", "0:v:0", "-map", "0:a:0?", "-c", "copy"]
+        # A entrada PNG usa -loop 1: limitar a saída ao fluxo de vídeo/áudio,
+        # senão o codificador pode continuar gerando quadros indefinidamente.
+        if frame_info is not None:
+            cmd += ["-shortest"]
         cmd += ["-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
                 "-f", "mp4", "-y", str(part)]
         try:
@@ -132,7 +210,7 @@ def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
         first = _first_input(concat_list)
         src = _video(_probe(first, ffprobe))
         sw, sh = src["width"], src["height"]
-        want = (sh, sw) if angle in (90, 270) else (sw, sh)
+        want = frame_info[1] if frame_info else ((sh, sw) if angle in (90, 270) else (sw, sh))
         if (video["width"], video["height"]) != want:
             raise PublishError("dimensões inesperadas após rotação")
         check = subprocess.run([ffmpeg, "-v", "error", "-nostdin", "-i", str(part),

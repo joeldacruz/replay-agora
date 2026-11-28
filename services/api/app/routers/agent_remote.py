@@ -80,6 +80,53 @@ def get_rotation(court_key: str, ag: ArenaAgent = Depends(bound),
     return rotation_configuration(db, ag, court_key)
 
 
+def current_frame_configuration(db: Session, ag: ArenaAgent, court_key: str) -> dict:
+    """Consulta somente leitura das molduras SELECIONADAS no Portal.
+
+    Não modifica revisões, câmeras, controladores, serviços ou estado aplicado.
+    Os PNGs são identificados por versão e SHA-256, sem expor URLs externas,
+    senhas nem dados de outras quadras/arenas.
+    """
+    server = _server(db, ag)
+    if court_key != "QUADRA_02":
+        raise HTTPException(404, "quadra fora do piloto de molduras")
+    snap = rc.build_snapshot(db, server)
+    courts = [c for c in snap["courts"] if c["key"] == court_key and c["active"]]
+    if len(courts) != 1:
+        raise HTTPException(404, "quadra não vinculada ou inativa")
+    court = courts[0]
+    frames = court["frames"]
+    formats = court["replay"]["formats"]
+    selected = {}
+    for orient in ("horizontal", "vertical"):
+        frame = frames.get(orient) if frames["enabled"] and orient in formats else None
+        selected[orient] = ({
+            key: frame[key] for key in
+            ("frameId", "name", "versionId", "version", "sha256", "bytes",
+             "width", "height", "window", "layout", "out")
+        } if frame else None)
+    rev = rc.latest(db, server.id)
+    return {
+        "courtKey": court_key,
+        "serverId": server.id,
+        "arenaId": server.arena_id,
+        "configurationState": "desired_unapplied",
+        "source": "current_portal_settings",
+        "latestRevisionVersion": rev.version if rev else None,
+        "latestRevisionStatus": rev.status if rev else None,
+        "framesEnabled": bool(frames["enabled"]),
+        "formats": formats,
+        "frames": selected,
+    }
+
+
+@router.get("/frames/{court_key}")
+def get_frames(court_key: str, ag: ArenaAgent = Depends(bound),
+               db: Session = Depends(get_db)):
+    """Manifesto privado de molduras para a ponte legada; sem efeito colateral."""
+    return current_frame_configuration(db, ag, court_key)
+
+
 @router.get("/pending")
 def pending(ag: ArenaAgent = Depends(bound), db: Session = Depends(get_db)):
     """Próxima configuração a aplicar (a mais nova; versões antigas não aplicadas já foram substituídas) + segredos + arquivos."""
@@ -179,7 +226,20 @@ def asset(version_id: str, ag: ArenaAgent = Depends(bound), db: Session = Depend
     if not v or v.arena_id != s.arena_id:
         raise HTTPException(404, "arquivo não encontrado")
     revs = db.query(ConfigRevision).filter_by(server_id=s.id).order_by(ConfigRevision.version.desc()).limit(25).all()
-    if not any(version_id in r.snapshot_json for r in revs):
+    # O editor do Portal pode salvar uma nova seleção sem gerar/aplicar revisão.
+    # Autorizar também a versão CORRENTE vinculada a uma quadra do próprio
+    # servidor; nenhum PNG de outras arenas ou versões desvinculadas é exposto.
+    live = rc.build_snapshot(db, s)
+    linked = any(
+        court["active"] and court["frames"]["enabled"]
+        and any(
+            court["frames"].get(orient)
+            and court["frames"][orient].get("versionId") == version_id
+            for orient in court["replay"]["formats"]
+        )
+        for court in live["courts"]
+    )
+    if not linked and not any(version_id in r.snapshot_json for r in revs):
         raise HTTPException(404, "arquivo não encontrado")
     data = storage.path_for(v.storage_key).read_bytes()
     return Response(data, media_type="image/png", headers={"X-Sha256": v.sha256, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

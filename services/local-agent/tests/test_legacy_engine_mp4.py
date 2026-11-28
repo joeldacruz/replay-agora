@@ -216,3 +216,62 @@ def test_cleanup_only_removes_old_part_files(dirs):
     os.utime(old, (1, 1))
     assert eng.cleanup_stale(w) == 1
     assert not old.exists() and new.exists() and other.exists()
+
+
+@pytest.mark.parametrize("angle,expected", [(0, (320, 240)), (90, (240, 320)), (180, (320, 240))])
+def test_one_final_mp4_with_frame_and_rotation_in_single_encode(dirs, angle, expected):
+    """PNG + orientação no mesmo FFmpeg, sem MP4 intermediário nem duplicata."""
+    import struct
+    import zlib
+
+    def chunk(kind, body):
+        return (struct.pack(">I", len(body)) + kind + body +
+                struct.pack(">I", zlib.crc32(kind + body) & 0xffffffff))
+
+    fw, fh = 320, 240
+    pixel = bytes((0, 0, 255, 255))
+    clear = bytes((0, 0, 0, 0))
+    rows = b"".join(
+        b"\x00" + (pixel * fw if y < 16 or y >= fh - 16
+                  else pixel * 16 + clear * (fw - 32) + pixel * 16)
+        for y in range(fh))
+    png = (b"\x89PNG\r\n\x1a\n" +
+           chunk(b"IHDR", struct.pack(">IIBBBBB", fw, fh, 8, 6, 0, 0, 0)) +
+           chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    private = dirs / "frame-private"
+    private.mkdir(mode=0o700)
+    path = private / "theme.png"
+    path.write_bytes(png)
+
+    out_w, out_h = expected
+    frame = {"localPath": str(path), "sha256": hashlib.sha256(png).hexdigest(),
+             "width": fw, "height": fh, "out": f"{out_w}x{out_h}",
+             "window": {"x": 16, "y": 16, "w": fw - 32, "h": fh - 32},
+             "layout": {"frameFit": "contain", "background": "black"}}
+
+    lst = make_segments(dirs)
+    before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in (dirs / "buffer").iterdir()}
+    target = dirs / "replays" / NAME
+    info = eng.build_final(lst, target, angle, work_dir=dirs / "work",
+                           expected_duration=6, frame=frame)
+    assert (info["width"], info["height"]) == expected
+    assert len(list((dirs / "replays").glob("*.mp4"))) == 1
+    assert list((dirs / "work").iterdir()) == []
+    assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in (dirs / "buffer").iterdir()}
+    assert any(s["codec_type"] == "audio" for s in probe(target)["streams"])
+
+
+def test_invalid_png_hash_never_publishes_replay(dirs):
+    lst = make_segments(dirs)
+    art = dirs / "frame.png"
+    art.write_bytes(b"bad")
+    frame = {"localPath": str(art), "sha256": "0" * 64,
+             "width": 320, "height": 240, "out": "320x240",
+             "window": {"x": 16, "y": 16, "w": 288, "h": 208},
+             "layout": {}}
+    with pytest.raises(eng.PublishError, match="SHA-256"):
+        eng.build_final(lst, dirs / "replays" / NAME, 0,
+                        work_dir=dirs / "work", frame=frame)
+    assert not list((dirs / "replays").glob("*.mp4"))
