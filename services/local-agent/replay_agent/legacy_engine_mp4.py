@@ -186,6 +186,10 @@ def build_final(concat_list, final, angle, *, work_dir, expected_duration=None,
                     "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "copy"]
         else:
             cmd += ["-map", "0:v:0", "-map", "0:a:0?", "-c", "copy"]
+        # A entrada PNG usa -loop 1: limitar a saída ao fluxo de vídeo/áudio,
+        # senão o codificador pode continuar gerando quadros indefinidamente.
+        if frame_info is not None:
+            cmd += ["-shortest"]
         cmd += ["-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
                 "-f", "mp4", "-y", str(part)]
         try:
