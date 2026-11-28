@@ -232,10 +232,10 @@ def test_one_final_mp4_with_frame_and_rotation_in_single_encode(dirs, angle, exp
     pixel = bytes((0, 0, 255, 255))
     clear = bytes((0, 0, 0, 0))
     rows = b"".join(
-        b"\\x00" + (pixel * fw if y < 16 or y >= fh - 16
+        b"\x00" + (pixel * fw if y < 16 or y >= fh - 16
                   else pixel * 16 + clear * (fw - 32) + pixel * 16)
         for y in range(fh))
-    png = (b"\\x89PNG\\r\\n\\x1a\\n" +
+    png = (b"\x89PNG\r\n\x1a\n" +
            chunk(b"IHDR", struct.pack(">IIBBBBB", fw, fh, 8, 6, 0, 0, 0)) +
            chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
     private = dirs / "frame-private"
